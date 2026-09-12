@@ -1,0 +1,26 @@
+# Build context for Dockerfile — keep it small and secret-free.
+node_modules
+.next
+out
+.git
+.gitignore
+.github
+.vercel
+.local-db
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store
+
+# Never bake secrets into an image; runtime env comes from the host / compose.
+.env
+.env.*
+!.env.example
+
+# Not needed inside the image
+docs
+README.md
+Dockerfile
+docker-compose*.yml
+railway*.json
+render.yaml
+vercel.json

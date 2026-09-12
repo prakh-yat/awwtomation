@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+
+    /* Awwtomation palette: white surfaces, charcoal ink (#18181B), cool-gray neutrals with a lavender (#C1C1D7) undertone. */
+    --background: 0 0% 100%;
+    --foreground: 240 6% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 6% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 6% 10%;
+
+    --primary: 240 6% 10%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 14% 96%;
+    --secondary-foreground: 240 6% 12%;
+
+    --muted: 240 14% 96%;
+    --muted-foreground: 240 5% 42%;
+
+    --accent: 240 22% 93%;
+    --accent-foreground: 240 6% 10%;
+
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 34%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 240 10% 90%;
+    --input: 240 10% 87%;
+    --ring: 240 6% 10%;
+
+    /* Brand lavender (#C1C1D7) — used for the mark's depth layer, focus/selection tints and secondary chart series. */
+    --brand-lavender: 240 22% 80%;
+
+    --radius: 0.625rem;
+
+    --sidebar-background: 240 18% 97.5%;
+    --sidebar-foreground: 240 5% 22%;
+    --sidebar-accent: 240 22% 92%;
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 240 10% 90%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+
+  ::selection {
+    background: hsl(240 22% 80%);
+    color: hsl(240 6% 10%);
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(0 0% 80%) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 80%);
+    border-radius: 999px;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}

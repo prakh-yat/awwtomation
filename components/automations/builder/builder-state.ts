@@ -1,0 +1,418 @@
+/**
+ * Builder state: plain `useReducer` over React Flow's node/edge arrays plus
+ * the automation settings. React Flow's arrays are the source of truth while
+ * editing; `toFlowGraph` serialises them into the `FlowGraph` the engine
+ * runs, and `validateFlow` gives the inline errors.
+ */
+import { applyEdgeChanges, applyNodeChanges, MarkerType, type Connection, type Edge, type EdgeChange, type Node, type NodeChange } from "@xyflow/react";
+import type { AutomationStatus, MatchMode, TriggerType } from "@prisma/client";
+
+import { normalizeHandle, renderTemplate, type FlowGraph, type FlowNodeData, type FlowNodeType } from "@/lib/automation/flow-types";
+import type { OutboundMessage } from "@/lib/meta/types";
+import type { AutomationDetail, MediaSummary } from "@/lib/services/automations";
+
+// ───────────────────────── Types ─────────────────────────
+
+export type BuilderNode = Node<FlowNodeData, FlowNodeType>;
+export type BuilderEdge = Edge;
+
+export type BuilderSettings = {
+  name: string;
+  channelId: string;
+  triggerType: TriggerType;
+  matchMode: MatchMode;
+  keywords: string[];
+  excludeKeywords: string[];
+  mediaIds: string[];
+  publicReplyEnabled: boolean;
+  publicReplies: string[];
+  oncePerContact: boolean;
+};
+
+export type BuilderState = {
+  settings: BuilderSettings;
+  nodes: BuilderNode[];
+  edges: BuilderEdge[];
+  selectedNodeId: string | null;
+  status: AutomationStatus;
+  /** Serialised settings+flow at the last save; `isDirty` compares against it. */
+  savedSnapshot: string;
+  /** Media the user has seen (selected thumbnails + picker results), keyed by external id. */
+  mediaById: Record<string, MediaSummary>;
+};
+
+export type AddableNodeType = Exclude<FlowNodeType, "trigger">;
+
+export type BuilderAction =
+  | { type: "settings"; patch: Partial<BuilderSettings> }
+  | { type: "nodesChange"; changes: NodeChange<BuilderNode>[] }
+  | { type: "edgesChange"; changes: EdgeChange<BuilderEdge>[] }
+  | { type: "connect"; connection: Connection }
+  | { type: "addNode"; nodeType: AddableNodeType }
+  | { type: "updateNodeData"; id: string; data: FlowNodeData; handleRemap?: Record<string, string | null> }
+  | { type: "removeNode"; id: string }
+  | { type: "removeEdge"; id: string }
+  | { type: "select"; id: string | null }
+  | { type: "saved"; detail: AutomationDetail }
+  | { type: "setStatus"; status: AutomationStatus }
+  | { type: "mediaLoaded"; items: MediaSummary[] };
+
+// ───────────────────────── Graph conversion ─────────────────────────
+
+/** Monochrome edge styling shared by initial and newly-drawn edges. */
+export const EDGE_DEFAULTS: Partial<BuilderEdge> = {
+  type: "smoothstep",
+  markerEnd: { type: MarkerType.ArrowClosed, color: "#0a0a0a", width: 16, height: 16 },
+  style: { stroke: "#0a0a0a", strokeWidth: 1.5 },
+};
+
+export function fromFlowGraph(flow: FlowGraph): { nodes: BuilderNode[]; edges: BuilderEdge[] } {
+  return {
+    nodes: flow.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: { ...n.position },
+      data: n.data,
+      // The trigger is the flow's root; validateFlow requires exactly one.
+      deletable: n.type !== "trigger",
+      selected: false,
+    })),
+    edges: flow.edges.map((e) => ({
+      ...EDGE_DEFAULTS,
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: normalizeHandle(e.sourceHandle),
+    })),
+  };
+}
+
+export function toFlowGraph(nodes: BuilderNode[], edges: BuilderEdge[]): FlowGraph {
+  return {
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      type: n.data.type,
+      position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
+      data: n.data,
+    })),
+    edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, sourceHandle: normalizeHandle(e.sourceHandle) })),
+  };
+}
+
+export function snapshot(settings: BuilderSettings, nodes: BuilderNode[], edges: BuilderEdge[]): string {
+  return JSON.stringify({ settings, flow: toFlowGraph(nodes, edges) });
+}
+
+export function isDirty(state: BuilderState): boolean {
+  return snapshot(state.settings, state.nodes, state.edges) !== state.savedSnapshot;
+}
+
+export function settingsFromDetail(detail: AutomationDetail): BuilderSettings {
+  return {
+    name: detail.name,
+    channelId: detail.channel.id,
+    triggerType: detail.triggerType,
+    matchMode: detail.matchMode,
+    keywords: detail.keywords,
+    excludeKeywords: detail.excludeKeywords,
+    mediaIds: detail.mediaIds,
+    publicReplyEnabled: detail.publicReplyEnabled,
+    publicReplies: detail.publicReplies,
+    oncePerContact: detail.oncePerContact,
+  };
+}
+
+export function initBuilderState(detail: AutomationDetail): BuilderState {
+  const settings = settingsFromDetail(detail);
+  const { nodes, edges } = fromFlowGraph(detail.flow);
+  const mediaById: Record<string, MediaSummary> = {};
+  for (const m of detail.selectedMedia) mediaById[m.externalId] = m;
+  return {
+    settings,
+    nodes,
+    edges,
+    selectedNodeId: null,
+    status: detail.status,
+    // A recovered (unparseable) flow must read as dirty so the user is nudged to save the repaired graph.
+    savedSnapshot: detail.flowRecovered ? "" : snapshot(settings, nodes, edges),
+    mediaById,
+  };
+}
+
+// ───────────────────────── Handles ─────────────────────────
+
+/** Mirrors the engine's handle table: which source handles a node exposes. */
+export function allowedHandles(data: FlowNodeData): string[] {
+  switch (data.type) {
+    case "send_message": {
+      const buttons = data.message.buttons ?? [];
+      const quick = data.message.quickReplies ?? [];
+      return [
+        "next",
+        ...buttons.map((b, i) => (b.type === "postback" ? `btn:${i}` : "")).filter(Boolean),
+        ...quick.map((_, i) => `qr:${i}`),
+      ];
+    }
+    case "condition_follow":
+      return ["yes", "no"];
+    default:
+      return ["next"];
+  }
+}
+
+export function handleLabel(handle: string): string {
+  const h = normalizeHandle(handle);
+  if (h === "next") return "next";
+  if (h === "yes") return "following";
+  if (h === "no") return "not following";
+  if (h.startsWith("btn:")) return `button ${Number(h.slice(4)) + 1}`;
+  if (h.startsWith("qr:")) return `quick reply ${Number(h.slice(3)) + 1}`;
+  return h;
+}
+
+function edgeFromHandle(edges: BuilderEdge[], source: string, handle: string): BuilderEdge | undefined {
+  return edges.find((e) => e.source === source && normalizeHandle(e.sourceHandle) === normalizeHandle(handle));
+}
+
+// ───────────────────────── Node factories ─────────────────────────
+
+const NODE_WIDTH = 240;
+const STEP_Y = 170;
+
+export function newNodeData(type: AddableNodeType): FlowNodeData {
+  switch (type) {
+    case "send_message":
+      return { type, message: { text: "" } };
+    case "ask_question":
+      return { type, prompt: { text: "" }, saveTo: "email", validation: "email", maxRetries: 2 };
+    case "condition_follow":
+      return { type, retryPrompt: "" };
+    case "delay":
+      return { type, seconds: 3600 };
+    case "add_tag":
+      return { type, tag: "" };
+    case "remove_tag":
+      return { type, tag: "" };
+  }
+}
+
+const ID_PREFIX: Record<AddableNodeType, string> = {
+  send_message: "message",
+  ask_question: "ask",
+  condition_follow: "follow",
+  delay: "delay",
+  add_tag: "tag",
+  remove_tag: "untag",
+};
+
+function uniqueId(prefix: string, taken: Set<string>): string {
+  for (let i = 0; i < 50; i++) {
+    const id = `${prefix}-${Math.random().toString(36).slice(2, 7)}`;
+    if (!taken.has(id)) return id;
+  }
+  return `${prefix}-${Date.now().toString(36)}`;
+}
+
+/** Slot below the anchor; shifts right while another node already sits there. */
+function placeBelow(anchor: BuilderNode | undefined, nodes: BuilderNode[]): { x: number; y: number } {
+  if (!anchor) {
+    const bottom = nodes.reduce((max, n) => Math.max(max, n.position.y), 0);
+    return { x: 0, y: bottom + STEP_Y };
+  }
+  const candidate = { x: anchor.position.x, y: anchor.position.y + STEP_Y };
+  const occupied = (p: { x: number; y: number }) =>
+    nodes.some((n) => Math.abs(n.position.x - p.x) < NODE_WIDTH && Math.abs(n.position.y - p.y) < STEP_Y * 0.6);
+  let tries = 0;
+  while (occupied(candidate) && tries < 8) {
+    candidate.x += NODE_WIDTH + 40;
+    tries++;
+  }
+  return candidate;
+}
+
+// ───────────────────────── Reducer ─────────────────────────
+
+function withSelection(nodes: BuilderNode[], id: string | null): BuilderNode[] {
+  return nodes.map((n) => (Boolean(n.selected) === (n.id === id) ? n : { ...n, selected: n.id === id }));
+}
+
+export function builderReducer(state: BuilderState, action: BuilderAction): BuilderState {
+  switch (action.type) {
+    case "settings": {
+      const next = { ...state.settings, ...action.patch };
+      // Public replies only exist for comment triggers; a DM trigger has no comment to reply under.
+      if (next.triggerType !== "COMMENT") {
+        next.publicReplyEnabled = false;
+        next.mediaIds = [];
+      }
+      return { ...state, settings: next };
+    }
+
+    case "nodesChange": {
+      const nodes = applyNodeChanges(action.changes, state.nodes);
+      const removed = new Set(action.changes.filter((c) => c.type === "remove").map((c) => c.id));
+      const edges = removed.size ? state.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target)) : state.edges;
+      const selected = nodes.find((n) => n.selected)?.id ?? null;
+      return { ...state, nodes, edges, selectedNodeId: selected };
+    }
+
+    case "edgesChange":
+      return { ...state, edges: applyEdgeChanges(action.changes, state.edges) };
+
+    case "connect": {
+      const { source, target, sourceHandle } = action.connection;
+      if (!source || !target || source === target) return state;
+      const handle = normalizeHandle(sourceHandle);
+      // One edge per handle — the engine can't pick between two "next" targets.
+      const edges = state.edges.filter((e) => !(e.source === source && normalizeHandle(e.sourceHandle) === handle));
+      edges.push({ ...EDGE_DEFAULTS, id: `e-${source}-${handle}-${target}-${Math.random().toString(36).slice(2, 6)}`, source, target, sourceHandle: handle });
+      return { ...state, edges };
+    }
+
+    case "addNode": {
+      const taken = new Set(state.nodes.map((n) => n.id));
+      const id = uniqueId(ID_PREFIX[action.nodeType], taken);
+      const anchor = state.nodes.find((n) => n.id === state.selectedNodeId) ?? state.nodes.find((n) => n.data.type === "trigger");
+      const position = placeBelow(anchor, state.nodes);
+      const node: BuilderNode = { id, type: action.nodeType, position, data: newNodeData(action.nodeType), deletable: true, selected: true };
+
+      // Auto-wire from the anchor's first free handle so a new step is reachable straight away.
+      const edges = [...state.edges];
+      if (anchor) {
+        const free = allowedHandles(anchor.data).find((h) => !edgeFromHandle(edges, anchor.id, h));
+        if (free) edges.push({ ...EDGE_DEFAULTS, id: `e-${anchor.id}-${free}-${id}`, source: anchor.id, target: id, sourceHandle: free });
+      }
+      return { ...state, nodes: [...withSelection(state.nodes, null), node], edges, selectedNodeId: id };
+    }
+
+    case "updateNodeData": {
+      const nodes = state.nodes.map((n) => (n.id === action.id ? { ...n, data: action.data } : n));
+      const allowed = new Set(allowedHandles(action.data));
+      const remap = action.handleRemap ?? {};
+      const edges: BuilderEdge[] = [];
+      for (const e of state.edges) {
+        if (e.source !== action.id) {
+          edges.push(e);
+          continue;
+        }
+        const current = normalizeHandle(e.sourceHandle);
+        const mapped = current in remap ? remap[current] : current;
+        // Removed buttons drop their edges; later buttons shift down one handle.
+        if (mapped === null || !allowed.has(mapped)) continue;
+        edges.push(mapped === current ? e : { ...e, sourceHandle: mapped });
+      }
+      return { ...state, nodes, edges };
+    }
+
+    case "removeNode": {
+      const target = state.nodes.find((n) => n.id === action.id);
+      if (!target || target.data.type === "trigger") return state;
+      return {
+        ...state,
+        nodes: state.nodes.filter((n) => n.id !== action.id),
+        edges: state.edges.filter((e) => e.source !== action.id && e.target !== action.id),
+        selectedNodeId: state.selectedNodeId === action.id ? null : state.selectedNodeId,
+      };
+    }
+
+    case "removeEdge":
+      return { ...state, edges: state.edges.filter((e) => e.id !== action.id) };
+
+    case "select":
+      return { ...state, nodes: withSelection(state.nodes, action.id), selectedNodeId: action.id };
+
+    case "saved": {
+      const settings = settingsFromDetail(action.detail);
+      // Keep the on-screen graph (positions, selection) and only re-baseline the snapshot.
+      return { ...state, settings, status: action.detail.status, savedSnapshot: snapshot(settings, state.nodes, state.edges) };
+    }
+
+    case "setStatus":
+      return { ...state, status: action.status };
+
+    case "mediaLoaded": {
+      const mediaById = { ...state.mediaById };
+      for (const item of action.items) mediaById[item.externalId] = item;
+      return { ...state, mediaById };
+    }
+  }
+}
+
+// ───────────────────────── Derived helpers ─────────────────────────
+
+/** Errors from `validateFlow` mention node ids in quotes; map them back to nodes for inline badges. */
+export function nodeErrorsFrom(errors: string[], nodes: BuilderNode[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const node of nodes) {
+    const mine = errors.filter((e) => e.includes(`"${node.id}"`));
+    if (mine.length) map.set(node.id, mine);
+  }
+  return map;
+}
+
+export const SAMPLE_VARS: Record<string, string> = { username: "@jane_doe", name: "Jane Doe", first_name: "Jane" };
+
+export function renderPreviewMessage(message: OutboundMessage, vars: Record<string, string> = SAMPLE_VARS): OutboundMessage {
+  return {
+    ...message,
+    text: message.text !== undefined ? renderTemplate(message.text, vars) : undefined,
+    buttons: message.buttons?.map((b) => ({ ...b, title: renderTemplate(b.title, vars) })),
+    quickReplies: message.quickReplies?.map((q) => ({ ...q, title: renderTemplate(q.title, vars) })),
+  };
+}
+
+export function followPromptMessage(retryPrompt: string | undefined, accountHandle: string): OutboundMessage {
+  const text = retryPrompt?.trim() || `Looks like you're not following ${accountHandle} yet. Follow, then tap the button below to continue 👇`;
+  return { text, buttons: [{ type: "postback", title: "I'm following ✓", payload: "follow_check" }] };
+}
+
+/**
+ * The conversation a contact would see on the happy path: trigger → next /
+ * yes / first button, up to `max` messages. Used by the "flow preview".
+ */
+export function conversationPreview(nodes: BuilderNode[], edges: BuilderEdge[], accountHandle: string, max = 6): OutboundMessage[] {
+  const flow = toFlowGraph(nodes, edges);
+  const byId = new Map(flow.nodes.map((n) => [n.id, n]));
+  const next = (from: string, handle: string) => {
+    const edge = flow.edges.find((e) => e.source === from && normalizeHandle(e.sourceHandle) === handle);
+    return edge && byId.has(edge.target) ? edge.target : null;
+  };
+  const out: OutboundMessage[] = [];
+  const seen = new Set<string>();
+  let cursor = flow.nodes.find((n) => n.data.type === "trigger")?.id ?? null;
+  while (cursor && !seen.has(cursor) && out.length < max) {
+    seen.add(cursor);
+    const node = byId.get(cursor);
+    if (!node) break;
+    const data = node.data;
+    if (data.type === "send_message") {
+      out.push(renderPreviewMessage(data.message));
+      cursor = next(node.id, "next") ?? next(node.id, "btn:0") ?? next(node.id, "qr:0");
+      continue;
+    }
+    if (data.type === "ask_question") {
+      out.push(renderPreviewMessage(data.prompt));
+      cursor = next(node.id, "next");
+      continue;
+    }
+    if (data.type === "condition_follow") {
+      const yes = next(node.id, "yes");
+      if (yes) {
+        cursor = yes;
+        continue;
+      }
+      out.push(followPromptMessage(data.retryPrompt, accountHandle));
+      break;
+    }
+    cursor = next(node.id, "next");
+  }
+  return out;
+}
+
+export function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+export function charCount(text: string): number {
+  return Array.from(text).length;
+}

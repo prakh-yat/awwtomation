@@ -1,0 +1,136 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Dashboard → Blueprints → New Blueprint Instance → pick this repo. Render
+# creates every service below and prompts for the `sync: false` secrets once.
+#
+# Both processes share the "awwtomation" env group. NEXT_PUBLIC_* must be in
+# that group too: Render exposes env vars at build time and Next inlines them.
+# Singapore is the closest region to South Asia; change it if your users aren't there.
+
+services:
+  - type: web
+    name: awwtomation-web
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - fromGroup: awwtomation
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+
+  - type: worker
+    name: awwtomation-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run worker
+    autoDeploy: true
+    envVars:
+      - fromGroup: awwtomation
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+
+  # Cron jobs call the web app's cron endpoints. With the worker running they
+  # are a safety net (the worker schedules the same work internally); they
+  # become essential if you drop the worker to save money.
+  - type: cron
+    name: awwtomation-cron-reconcile
+    runtime: node
+    region: singapore
+    schedule: "*/5 * * * *"
+    buildCommand: echo "nothing to build"
+    startCommand: curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$NEXT_PUBLIC_APP_URL/api/cron/reconcile"
+    envVars:
+      - fromGroup: awwtomation
+
+  - type: cron
+    name: awwtomation-cron-refresh-tokens
+    runtime: node
+    region: singapore
+    schedule: "0 3 * * *"
+    buildCommand: echo "nothing to build"
+    startCommand: curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$NEXT_PUBLIC_APP_URL/api/cron/refresh-tokens"
+    envVars:
+      - fromGroup: awwtomation
+
+  # No worker? Uncomment: drains the job queue once a minute instead.
+  # - type: cron
+  #   name: awwtomation-cron-tick
+  #   runtime: node
+  #   region: singapore
+  #   schedule: "* * * * *"
+  #   buildCommand: echo "nothing to build"
+  #   startCommand: curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$NEXT_PUBLIC_APP_URL/api/cron/tick"
+  #   envVars:
+  #     - fromGroup: awwtomation
+
+# Optional: Render-managed Postgres instead of Supabase's. If you use it, set
+# DATABASE_URL and DIRECT_URL in the env group to its Internal Database URL
+# (Supabase Auth is still required for Google sign-in).
+# databases:
+#   - name: awwtomation-db
+#     region: singapore
+#     plan: starter
+#     postgresMajorVersion: "16"
+
+envVarGroups:
+  - name: awwtomation
+    envVars:
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: APP_ENCRYPTION_KEY
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        generateValue: true
+      - key: SUPER_ADMIN_EMAILS
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: INSTAGRAM_APP_ID
+        sync: false
+      - key: INSTAGRAM_APP_SECRET
+        sync: false
+      - key: META_GRAPH_API_VERSION
+        value: v25.0
+      - key: DODO_MODE
+        value: test
+      - key: DODO_SECRET_KEY
+        sync: false
+      - key: DODO_WEBHOOK_SECRET
+        sync: false
+      - key: DODO_PRODUCT_STARTER_MONTHLY
+        sync: false
+      - key: DODO_PRODUCT_STARTER_ANNUAL
+        sync: false
+      - key: DODO_PRODUCT_PRO_MONTHLY
+        sync: false
+      - key: DODO_PRODUCT_PRO_ANNUAL
+        sync: false
+      - key: DODO_PRODUCT_AGENCY_MONTHLY
+        sync: false
+      - key: DODO_PRODUCT_AGENCY_ANNUAL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
