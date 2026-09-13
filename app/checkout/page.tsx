@@ -4,16 +4,16 @@ import { redirect } from "next/navigation";
 import type { PlanTier } from "@prisma/client";
 
 import { CheckoutClient } from "@/components/billing/checkout-client";
-import { OperatorNotice } from "@/components/billing/operator-notice";
+import { BillingUnavailable } from "@/components/billing/billing-unavailable";
 import { Button } from "@/components/ui/button";
-import { getDodoMode, isBillingConfigured, missingProductIds, resolveProductId } from "@/lib/billing/dodo/config";
+import { getDodoMode, isBillingConfigured, resolveProductId } from "@/lib/billing/dodo/config";
 import { type BillingIntervalId, isBillingInterval, isPlanTier, isPurchasablePlan, PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
 import { getBillingOverview } from "@/lib/services/billing";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: `Checkout · ${brand.name}`, robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Checkout", robots: { index: false, follow: false } };
 
 type SearchParams = Promise<{ tier?: string | string[]; interval?: string | string[] }>;
 
@@ -37,7 +37,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
   const interval: BillingIntervalId = isBillingInterval(intervalParam) ? intervalParam : "MONTHLY";
   if (!tier) redirect("/settings/billing?error=plan");
 
-  const overview = await getBillingOverview(ctx.workspace.id);
+  const overview = await getBillingOverview(ctx.organization.id);
   if (overview.hasSubscription) redirect("/settings/billing");
 
   if (!isBillingConfigured() || !resolveProductId(tier, interval)) {
@@ -45,7 +45,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
         <div className="w-full max-w-lg animate-fade-in">
           <p className="mb-4 text-center text-lg font-semibold tracking-tight">{brand.name}</p>
-          <OperatorNotice configured={isBillingConfigured()} missingProducts={missingProductIds()} />
+          <BillingUnavailable />
           <div className="mt-4 text-center">
             <Button asChild variant="outline" size="sm">
               <Link href="/settings/billing">Back to billing</Link>
@@ -63,7 +63,7 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
         initialInterval={interval}
         email={ctx.user.email}
         defaultName={ctx.user.name ?? ""}
-        workspaceName={ctx.workspace.name}
+        organizationName={ctx.organization.name}
         mode={getDodoMode()}
       />
       <span className="sr-only">{PLANS[tier].label} plan checkout</span>

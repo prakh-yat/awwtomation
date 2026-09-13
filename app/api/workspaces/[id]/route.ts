@@ -8,11 +8,11 @@ export const runtime = "nodejs";
 
 type Params = { id: string };
 
-/** Workspace details for any member. */
+/** Workspace details for anyone in its organization. */
 export const GET = withUser<Params>(async (_req, user, { params }) => {
   const { id } = await params;
-  const membership = await assertMembership(id, user.id, "MEMBER");
-  return NextResponse.json({ workspace: membership.workspace, role: membership.role });
+  const { workspace, role } = await assertMembership(id, user.id, "MEMBER");
+  return NextResponse.json({ workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug, timezone: workspace.timezone }, role });
 });
 
 /** ADMIN+ may rename / change timezone / mark onboarding complete. */
@@ -24,7 +24,7 @@ export const PATCH = withUser<Params>(async (req, user, { params }) => {
   return NextResponse.json({ workspace });
 });
 
-/** OWNER only. Cascades every tenant row. Clears the active cookie if it pointed here. */
+/** OWNER only, and never the organization's last workspace. Clears the active cookie if it pointed here. */
 export const DELETE = withUser<Params>(async (_req, user, { params }) => {
   const { id } = await params;
   await deleteWorkspace(id, user.id);

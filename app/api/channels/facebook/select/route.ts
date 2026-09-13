@@ -6,6 +6,7 @@ import {
   completeFacebookConnect,
   FACEBOOK_CONNECT_COOKIE,
   parseFacebookConnectSession,
+  toChannelView,
   type ChannelSummary,
 } from "@/lib/services/channels";
 import { ApiError, parseBody, withWorkspace } from "@/lib/workspace/api";
@@ -19,7 +20,7 @@ const bodySchema = z.object({
 /**
  * Step 2 of the Facebook flow. Body: `{ pageIds: string[] }`. Reads the
  * picker cookie set by the OAuth callback; it must belong to the same user
- * and workspace. Responds `{ channels: ChannelSummary[] }` and clears the cookie.
+ * and workspace. Responds `{ channels: ChannelView[] }` and clears the cookie.
  */
 export const POST = withWorkspace(
   async (req, ctx) => {
@@ -38,7 +39,7 @@ export const POST = withWorkspace(
       throw err;
     }
 
-    const res = NextResponse.json({ channels }, { status: 201 });
+    const res = NextResponse.json({ channels: channels.map(toChannelView) }, { status: 201 });
     res.cookies.set(FACEBOOK_CONNECT_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   },

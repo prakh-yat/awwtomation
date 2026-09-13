@@ -3,225 +3,272 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, Zap } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { Logo, LogoMark } from "@/components/ui/logo";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { LogoMark, Wordmark } from "@/components/ui/logo";
 import { cn } from "@/lib/utils";
+import { isBuilderPath } from "@/lib/workspace/request";
 
-import { getNavGroups, isNavItemActive, type NavItem } from "./nav-config";
+import { isActivePath, PRIMARY_NAV, settingsLinks } from "./nav-config";
+import { useRailTooltip } from "./rail-tooltip";
 import { persistSidebarCollapsed } from "./sidebar-collapse";
-import { planLabel, type ShellProps } from "./types";
+import type { ShellProps } from "./types";
+import { UsageMeter } from "./usage-meter";
 import { UserMenu } from "./user-menu";
-import { WorkspaceSwitcher } from "./workspace-switcher";
+import { WorkspaceCard, WorkspaceSwitcher } from "./workspace-switcher";
 
 export interface SidebarProps extends ShellProps {
-  /** Initial collapsed state (from the or_sidebar cookie, read on the server). */
+  /** Initial collapsed state, read from the cookie on the server so first paint is the right width. */
   collapsed: boolean;
-  /**
-   * "rail" (default) is the sticky desktop sidebar with a collapse toggle;
-   * "drawer" fills a mobile sheet and never collapses.
-   */
+  /** "rail" is the desktop sidebar; "drawer" fills the mobile sheet and never collapses. */
   variant?: "rail" | "drawer";
-  /** Called after a nav link is clicked — the mobile drawer uses it to close. */
+  /** Called after navigating — the mobile drawer closes itself with it. */
   onNavigate?: () => void;
 }
 
-function NavLink({
-  item,
-  active,
-  collapsed,
-  onNavigate,
-}: {
-  item: NavItem;
-  active: boolean;
-  collapsed: boolean;
-  onNavigate?: () => void;
-}) {
-  const Icon = item.icon;
-  const link = (
-    <Link
-      href={item.href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "group relative flex h-8 items-center rounded-md text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-        collapsed ? "w-9 justify-center px-0" : "gap-2.5 px-2.5",
-        active
-          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-          : "text-sidebar-foreground hover:bg-sidebar-accent/70 hover:text-foreground",
-      )}
-    >
-      {/* 2px black indicator on the leading edge of the active item. */}
-      {active ? (
-        <span
-          aria-hidden
-          className={cn(
-            "absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-foreground",
-            collapsed ? "-left-2" : "left-0",
-          )}
-        />
-      ) : null}
-      <Icon
-        size={16}
-        strokeWidth={active ? 2 : 1.75}
-        className={cn("shrink-0", active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground")}
-      />
-      {collapsed ? <span className="sr-only">{item.label}</span> : <span className="truncate">{item.label}</span>}
-    </Link>
-  );
-
-  if (!collapsed) return link;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent side="right">{item.label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function Sidebar({
+export function Sidebar({
   user,
+  organization,
+  organizationCount,
   workspaces,
   activeWorkspaceId,
   role,
-  isSuperAdmin,
+  usage,
   collapsed: initialCollapsed,
   variant = "rail",
   onNavigate,
 }: SidebarProps) {
-  const pathname = usePathname();
-  const [collapsed, setCollapsed] = React.useState(variant === "drawer" ? false : initialCollapsed);
-  const groups = React.useMemo(() => getNavGroups({ isSuperAdmin, role }), [isSuperAdmin, role]);
-  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
-  const showUpgrade = activeWorkspace ? activeWorkspace.plan !== "AGENCY" : false;
+  const pathname = usePathname() ?? "";
+  const isRail = variant === "rail";
+  const [preferCollapsed, setPreferCollapsed] = React.useState(isRail ? initialCollapsed : false);
 
-  function toggle() {
-    const next = !collapsed;
-    setCollapsed(next);
-    persistSidebarCollapsed(next);
+  // The builder needs every pixel for its canvas, so the rail folds away there
+  // without touching the saved preference. Expanding it there lasts until you leave.
+  const focusMode = isRail && isBuilderPath(pathname);
+  const [expandedInFocus, setExpandedInFocus] = React.useState(false);
+  const [focusPath, setFocusPath] = React.useState(pathname);
+  if (focusPath !== pathname) {
+    setFocusPath(pathname);
+    setExpandedInFocus(false);
+  }
+  const collapsed = focusMode ? !expandedInFocus : preferCollapsed;
+  const rail = useRailTooltip(collapsed);
+
+  const [switcherOpen, setSwitcherOpen] = React.useState(false);
+
+  const settingsActive = isActivePath(pathname, "/settings");
+  const [settingsOpen, setSettingsOpen] = React.useState(settingsActive);
+  // Landing on a settings page from elsewhere (a link in a page, the user menu)
+  // should reveal where you are.
+  React.useEffect(() => {
+    if (settingsActive) setSettingsOpen(true);
+  }, [settingsActive]);
+
+  const subLinks = React.useMemo(() => settingsLinks(role), [role]);
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+
+  function toggleCollapsed() {
+    if (focusMode) {
+      setExpandedInFocus((prev) => !prev);
+    } else {
+      setPreferCollapsed((prev) => {
+        const next = !prev;
+        persistSidebarCollapsed(next);
+        return next;
+      });
+    }
+    rail.hide();
   }
 
-  const isRail = variant === "rail";
-  const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
-  const toggleButton = isRail ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
+  function openSwitcher() {
+    rail.hide();
+    setSwitcherOpen(true);
+  }
+
+  function navigate() {
+    rail.hide();
+    onNavigate?.();
+  }
+
+  const rowClass = (active: boolean) =>
+    cn(
+      "group flex h-9 items-center rounded-lg text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+      collapsed ? "w-10 justify-center" : "gap-3 px-2.5",
+      active
+        ? "bg-sidebar-accent font-medium text-foreground"
+        : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+    );
+
+  const iconClass = (active: boolean) =>
+    cn("h-[18px] w-[18px] shrink-0", active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground");
+
+  const content = (
+    <>
+      {isRail ? (
+        // Sits half outside the rail so it never competes with a nav row for space.
         <button
           type="button"
-          onClick={toggle}
+          onClick={toggleCollapsed}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={!collapsed}
+          className="absolute -right-3 top-1/2 z-30 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-background text-muted-foreground shadow-card outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ToggleIcon size={16} strokeWidth={1.75} />
+          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
         </button>
-      </TooltipTrigger>
-      <TooltipContent side="right">{collapsed ? "Expand" : "Collapse"}</TooltipContent>
-    </Tooltip>
-  ) : null;
+      ) : null}
 
-  return (
-    <aside
-      data-collapsed={collapsed ? "true" : "false"}
-      className={cn(
-        "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
-        isRail && "sticky top-0 hidden h-screen transition-[width] duration-200 ease-in-out md:flex",
-        isRail && (collapsed ? "w-14" : "w-64"),
-        !isRail && "h-full w-full",
-      )}
-    >
-      {/* Logo row */}
-      <div className={cn("flex h-14 shrink-0 items-center", collapsed ? "flex-col justify-center gap-1 px-0" : "gap-2 px-4")}>
+      {/* Brand */}
+      <div className={cn("flex h-16 shrink-0 items-center", collapsed ? "justify-center" : "px-5")}>
         <Link
           href="/dashboard"
-          onClick={onNavigate}
-          className="flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={navigate}
           aria-label="Dashboard"
+          className="flex items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {collapsed ? <LogoMark size={26} /> : <Logo size={26} />}
+          <LogoMark size={28} />
+          {collapsed ? null : <Wordmark height={13} />}
         </Link>
-        {collapsed ? null : <span className="flex-1" />}
-        {collapsed ? null : toggleButton}
       </div>
-      {collapsed && isRail ? <div className="flex justify-center pb-1">{toggleButton}</div> : null}
 
-      {/* Workspace switcher */}
-      <div className={cn("shrink-0 pb-2", collapsed ? "px-2.5" : "px-2")}>
-        <WorkspaceSwitcher workspaces={workspaces} activeWorkspaceId={activeWorkspaceId} collapsed={collapsed} />
+      {/* Workspace */}
+      <div className={cn("shrink-0 pb-3", collapsed ? "flex justify-center px-3" : "px-3")}>
+        <WorkspaceCard
+          organizationName={organization.name}
+          workspace={activeWorkspace}
+          collapsed={collapsed}
+          onOpen={openSwitcher}
+          railBind={rail.bind(activeWorkspace?.name ?? "Workspace")}
+        />
       </div>
 
       {/* Navigation */}
-      <nav
-        aria-label="Primary"
-        className={cn("scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden py-1", collapsed ? "px-2.5" : "px-2")}
-      >
-        {groups.map((group, gi) => (
-          <div key={group.id} className={cn(gi > 0 && "mt-4")}>
+      <nav aria-label="Main" className={cn("scrollbar-thin min-h-0 flex-1 overflow-y-auto py-1", collapsed ? "px-3" : "px-3")}>
+        <ul className={cn("flex flex-col gap-0.5", collapsed && "items-center")}>
+          {PRIMARY_NAV.map((item) => {
+            const active = isActivePath(pathname, item.href);
+            const Icon = item.icon;
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={navigate}
+                  aria-current={active ? "page" : undefined}
+                  aria-label={collapsed ? item.label : undefined}
+                  {...rail.bind(item.label)}
+                  className={rowClass(active)}
+                >
+                  <Icon className={iconClass(active)} strokeWidth={active ? 2 : 1.75} />
+                  {collapsed ? null : <span className="truncate">{item.label}</span>}
+                </Link>
+              </li>
+            );
+          })}
+
+          <li className={cn("mt-2 pt-2", collapsed ? "border-t border-sidebar-border" : "border-t border-sidebar-border")}>
             {collapsed ? (
-              gi > 0 ? <div className="mx-1 mb-2 h-px bg-sidebar-border" aria-hidden /> : null
+              // A nested list has nowhere to go at this width, so Settings is a plain link.
+              <Link
+                href="/settings"
+                onClick={navigate}
+                aria-label="Settings"
+                {...rail.bind("Settings")}
+                className={rowClass(settingsActive)}
+              >
+                <Settings className={iconClass(settingsActive)} strokeWidth={settingsActive ? 2 : 1.75} />
+              </Link>
             ) : (
-              <p className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                {group.label}
-              </p>
-            )}
-            <ul className="flex flex-col gap-0.5">
-              {group.items.map((item) => (
-                <li key={item.href}>
-                  <NavLink
-                    item={item}
-                    active={isNavItemActive(pathname, item)}
-                    collapsed={collapsed}
-                    onNavigate={onNavigate}
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  aria-expanded={settingsOpen}
+                  aria-controls="sidebar-settings"
+                  className={cn("w-full text-left", rowClass(settingsActive && !settingsOpen))}
+                >
+                  <Settings className={iconClass(settingsActive)} strokeWidth={settingsActive ? 2 : 1.75} />
+                  <span className="flex-1">Settings</span>
+                  <ChevronDown
+                    className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200", settingsOpen && "rotate-180")}
                   />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+                </button>
+                {settingsOpen ? (
+                  <ul id="sidebar-settings" className="mt-0.5 space-y-0.5 pl-[2.375rem]">
+                    {subLinks.map((link) => {
+                      const active = isActivePath(pathname, link.href, link.exact);
+                      return (
+                        <li key={link.href}>
+                          <Link
+                            href={link.href}
+                            onClick={navigate}
+                            aria-current={active ? "page" : undefined}
+                            className={cn(
+                              "flex h-8 items-center rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                              active
+                                ? "bg-sidebar-accent font-medium text-foreground"
+                                : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                            )}
+                          >
+                            {link.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </>
+            )}
+          </li>
+        </ul>
       </nav>
 
-      {/* Footer: plan + user */}
-      <div className={cn("shrink-0 border-t border-sidebar-border py-2", collapsed ? "px-2.5" : "px-2")}>
-        {activeWorkspace ? (
-          collapsed ? (
-            showUpgrade ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link
-                    href="/settings/billing"
-                    onClick={onNavigate}
-                    aria-label={`${planLabel(activeWorkspace.plan)} plan — upgrade`}
-                    className="mb-1 flex h-8 w-9 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <Zap size={16} strokeWidth={1.75} />
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{planLabel(activeWorkspace.plan)} plan · Upgrade</TooltipContent>
-              </Tooltip>
-            ) : null
-          ) : (
-            <div className="mb-1 flex h-8 items-center justify-between px-2">
-              <Badge variant="outline" className="bg-background">
-                {planLabel(activeWorkspace.plan)}
-              </Badge>
-              {showUpgrade ? (
-                <Link
-                  href="/settings/billing"
-                  onClick={onNavigate}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
-                >
-                  <Zap size={12} strokeWidth={2} />
-                  Upgrade
-                </Link>
-              ) : null}
-            </div>
-          )
-        ) : null}
-        <UserMenu user={user} isSuperAdmin={isSuperAdmin} collapsed={collapsed} />
+      {/* Usage */}
+      <div className={cn("shrink-0 pb-3 pt-2", collapsed ? "px-3" : "px-3")}>
+        <UsageMeter usage={usage} collapsed={collapsed} onNavigate={navigate} railBind={rail.bind("DMs this month")} />
       </div>
-    </aside>
+
+      {/* Account */}
+      <div className={cn("shrink-0 border-t border-sidebar-border py-2", collapsed ? "flex justify-center px-3" : "px-3")}>
+        <UserMenu
+          user={user}
+          organization={organization}
+          canSwitchOrganization={organizationCount > 1}
+          collapsed={collapsed}
+          side={isRail ? "right" : "top"}
+          onNavigate={navigate}
+          railBind={rail.bind(user.name?.trim() || user.email)}
+        />
+      </div>
+
+      <WorkspaceSwitcher
+        organization={organization}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        canCreate={role === "OWNER" || role === "ADMIN"}
+        collapsed={collapsed}
+        open={switcherOpen}
+        onOpenChange={setSwitcherOpen}
+        variant={variant}
+      />
+
+      {rail.element}
+    </>
+  );
+
+  if (!isRail) {
+    return <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">{content}</aside>;
+  }
+
+  // The outer column stretches with the page so the background and border run the
+  // full height; the rail inside stays pinned to the viewport while content scrolls.
+  return (
+    <div
+      data-collapsed={collapsed ? "true" : "false"}
+      className={cn(
+        "hidden shrink-0 border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-out md:block",
+        collapsed ? "w-16" : "w-64",
+      )}
+    >
+      <aside className="sticky top-0 flex h-screen flex-col text-sidebar-foreground">{content}</aside>
+    </div>
   );
 }
-
-export { Sidebar };

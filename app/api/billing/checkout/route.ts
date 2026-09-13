@@ -10,7 +10,7 @@ export const POST = withWorkspace(
   async (req, ctx) => {
     const body = await parseBody(req, checkoutSchema);
     const result = await startCheckout({
-      workspaceId: ctx.workspace.id,
+      organizationId: ctx.organization.id,
       userId: ctx.user.id,
       email: ctx.user.email,
       name: ctx.user.name,

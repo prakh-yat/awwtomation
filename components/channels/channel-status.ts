@@ -1,6 +1,6 @@
 import type { ChannelPlatform } from "@prisma/client";
 
-import type { ChannelSummary } from "@/lib/services/channels";
+import type { ChannelView } from "@/lib/services/channels";
 
 /**
  * Pure presentation helpers shared by server and client components. Kept
@@ -8,33 +8,37 @@ import type { ChannelSummary } from "@/lib/services/channels";
  * client bundle.
  */
 
-/** Same threshold as lib/meta/tokens TOKEN_REFRESH_WINDOW_DAYS / services TOKEN_WARNING_DAYS. */
-const TOKEN_WARNING_DAYS = 10;
-
 export type StatusVariant = "success" | "warning" | "destructive" | "secondary";
 
 export type ChannelStatusView = {
   label: string;
   variant: StatusVariant;
-  /** True when the only fix is going through OAuth again. */
+  /** One sentence under the stats saying what's going on, or null when all is well. */
+  detail: string | null;
+  /** True when the only fix is signing in with Meta again. */
   needsReconnect: boolean;
 };
 
-export function channelStatusView(channel: Pick<ChannelSummary, "status" | "health">): ChannelStatusView {
-  const days = channel.health.tokenDaysLeft;
-  switch (channel.status) {
-    case "DISCONNECTED":
-      return { label: "Disconnected", variant: "secondary", needsReconnect: true };
-    case "TOKEN_EXPIRED":
-      return { label: "Expired", variant: "destructive", needsReconnect: true };
-    case "ERROR":
-      return { label: "Error", variant: "destructive", needsReconnect: true };
-    case "ACTIVE":
-      if (days !== null && days <= 0) return { label: "Expired", variant: "destructive", needsReconnect: true };
-      if (days !== null && days <= TOKEN_WARNING_DAYS) {
-        return { label: `Token expiring in ${days} day${days === 1 ? "" : "s"}`, variant: "warning", needsReconnect: false };
-      }
-      return { label: "Active", variant: "success", needsReconnect: false };
+export function channelStatusView(channel: Pick<ChannelView, "platform" | "health">): ChannelStatusView {
+  const platform = channel.platform === "INSTAGRAM" ? "Instagram" : "Facebook";
+  const { state, daysLeft, problem } = channel.health;
+  switch (state) {
+    case "disconnected":
+      return { label: "Disconnected", variant: "secondary", detail: "Automations on this account are off until you reconnect it.", needsReconnect: true };
+    case "reconnect":
+      return { label: "Reconnect needed", variant: "destructive", detail: problem ?? `${platform} signed this account out. Reconnect to keep automations running.`, needsReconnect: true };
+    case "not_receiving":
+      return { label: "Not receiving", variant: "warning", detail: problem ?? "New comments and messages aren't reaching Awwtomation. Reconnecting usually fixes this.", needsReconnect: true };
+    case "expiring":
+      return {
+        label: "Reconnect soon",
+        variant: "warning",
+        detail: `${platform} asks you to sign in again every 60 days. ${daysLeft === 1 ? "One day" : `${daysLeft} days`} left.`,
+        needsReconnect: false,
+      };
+    case "ok":
+    default:
+      return { label: "Connected", variant: "success", detail: null, needsReconnect: false };
   }
 }
 
@@ -43,12 +47,12 @@ export const PLATFORM_LABEL: Record<ChannelPlatform, string> = {
   FACEBOOK: "Facebook Page",
 };
 
-export function channelDisplayName(channel: Pick<ChannelSummary, "username" | "name" | "externalId">): string {
+export function channelDisplayName(channel: Pick<ChannelView, "username" | "name" | "platform">): string {
   if (channel.username) return `@${channel.username.replace(/^@/, "")}`;
-  return channel.name ?? channel.externalId;
+  return channel.name ?? PLATFORM_LABEL[channel.platform];
 }
 
-/** Start-of-OAuth URL. Plain `<a href>`, never `<Link>` — it's a route handler, not a page. */
+/** Start-of-OAuth URL. Plain `<a href>`, never `<Link>`: it's a route handler, not a page. */
 export function connectHref(platform: ChannelPlatform): string {
   return `/api/meta/${platform.toLowerCase()}/start`;
 }

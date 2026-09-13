@@ -46,7 +46,7 @@ export type TemplateSummary = Omit<AutomationTemplate, "flow"> & { steps: Templa
 
 // ───────────────────────── Builders ─────────────────────────
 
-const STEP_Y = 170;
+const STEP_Y = 220;
 const BRANCH_X = 220;
 
 function node(id: string, x: number, y: number, data: FlowNodeData): FlowNode {
@@ -71,21 +71,21 @@ const ACCOUNT_PLACEHOLDER = "{{account}}";
 const linkInDm: AutomationTemplate = {
   id: "link-in-dm",
   name: "Link in DM",
-  description: "Someone comments a keyword on your post and instantly gets the link in their DMs.",
+  description: "When someone comments a keyword, send them the link in a DM.",
   category: "Links",
   triggerType: "COMMENT",
   matchMode: "CONTAINS",
   keywords: ["link"],
   followGate: false,
   publicReplyEnabled: true,
-  publicReplies: ["Sent you a DM 📩", "Check your inbox 👀", "Just sent it over!"],
+  publicReplies: ["Sent you a DM", "Check your messages", "Just sent it over"],
   flow: {
     nodes: [
       TRIGGER,
       node("message-1", 0, STEP_Y, {
         type: "send_message",
         message: {
-          text: "Hey {{first_name|there}}! Thanks for commenting — here's the link you asked for 👇",
+          text: "Hi {{first_name|there}}, thanks for your comment. Here's the link you asked for.",
           buttons: [{ type: "web_url", title: "Open link", url: "https://example.com" }],
         },
       }),
@@ -97,34 +97,34 @@ const linkInDm: AutomationTemplate = {
 const followToUnlock: AutomationTemplate = {
   id: "follow-to-unlock",
   name: "Follow to unlock",
-  description: "Only followers get the link. Non-followers are asked to follow first, then tap to check again.",
+  description: "Send the link to followers. Everyone else is asked to follow first, then taps a button to try again.",
   category: "Growth",
   triggerType: "COMMENT",
   matchMode: "CONTAINS",
   keywords: ["link", "send"],
   followGate: true,
   publicReplyEnabled: true,
-  publicReplies: ["Check your DMs 📩", "Sent! Look in your inbox 👀"],
+  publicReplies: ["Check your DMs", "Sent, have a look in your messages"],
   flow: {
     nodes: [
       TRIGGER,
       node("follow-1", 0, STEP_Y, {
         type: "condition_follow",
-        retryPrompt: `Follow ${ACCOUNT_PLACEHOLDER} then tap the button below to get your link 👇`,
+        retryPrompt: `Follow ${ACCOUNT_PLACEHOLDER}, then tap the button below to get your link.`,
       }),
       node("message-link", -BRANCH_X, STEP_Y * 2, {
         type: "send_message",
         message: {
-          text: "You're following — thank you! Here's your link 👇",
+          text: "Thanks for following. Here's your link.",
           buttons: [{ type: "web_url", title: "Open link", url: "https://example.com" }],
         },
       }),
       node("message-follow", BRANCH_X, STEP_Y * 2, {
         type: "send_message",
         message: {
-          text: `Almost there! Follow ${ACCOUNT_PLACEHOLDER} then tap below and I'll send the link right away.`,
+          text: `Almost there. Follow ${ACCOUNT_PLACEHOLDER}, then tap below and the link is yours.`,
           // The payload is preserved by the engine; tapping it re-runs the follow check.
-          buttons: [{ type: "postback", title: "I'm following ✓", payload: "follow_check:follow-1" }],
+          buttons: [{ type: "postback", title: "I'm following", payload: "follow_check:follow-1" }],
         },
       }),
     ],
@@ -140,15 +140,15 @@ const followToUnlock: AutomationTemplate = {
 
 const leadMagnet: AutomationTemplate = {
   id: "lead-magnet-tag",
-  name: "Lead magnet + tag",
-  description: "Tag the contact as a lead, confirm with a button tap, then deliver the freebie.",
+  name: "Free guide",
+  description: "Tag the person as a lead, then send your free guide when they tap a button.",
   category: "Leads",
   triggerType: "COMMENT",
   matchMode: "CONTAINS",
   keywords: ["guide", "free"],
   followGate: false,
   publicReplyEnabled: true,
-  publicReplies: ["Sent it to your DMs 📩"],
+  publicReplies: ["Sent it to your DMs"],
   flow: {
     nodes: [
       TRIGGER,
@@ -156,14 +156,14 @@ const leadMagnet: AutomationTemplate = {
       node("message-1", 0, STEP_Y * 2, {
         type: "send_message",
         message: {
-          text: "Hi {{first_name|there}}! Want the free guide? Tap below and I'll send it straight away.",
+          text: "Hi {{first_name|there}}, want the free guide? Tap below and I'll send it now.",
           buttons: [{ type: "postback", title: "Send it to me", payload: "btn:0" }],
         },
       }),
       node("message-2", 0, STEP_Y * 3, {
         type: "send_message",
         message: {
-          text: "Here you go — enjoy! Reply here any time if you have questions.",
+          text: "Here it is. Reply here if you have any questions.",
           buttons: [{ type: "web_url", title: "Download the guide", url: "https://example.com/guide" }],
         },
       }),
@@ -174,8 +174,8 @@ const leadMagnet: AutomationTemplate = {
 
 const storyReplyLink: AutomationTemplate = {
   id: "story-reply-link",
-  name: "Story reply → link",
-  description: "When someone replies to your story with a keyword, send them the link automatically.",
+  name: "Story reply link",
+  description: "When someone replies to your story with a keyword, send them the link.",
   category: "Stories",
   triggerType: "STORY_REPLY",
   matchMode: "CONTAINS",
@@ -189,7 +189,7 @@ const storyReplyLink: AutomationTemplate = {
       node("message-1", 0, STEP_Y, {
         type: "send_message",
         message: {
-          text: "Thanks for replying to my story! Here's the link 👇",
+          text: "Thanks for replying to the story. Here's the link.",
           buttons: [{ type: "web_url", title: "Open link", url: "https://example.com" }],
         },
       }),
@@ -200,8 +200,8 @@ const storyReplyLink: AutomationTemplate = {
 
 const dmAutoresponder: AutomationTemplate = {
   id: "dm-keyword-autoresponder",
-  name: "DM keyword autoresponder",
-  description: "Answer common DM questions instantly with a message and quick links.",
+  name: "Answer price questions",
+  description: "When a DM asks about price, reply with your price list and a way to get in touch.",
   category: "DMs",
   triggerType: "DM",
   matchMode: "CONTAINS",
@@ -215,7 +215,7 @@ const dmAutoresponder: AutomationTemplate = {
       node("message-1", 0, STEP_Y, {
         type: "send_message",
         message: {
-          text: "Hey {{first_name|there}}! This is an automated reply — here's everything about pricing. A human will follow up if you have more questions.",
+          text: "Hi {{first_name|there}}, here are our prices. Someone from the team will reply if you have more questions.",
           buttons: [
             { type: "web_url", title: "See pricing", url: "https://example.com/pricing" },
             { type: "web_url", title: "Book a call", url: "https://example.com/book" },
@@ -230,14 +230,14 @@ const dmAutoresponder: AutomationTemplate = {
 const giveaway: AutomationTemplate = {
   id: "giveaway-entry",
   name: "Giveaway entry",
-  description: "Every comment counts as an entry: tag the contact and confirm their entry by DM.",
+  description: "Every comment is an entry. Tag the person and confirm their entry by DM.",
   category: "Engagement",
   triggerType: "COMMENT",
   matchMode: "ANY",
   keywords: [],
   followGate: false,
   publicReplyEnabled: true,
-  publicReplies: ["You're in! 🎉", "Entry received — good luck! 🍀"],
+  publicReplies: ["You're in", "Entry received, good luck"],
   flow: {
     nodes: [
       TRIGGER,
@@ -245,7 +245,7 @@ const giveaway: AutomationTemplate = {
       node("message-1", 0, STEP_Y * 2, {
         type: "send_message",
         message: {
-          text: "You're entered in the giveaway, {{first_name|friend}}! 🎉 We'll announce the winner here — keep an eye on your inbox.",
+          text: "You're entered in the giveaway, {{first_name|there}}. We'll announce the winner on our page, so keep an eye out.",
         },
       }),
     ],
@@ -255,38 +255,38 @@ const giveaway: AutomationTemplate = {
 
 const leadCaptureEmail: AutomationTemplate = {
   id: "lead-capture-email",
-  name: "Lead capture (ask for email)",
-  description: "Offer something valuable, ask for their email, tag them as a lead and confirm — all inside the DM.",
+  name: "Collect emails",
+  description: "Ask for an email address in the DM, save it on the contact and tag them as a lead.",
   category: "Leads",
   triggerType: "COMMENT",
   matchMode: "CONTAINS",
   keywords: ["guide", "free", "send"],
   followGate: false,
   publicReplyEnabled: true,
-  publicReplies: ["Sent you a DM 📩", "Check your inbox 👀"],
+  publicReplies: ["Sent you a DM", "Check your messages"],
   flow: {
     nodes: [
       TRIGGER,
       node("message-1", 0, STEP_Y, {
         type: "send_message",
         message: {
-          text: "Hey {{first_name|there}}! I've got the free guide ready for you. Tap below and I'll send it to your inbox 👇",
+          text: "Hi {{first_name|there}}, the free guide is ready. Tap below and I'll email it to you.",
           // Tapping the button opens the 24h window so the question can go out as a normal message.
           buttons: [{ type: "postback", title: "Get it", payload: "btn:0" }],
         },
       }),
       node("ask-email", 0, STEP_Y * 2, {
         type: "ask_question",
-        prompt: { text: "What's the best email to send it to?" },
+        prompt: { text: "What email should I send it to?" },
         saveTo: "email",
         validation: "email",
-        retryPrompt: "Hmm, that doesn't look like an email address. Could you type it again?",
+        retryPrompt: "That doesn't look like an email address. Could you type it again?",
         maxRetries: 2,
       }),
       node("tag-lead", 0, STEP_Y * 3, { type: "add_tag", tag: "lead" }),
       node("message-2", 0, STEP_Y * 4, {
         type: "send_message",
-        message: { text: "Thanks! Check your inbox — it's on its way to {{email|you}} ✉️" },
+        message: { text: "Thanks. It's on its way to {{email|your inbox}}." },
       }),
     ],
     edges: [edge("trigger", "message-1"), edge("message-1", "ask-email", "btn:0"), edge("ask-email", "tag-lead"), edge("tag-lead", "message-2")],
@@ -295,8 +295,8 @@ const leadCaptureEmail: AutomationTemplate = {
 
 const quizPoll: AutomationTemplate = {
   id: "quiz-poll",
-  name: "Quiz / poll",
-  description: "Ask a one-tap question in the DM, store the answer on the contact and tag everyone who voted.",
+  name: "Quick poll",
+  description: "Ask a one-tap question, save the answer on the contact and tag everyone who voted.",
   category: "Engagement",
   triggerType: "DM",
   matchMode: "CONTAINS",
@@ -310,7 +310,7 @@ const quizPoll: AutomationTemplate = {
       node("ask-answer", 0, STEP_Y, {
         type: "ask_question",
         prompt: {
-          text: "Quick poll, {{first_name|friend}}: which topic should I cover next?",
+          text: "Quick poll, {{first_name|there}}: which topic should we cover next?",
           quickReplies: [
             { title: "Growth", payload: "qr:0" },
             { title: "Content", payload: "qr:1" },
@@ -321,10 +321,10 @@ const quizPoll: AutomationTemplate = {
         validation: "none",
         maxRetries: 1,
       }),
-      node("tag-done", 0, STEP_Y * 2, { type: "add_tag", tag: "quiz_done" }),
+      node("tag-done", 0, STEP_Y * 2, { type: "add_tag", tag: "voted" }),
       node("message-thanks", 0, STEP_Y * 3, {
         type: "send_message",
-        message: { text: "Got it — {{answer|noted}}! Thanks for voting, I'll share the results soon 🙌" },
+        message: { text: "Thanks for voting. We'll share the results soon." },
       }),
     ],
     edges: [edge("trigger", "ask-answer"), edge("ask-answer", "tag-done"), edge("tag-done", "message-thanks")],
@@ -386,9 +386,15 @@ export function stepLabel(data: FlowNodeData, triggerType: TriggerType): string 
     case "delay":
       return `Wait ${formatDelay(data.seconds)}`;
     case "add_tag":
-      return `Tag "${data.tag}"`;
+      return `Tag “${data.tag}”`;
     case "remove_tag":
-      return `Untag "${data.tag}"`;
+      return `Remove tag “${data.tag}”`;
+    case "add_to_pipeline":
+      return "Add to pipeline";
+    case "move_stage":
+      return "Move stage";
+    case "remove_from_pipeline":
+      return "Remove from pipeline";
   }
 }
 

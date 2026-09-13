@@ -14,19 +14,9 @@ export default function ContactsLoading() {
         </div>
       </div>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border bg-card p-5 shadow-card">
-            <Skeleton className="h-3.5 w-24" />
-            <Skeleton className="mt-3 h-7 w-16" />
-            <Skeleton className="mt-2 h-3 w-32" />
-          </div>
-        ))}
-      </div>
-
       <div className="flex items-start gap-6">
         {/* Segments rail */}
-        <div className="hidden w-[240px] shrink-0 space-y-1 lg:block">
+        <div className="hidden w-[240px] shrink-0 space-y-1 2xl:block">
           <Skeleton className="mb-2 ml-2 h-3 w-16" />
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-8 w-full" />
@@ -53,9 +43,10 @@ export default function ContactsLoading() {
                   <Skeleton className="h-3.5 w-40" />
                   <Skeleton className="h-3 w-24" />
                 </div>
-                <Skeleton className="h-5 w-32 rounded-full" />
-                <Skeleton className="h-3.5 w-16" />
-                <Skeleton className="h-3.5 w-10" />
+                <Skeleton className="h-7 w-28 rounded-full" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-5 w-24 rounded-full" />
+                <Skeleton className="h-3.5 w-20" />
               </div>
             ))}
           </div>

@@ -19,7 +19,7 @@ exploitable. We acknowledge reports within two business days.
 | CSRF against cookie-authenticated APIs | Every `app/api/*` mutation is authorised by a session cookie. |
 | XSS / clickjacking | The app renders user-supplied text (comments, captions, DMs) everywhere. |
 | Abuse of public endpoints | Tracked-link redirects and webhook ingestion are open to the internet and hit the database. |
-| Privilege escalation inside a workspace | MEMBER → ADMIN → OWNER; the platform admin panel spans every tenant. |
+| Privilege escalation inside a workspace | MEMBER → ADMIN → OWNER. There is no cross-tenant admin UI. |
 | Secrets in logs / error messages | Tokens, cookies and webhook secrets must never reach a log drain. |
 
 ## What is protected, and how
@@ -27,9 +27,9 @@ exploitable. We acknowledge reports within two business days.
 **Tenant isolation.** Every `lib/services/*` function takes `workspaceId` first
 and scopes every Prisma query by it (or by a relation loaded that way). Route
 handlers only ever obtain `workspaceId` from the server-side workspace context
-(`lib/workspace/context.ts`), never from the request body. Cross-tenant reads
-exist only in `lib/services/admin.ts` and are gated by `assertSuperAdmin` /
-`requireSuperAdmin` (users listed in `SUPER_ADMIN_EMAILS`).
+(`lib/workspace/context.ts`), never from the request body. There is no
+cross-tenant page or API: operator tasks such as comping a plan run from the
+command line (`scripts/set-plan.ts`) with direct database access.
 
 **Authentication and roles.** Sign-in is Google via Supabase Auth; the middleware
 validates the JWT with `auth.getUser()` (not the cookie payload) on every
@@ -120,8 +120,6 @@ confirmation code.
       or reconnect channels), `META_APP_SECRET`, `INSTAGRAM_APP_SECRET`,
       `META_WEBHOOK_VERIFY_TOKEN`, `CRON_SECRET`, `DODO_SECRET_KEY`,
       `DODO_WEBHOOK_SECRET`, `RESEND_API_KEY`, and the Supabase service/anon keys.
-- [ ] Set `SUPER_ADMIN_EMAILS` to the exact list of platform operators; nobody
-      else can reach `/admin` or `/api/admin/*`.
 - [ ] Serve exclusively over HTTPS with `NEXT_PUBLIC_APP_URL` set to the public
       `https://` origin (cookies are `Secure`, HSTS preload is on, and the CSRF
       check compares against this host).

@@ -1,5 +1,6 @@
 "use client";
 
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
 import type { CreateLinkInput, TrackedLinkListItem, TrackedLinkStats, UpdateLinkInput } from "@/lib/services/links";
 
 /** Thrown for non-2xx responses; `message` is the server's `error` field so it can go straight into a toast. */
@@ -58,6 +59,7 @@ export const linksApi = {
   },
 };
 
+/** API messages are already customer copy; transport failures and anything technical get translated. */
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }

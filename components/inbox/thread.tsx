@@ -115,34 +115,31 @@ function Thread({ conversation, members, now, busy, onBack, onAssign, onToggleSt
 
   return (
     <section className={cn("flex min-h-0 flex-col", className)} aria-label={`Conversation with ${name}`}>
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 sm:px-4">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2.5 gap-y-2 border-b px-3 py-2 sm:px-4 lg:flex-nowrap">
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 md:hidden" onClick={onBack} aria-label="Back to conversations">
           <ArrowLeft />
         </Button>
 
-        <Link href={`/contacts/${contact.id}`} className="flex min-w-0 items-center gap-3 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Link href={`/contacts/${contact.id}`} className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <Avatar className="h-8 w-8">
             {contact.avatarUrl ? <AvatarImage src={contact.avatarUrl} alt="" /> : null}
             <AvatarFallback>{initials(contact.name ?? contact.username)}</AvatarFallback>
           </Avatar>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold leading-tight">{name}</span>
-            <span className="block truncate text-[11px] text-muted-foreground">
-              {handle && handle !== name ? handle : channel.username ? `via @${channel.username}` : channel.platform.toLowerCase()}
+            <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+              <PlatformIcon platform={channel.platform} size={11} className="shrink-0" />
+              <span className="truncate">{handle && handle !== name ? handle : channel.username ? `via @${channel.username}` : channel.platform === "INSTAGRAM" ? "Instagram" : "Facebook"}</span>
             </span>
           </span>
         </Link>
 
-        <Badge variant="outline" className="hidden sm:inline-flex">
-          <PlatformIcon platform={channel.platform} size={11} />
-          {channel.platform === "INSTAGRAM" ? "Instagram" : "Facebook"}
-        </Badge>
         <WindowBadge window={window} now={now} />
         {closed ? <Badge variant="secondary">Closed</Badge> : null}
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Select value={assignedValue} onValueChange={(v) => onAssign(v === UNASSIGNED ? null : v)} disabled={busy.assign || members === null}>
-            <SelectTrigger className="h-8 w-[150px] text-[13px]" aria-label="Assign conversation">
+            <SelectTrigger className="h-8 w-[128px] text-[13px]" aria-label="Assign conversation">
               <SelectValue placeholder="Assign" />
             </SelectTrigger>
             <SelectContent align="end">

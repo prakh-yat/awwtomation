@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { brand } from "@/lib/brand";
 import { getLogStats, listDeliveryLogs, listLogFilterOptions } from "@/lib/services/logs";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
@@ -9,7 +8,7 @@ import { LogsView } from "./logs-view";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: `Delivery logs · ${brand.name}` };
+export const metadata: Metadata = { title: "Logs" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

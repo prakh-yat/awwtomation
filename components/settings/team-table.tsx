@@ -52,7 +52,7 @@ function RoleBadge({ role }: { role: WorkspaceRole }) {
 // ───────────────────────── Members ─────────────────────────
 
 export interface MembersTableProps {
-  workspaceId: string;
+  organizationId: string;
   members: TeamMember[];
   currentUserId: string;
   actorRole: WorkspaceRole;
@@ -64,7 +64,7 @@ export interface MembersTableProps {
  * `removeMember`: ADMIN+ may remove lower roles, owners may remove anyone,
  * and the last owner is untouchable until ownership is transferred.
  */
-export function MembersTable({ workspaceId, members, currentUserId, actorRole }: MembersTableProps) {
+export function MembersTable({ organizationId, members, currentUserId, actorRole }: MembersTableProps) {
   const router = useRouter();
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const ownerCount = members.filter((m) => m.role === "OWNER").length;
@@ -88,7 +88,7 @@ export function MembersTable({ workspaceId, members, currentUserId, actorRole }:
     if (role === member.role) return;
     setBusyId(member.userId);
     try {
-      await apiFetch<{ member: unknown }>(`/api/workspaces/${workspaceId}/members/${member.userId}`, {
+      await apiFetch<{ member: unknown }>(`/api/organizations/${organizationId}/members/${member.userId}`, {
         method: "PATCH",
         json: { role },
       });
@@ -103,8 +103,8 @@ export function MembersTable({ workspaceId, members, currentUserId, actorRole }:
 
   async function remove(member: TeamMember) {
     try {
-      await apiFetch<{ ok: true }>(`/api/workspaces/${workspaceId}/members/${member.userId}`, { method: "DELETE" });
-      toast.success(`${memberName(member)} was removed from the workspace`);
+      await apiFetch<{ ok: true }>(`/api/organizations/${organizationId}/members/${member.userId}`, { method: "DELETE" });
+      toast.success(`${memberName(member)} was removed from the organization`);
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't remove member"));
@@ -188,7 +188,7 @@ export function MembersTable({ workspaceId, members, currentUserId, actorRole }:
                       </Button>
                     }
                     title={`Remove ${memberName(member)}?`}
-                    description="They lose access immediately. Automations and messages they created stay in the workspace."
+                    description="They lose access to every workspace immediately. Automations and messages they created stay with the team."
                     confirmLabel="Remove member"
                     destructive
                     onConfirm={() => remove(member)}

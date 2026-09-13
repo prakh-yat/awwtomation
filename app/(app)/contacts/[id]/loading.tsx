@@ -17,7 +17,7 @@ export default function ContactLoading() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <div className="space-y-6">
           <div className="rounded-lg border bg-card p-5 shadow-card">
             <Skeleton className="h-4 w-20" />

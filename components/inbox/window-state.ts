@@ -22,4 +22,4 @@ export function computeWindowState(lastInboundAt: string | null, now = Date.now(
 }
 
 export const WINDOW_RULE_EXPLANATION =
-  "Meta lets a business message someone for 24 hours after their last message. After that, only a person on your team may reply — tagged as a human agent — for up to 7 days. Beyond 7 days you have to wait for them to message again.";
+  "Instagram and Facebook let a business message someone for 24 hours after their last message. After that, a person on your team can still reply for up to 7 days. Past 7 days you have to wait for them to message again.";

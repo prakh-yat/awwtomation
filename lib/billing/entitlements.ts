@@ -1,19 +1,19 @@
-import type { PlanTier, Prisma, Workspace } from "@prisma/client";
+import type { Organization, PlanTier, Prisma } from "@prisma/client";
 
 import { PLANS } from "@/lib/billing/plans";
 
 /**
- * Turns the raw billing columns on a workspace into "what may this workspace
- * use right now". Every limit check goes through `effectivePlan` so a lapsed
- * card, a scheduled cancellation or an admin override behave consistently.
+ * Turns the raw billing columns on an organization into "what may its
+ * workspaces use right now". Every limit check goes through `effectivePlan` so
+ * a lapsed card, a scheduled cancellation or an admin override behave consistently.
  */
 
 /** Days after a missed renewal during which the paid plan keeps working. */
 export const GRACE_PERIOD_DAYS = 7;
 const DAY_MS = 24 * 3600 * 1000;
 
-export type BillingWorkspaceFields = Pick<
-  Workspace,
+export type BillingFields = Pick<
+  Organization,
   "plan" | "planSource" | "billingStatus" | "subscribedPlan" | "currentPeriodEnd" | "cancelAtPeriodEnd"
 >;
 
@@ -25,20 +25,20 @@ export const BILLING_FIELDS_SELECT = {
   subscribedPlan: true,
   currentPeriodEnd: true,
   cancelAtPeriodEnd: true,
-} as const satisfies Prisma.WorkspaceSelect;
+} as const satisfies Prisma.OrganizationSelect;
 
 export function isPaidPlan(tier: PlanTier): boolean {
   return PLANS[tier].priceUsd > 0;
 }
 
-/** End of the grace window for a missed renewal, or null when the workspace isn't in one. */
-export function graceEndsAt(ws: BillingWorkspaceFields): Date | null {
+/** End of the grace window for a missed renewal, or null when the organization isn't in one. */
+export function graceEndsAt(ws: BillingFields): Date | null {
   if (ws.billingStatus !== "PAST_DUE" && ws.billingStatus !== "ON_HOLD") return null;
   if (!ws.currentPeriodEnd) return null;
   return new Date(ws.currentPeriodEnd.getTime() + GRACE_PERIOD_DAYS * DAY_MS);
 }
 
-export function inGracePeriod(ws: BillingWorkspaceFields, now = new Date()): boolean {
+export function inGracePeriod(ws: BillingFields, now = new Date()): boolean {
   const ends = graceEndsAt(ws);
   return ends !== null && now < ends;
 }
@@ -46,9 +46,9 @@ export function inGracePeriod(ws: BillingWorkspaceFields, now = new Date()): boo
 /**
  * The plan whose limits apply. Admin overrides win outright; subscriptions
  * grant their tier while paying (plus a short grace after a failed renewal);
- * everything else falls back to the stored `plan` (FREE for new workspaces).
+ * everything else falls back to the stored `plan` (FREE for new organizations).
  */
-export function effectivePlan(ws: BillingWorkspaceFields, now = new Date()): PlanTier {
+export function effectivePlan(ws: BillingFields, now = new Date()): PlanTier {
   if (ws.planSource === "ADMIN_OVERRIDE") return ws.plan;
 
   if (ws.planSource === "SUBSCRIPTION") {
@@ -72,7 +72,7 @@ export function effectivePlan(ws: BillingWorkspaceFields, now = new Date()): Pla
 export type ServiceState = "free" | "active" | "trialing" | "grace" | "lapsed" | "cancelling";
 
 /** Human-readable summary of the service state for badges and copy. */
-export function serviceState(ws: BillingWorkspaceFields, now = new Date()): ServiceState {
+export function serviceState(ws: BillingFields, now = new Date()): ServiceState {
   if (ws.planSource === "ADMIN_OVERRIDE") return isPaidPlan(ws.plan) ? "active" : "free";
 
   if (ws.planSource === "SUBSCRIPTION") {
@@ -107,7 +107,7 @@ function shortDate(date: Date | null): string {
   return date ? date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
 }
 
-export function serviceStateInfo(ws: BillingWorkspaceFields, now = new Date()): ServiceStateInfo {
+export function serviceStateInfo(ws: BillingFields, now = new Date()): ServiceStateInfo {
   const state = serviceState(ws, now);
   const plan = PLANS[effectivePlan(ws, now)].label;
   const subscribed = PLANS[ws.subscribedPlan ?? ws.plan].label;
@@ -120,7 +120,7 @@ export function serviceStateInfo(ws: BillingWorkspaceFields, now = new Date()): 
         tone: "success",
         description:
           ws.planSource === "ADMIN_OVERRIDE"
-            ? `The ${plan} plan was enabled for this workspace by the platform team.`
+            ? `This organization is on a custom ${plan} plan set up by our team.`
             : ws.currentPeriodEnd
               ? `Your ${plan} plan renews on ${shortDate(ws.currentPeriodEnd)}.`
               : `Your ${plan} plan is active.`,
@@ -139,14 +139,14 @@ export function serviceStateInfo(ws: BillingWorkspaceFields, now = new Date()): 
         state,
         label: `Cancels on ${shortDate(ws.currentPeriodEnd)}`,
         tone: "warning",
-        description: `The ${plan} plan stays active until ${shortDate(ws.currentPeriodEnd)}, then the workspace moves to Free. You can resume any time before then.`,
+        description: `The ${plan} plan stays active until ${shortDate(ws.currentPeriodEnd)}, then the organization moves to Free. You can resume any time before then.`,
       };
     case "grace":
       return {
         state,
         label: `Payment failed · grace until ${shortDate(graceEndsAt(ws))}`,
         tone: "warning",
-        description: `The last renewal didn't go through. ${plan} limits keep working until ${shortDate(graceEndsAt(ws))} — update your payment method to keep them.`,
+        description: `The last renewal didn't go through. ${plan} limits keep working until ${shortDate(graceEndsAt(ws))}. Update your payment method to keep them.`,
       };
     case "lapsed":
       return {
@@ -164,7 +164,7 @@ export function serviceStateInfo(ws: BillingWorkspaceFields, now = new Date()): 
         description:
           ws.billingStatus === "CANCELLED" || ws.billingStatus === "EXPIRED"
             ? `Your ${subscribed} subscription has ended. Pick a plan below to upgrade again.`
-            : "You're on the Free plan. Upgrade to unlock more accounts, automations and DMs.",
+            : "You're on the Free plan. Upgrade for more accounts, automations and DMs.",
       };
   }
 }

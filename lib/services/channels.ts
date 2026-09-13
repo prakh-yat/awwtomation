@@ -19,6 +19,7 @@ import {
 } from "@prisma/client";
 
 import { checkLimit } from "@/lib/billing/usage";
+import { categorise } from "@/lib/errors/customer-messages";
 import { decrypt, encrypt, randomToken, signState, verifyState } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
@@ -125,6 +126,52 @@ export type SelectablePage = {
 
 export type FacebookConnectSession = { workspaceId: string; userId: string; userToken: string };
 
+/** How the connection is doing, in terms a customer can act on. */
+export type ChannelHealthState = "ok" | "expiring" | "reconnect" | "not_receiving" | "disconnected";
+
+/**
+ * What the browser gets for a channel: no provider ids, scopes, token dates or
+ * raw provider errors. A stored error is translated into customer copy first.
+ */
+export type ChannelView = {
+  id: string;
+  platform: ChannelPlatform;
+  username: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+  followerCount: number | null;
+  status: ChannelStatus;
+  lastSyncedAt: string | null;
+  counts: ChannelCounts;
+  health: { state: ChannelHealthState; daysLeft: number | null; problem: string | null };
+};
+
+export function toChannelView(summary: ChannelSummary): ChannelView {
+  const days = summary.health.tokenDaysLeft;
+  let state: ChannelHealthState = "ok";
+  if (summary.status === ChannelStatus.DISCONNECTED) state = "disconnected";
+  else if (summary.status !== ChannelStatus.ACTIVE || (days !== null && days <= 0)) state = "reconnect";
+  else if (!summary.webhookSubscribed) state = "not_receiving";
+  else if (days !== null && days <= TOKEN_WARNING_DAYS) state = "expiring";
+
+  return {
+    id: summary.id,
+    platform: summary.platform,
+    username: summary.username,
+    name: summary.name,
+    avatarUrl: summary.avatarUrl,
+    followerCount: summary.followerCount,
+    status: summary.status,
+    lastSyncedAt: summary.lastSyncedAt,
+    counts: summary.counts,
+    health: {
+      state,
+      daysLeft: state === "expiring" ? days : null,
+      problem: summary.lastError && state !== "ok" && state !== "disconnected" ? categorise(summary.lastError).description : null,
+    },
+  };
+}
+
 type MediaRow = Omit<Media, "id" | "channelId" | "syncedAt">;
 
 // ───────────────────────── Health & serialization ─────────────────────────
@@ -229,13 +276,13 @@ export async function getChannelSummary(workspaceId: string, id: string): Promis
 
 async function requireChannel(workspaceId: string, id: string): Promise<Channel> {
   const channel = await getChannel(workspaceId, id);
-  if (!channel) throw new ApiError(404, "Channel not found", "NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "NOT_FOUND");
   return channel;
 }
 
 async function requireSummary(workspaceId: string, id: string): Promise<ChannelSummary> {
   const summary = await getChannelSummary(workspaceId, id);
-  if (!summary) throw new ApiError(404, "Channel not found", "NOT_FOUND");
+  if (!summary) throw new ApiError(404, "That account isn't connected to this workspace", "NOT_FOUND");
   return summary;
 }
 

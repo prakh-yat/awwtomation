@@ -58,6 +58,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Usage and pipelines moved out of Settings; keep old bookmarks working.
+  async redirects() {
+    return [
+      { source: "/settings/usage", destination: "/usage", permanent: true },
+      { source: "/settings/pipeline", destination: "/contacts/pipelines", permanent: true },
+      { source: "/automations/new", destination: "/automations/templates", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

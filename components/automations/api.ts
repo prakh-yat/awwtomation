@@ -3,6 +3,8 @@
  * `{ error, code, errors?, fieldErrors? }` JSON shape from ARCHITECTURE §3
  * into a thrown `ApiClientError` so callers can `toast.error(err.message)`.
  */
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -24,13 +26,24 @@ type ErrorBody = {
   fieldErrors?: Record<string, string[] | undefined>;
 };
 
+/** "trigger.keywords" reads as "Trigger keywords" in a toast. */
+function fieldLabel(field: string): string {
+  const words = field
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .split(/[._\s]+/)
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return words ? words[0].toUpperCase() + words.slice(1) : "This field";
+}
+
 function collectErrors(body: ErrorBody): string[] {
   const out: string[] = [];
   if (Array.isArray(body.errors)) out.push(...body.errors);
   if (Array.isArray(body.formErrors)) out.push(...body.formErrors);
   if (body.fieldErrors) {
     for (const [field, messages] of Object.entries(body.fieldErrors)) {
-      for (const message of messages ?? []) out.push(`${field}: ${message}`);
+      for (const message of messages ?? []) out.push(`${fieldLabel(field)}: ${message}`);
     }
   }
   return out;
@@ -55,13 +68,13 @@ export async function apiFetch<T>(url: string, init?: RequestInit & { json?: unk
     const err = (body ?? {}) as ErrorBody;
     const errors = collectErrors(err);
     const message = err.error ?? (res.status === 404 ? "Not found" : "Something went wrong");
-    throw new ApiClientError(errors.length > 0 && err.code === "VALIDATION" ? `${message}: ${errors[0]}` : message, res.status, err.code, errors);
+    // A validation failure is only useful with its first reason; "Validation failed" on its own tells nobody anything.
+    throw new ApiClientError(errors.length > 0 && err.code === "VALIDATION" ? errors[0] : message, res.status, err.code, errors);
   }
   return body as T;
 }
 
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
   if (err instanceof ApiClientError) return err.message;
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }

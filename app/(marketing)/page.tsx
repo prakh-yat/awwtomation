@@ -1,119 +1,116 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  ArrowRight,
-  ChartColumn,
-  Check,
-  GitBranch,
-  Inbox,
-  Lock,
-  Megaphone,
-  MessageCircle,
-  ShieldCheck,
-  Timer,
-  UserCheck,
-} from "lucide-react";
+import { ArrowRight, Check, Minus } from "lucide-react";
 
-import { FeatureCard } from "@/components/marketing/feature-card";
-import { HeroMock } from "@/components/marketing/hero-mock";
-import { Section } from "@/components/marketing/section";
+import { AnalyticsVisual } from "@/components/marketing/analytics-visual";
+import { BroadcastVisual } from "@/components/marketing/broadcast-visual";
+import { type FaqItem, FaqList } from "@/components/marketing/faq";
+import { FlowVisual } from "@/components/marketing/flow-visual";
+import { HeroVisual } from "@/components/marketing/hero-visual";
+import { InboxVisual } from "@/components/marketing/inbox-visual";
+import { Container, SectionText, SectionTitle } from "@/components/marketing/section";
 import { Button } from "@/components/ui/button";
-import { PlatformIcon } from "@/components/ui/platform-icon";
-import { PLAN_ORDER, PLANS } from "@/lib/billing/plans";
+import { annualSavingsPercent, PLAN_ORDER, PLANS, PURCHASABLE_PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
-import { cn, formatNumber } from "@/lib/utils";
 
 export const metadata: Metadata = {
   // `absolute` opts out of the root "%s · Brand" template so the brand isn't repeated.
-  title: { absolute: `${brand.name} — Turn comments into customers` },
+  title: { absolute: `${brand.name} · Comment-to-DM automation for Instagram and Facebook` },
   description: brand.description,
 };
 
+const count = (n: number) => n.toLocaleString("en-US");
+const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
 
-const steps = [
+const free = PLANS.FREE;
+const annualSavings = Math.min(...PURCHASABLE_PLANS.map(annualSavingsPercent));
+
+const automationOptions: Array<{ term: string; body: string }> = [
   {
-    n: "01",
-    title: "Connect your account",
-    body: "Sign in with Google, then connect an Instagram professional account or a Facebook Page through Meta's official login. No passwords, ever.",
+    term: "Keywords.",
+    body: "Match a word anywhere in the comment, only the exact word, or every comment. You can list words to skip, too.",
   },
   {
-    n: "02",
-    title: "Pick a post and a keyword",
-    body: "Choose a reel or post (or all of them), set the keyword — \"LINK\", \"GUIDE\", \"PRICE\" — and write the DM. Add buttons, a follow gate or a delay.",
+    term: "Public replies.",
+    body: "Write a few short replies. Each comment gets one, picked at random, so the thread doesn’t look copy-pasted.",
   },
   {
-    n: "03",
-    title: "Every commenter gets a DM",
-    body: `${brand.name} replies privately within seconds, optionally answers publicly under the comment, and tracks every click on the links you send.`,
+    term: "Follow check.",
+    body: "Send the link only to people who follow you. Anyone who doesn’t yet gets a button to tap once they have.",
+  },
+  {
+    term: "More steps.",
+    body: "Ask a question and save the answer, wait before the next message, or add a tag. Flows can also start from a DM or a story reply.",
   },
 ];
 
-const features = [
+const metaRules: Array<{ term: string; body: string }> = [
   {
-    icon: MessageCircle,
-    title: "Comment → DM",
-    description:
-      "Keyword, exact match or every comment. One private reply per comment, sent within seconds, deduplicated so nobody gets spammed.",
+    term: "A professional account",
+    body: "Automations work with Instagram professional accounts, meaning Business or Creator, and with Facebook Pages. Switching a personal Instagram account to professional is free and takes a minute in the app.",
   },
   {
-    icon: GitBranch,
-    title: "Flow builder",
-    description:
-      "Drag a message, a follow check, a delay or a tag onto the canvas. Buttons branch the conversation. Start from a template or a blank canvas.",
+    term: "One private reply per comment",
+    body: "Meta allows one private reply to each comment on your own posts, sent within 7 days. By default, a person gets each automation’s message once, even if they comment again.",
   },
   {
-    icon: UserCheck,
-    title: "Follow gate",
-    description:
-      "Ask people to follow before they get the link. We check with Meta and send it the moment they tap \"I'm following\".",
+    term: "The 24-hour window",
+    body: "Once someone messages you or taps a button, you can keep messaging them for 24 hours. Broadcasts only go to people inside that window. After it closes, someone on your team can still reply from the inbox for up to 7 days.",
   },
   {
-    icon: Inbox,
-    title: "Unified inbox",
-    description:
-      "Instagram and Facebook conversations side by side, with the 24-hour messaging window visible on every thread. Reply as a human when it matters.",
+    term: "Hourly sending limits",
+    body: "Meta limits how many private replies an account can send in an hour. When a post gets busier than that, replies wait in a queue and go out as the limit resets. Anything still waiting after 6 hours is logged as skipped, so nothing disappears quietly.",
   },
   {
-    icon: Megaphone,
-    title: "Broadcasts",
-    description:
-      "Message a tagged audience. Only contacts inside Meta's messaging window are eligible, so your account stays in good standing.",
-  },
-  {
-    icon: ChartColumn,
-    title: "Analytics & tracked links",
-    description:
-      "DMs sent, triggers matched, click-through rate per automation. Every link goes through a short tracked URL you own.",
+    term: "Meta’s login, not your password",
+    body: "You connect through Meta’s own login screen, so we never see your password. Access tokens are encrypted at rest, and you can disconnect an account at any time.",
   },
 ];
 
-const trust = [
-  { icon: ShieldCheck, title: "Official Meta API", body: "Instagram Graph and Messenger APIs, nothing scraped." },
-  { icon: Lock, title: "Encrypted tokens", body: "Access tokens are AES-256-GCM encrypted at rest." },
-  { icon: Timer, title: "Rules enforced", body: "Rate limits, 24h window and one-reply-per-comment, built in." },
-  { icon: Check, title: "Delete on request", body: "Disconnect a channel or ask us and your data is removed." },
-];
-
-const faqs = [
+const faqs: FaqItem[] = [
   {
-    q: "Does this work with a personal Instagram account?",
-    a: "No. Meta only allows messaging automation on Instagram professional accounts (Business or Creator) and Facebook Pages. Switching a personal account to a professional one is free and takes a minute in the Instagram app.",
+    question: "Does it work with a personal Instagram account?",
+    answer:
+      "No. Meta only allows messaging automation on professional accounts (Business or Creator) and on Facebook Pages. You can switch a personal account to professional for free in Instagram’s settings. Your posts and followers stay as they are.",
   },
   {
-    q: "Is automated messaging allowed by Instagram and Facebook?",
-    a: `Yes, when it is done through the official APIs and follows Meta's messaging rules. ${brand.name} sends one private reply per comment, only messages people who interacted with you, respects the 24-hour window and discloses that the first message is automated.`,
+    question: "Is automated messaging allowed on Instagram?",
+    answer: (
+      <>
+        Yes, when it goes through Meta’s official API and follows their messaging rules. {brand.name} only messages
+        people who commented or wrote to you first, sends one private reply per comment, and keeps to the 24-hour
+        window. <Link href="#meta-rules">Meta’s rules</Link> are explained in more detail above.
+      </>
+    ),
   },
   {
-    q: "Can I also reply publicly under the comment?",
-    a: "Yes. Turn on public replies for an automation and add a few variations — we pick one at random so the thread doesn't look robotic.",
+    question: "Do you need my Instagram or Facebook password?",
+    answer: `No. You connect through Meta’s login screen, which gives ${brand.name} limited access to the account. You can remove that access at any time from the Channels page or from your Instagram or Facebook settings.`,
   },
   {
-    q: "What counts as a DM on my plan?",
-    a: "Every message sent by an automation or broadcast counts toward the monthly limit. Limits reset at the start of each month, and you'll see usage on your billing page before you get near the cap.",
+    question: "What counts as a DM on my plan?",
+    answer:
+      "Every private message the app sends: automated replies, broadcasts and the replies you type in the inbox. Public replies under comments don’t count. The count resets on the 1st of each month. If you reach your limit, messages stop until the reset or until you upgrade. You are never charged for extra messages.",
   },
   {
-    q: "Do you need my Instagram password?",
-    a: `Never. You connect through Meta's login screen, which gives ${brand.name} a scoped access token. You can revoke it at any time from Instagram, Facebook or the Channels page.`,
+    question: "Can more than one person use it?",
+    answer:
+      "Yes. Invite teammates as admins or members, assign conversations to them, and leave notes that only your team can see. If you look after several brands or clients, give each one its own workspace.",
+  },
+  {
+    question: "How do payments work?",
+    answer:
+      "Prices are in US dollars. Paid plans are charged through Dodo Payments, our payment provider, which also handles tax and invoices. The Free plan doesn’t need a card. You can cancel from Settings and keep your plan until the end of the period you paid for.",
+  },
+  {
+    question: "What happens to my data if I stop using it?",
+    answer: (
+      <>
+        You can disconnect an account and keep its data in case you come back, or delete the account’s data, a
+        workspace or your whole organization for good. The <Link href="/data-deletion">data deletion page</Link> lists exactly what each
+        option removes.
+      </>
+    ),
   },
 ];
 
@@ -121,199 +118,261 @@ export default function LandingPage() {
   return (
     <>
       {/* Hero */}
-      <section className="relative overflow-hidden border-b">
-        <div className="mx-auto w-full max-w-6xl px-6 pb-16 pt-20 sm:pt-28">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-[12px] font-medium text-muted-foreground shadow-card">
-              <PlatformIcon platform="INSTAGRAM" size={13} />
-              <PlatformIcon platform="FACEBOOK" size={13} />
-              Comment-to-DM automation for Instagram &amp; Facebook
-            </p>
-            <h1 className="mt-6 text-balance text-5xl font-semibold leading-[1.05] tracking-[-0.03em] sm:text-6xl md:text-7xl">
-              Turn comments into customers.
+      <section>
+        <Container className="grid items-center gap-x-12 gap-y-14 pb-20 pt-12 sm:pt-16 lg:pb-28 lg:pt-20 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.22fr)]">
+          <div>
+            <h1 className="max-w-[15ch] text-balance text-[40px] font-semibold leading-[1.04] tracking-[-0.035em] text-foreground sm:text-[54px]">
+              When someone comments “
+              <span className="underline decoration-lavender decoration-[0.09em] underline-offset-[0.14em]">link</span>
+              ”, send them the link.
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-balance text-lg leading-8 text-muted-foreground">
-              {brand.name} replies to every keyword comment with an instant DM — links, buttons, follow gates and
-              tracked clicks — on the official Meta API.
+            <p className="mt-6 max-w-[33rem] text-[17px] leading-[1.6] text-muted-foreground sm:text-[18px]">
+              Pick your Instagram or Facebook posts and a keyword. {brand.name} sends everyone who comments that word a
+              private message with your link, replies under their comment, and saves them as a contact.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button asChild size="lg" className="h-11 px-6">
-                <Link href="/login">
-                  Get started free
-                  <ArrowRight />
-                </Link>
+            <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-4">
+              <Button asChild size="lg" className="h-11 px-5 text-[15px]">
+                <Link href="/login">Start free</Link>
               </Button>
-              <Button asChild size="lg" variant="outline" className="h-11 px-6">
-                <Link href="/pricing">See pricing</Link>
-              </Button>
-            </div>
-            <p className="mt-4 text-xs text-muted-foreground">Free plan included · No credit card · Connect in 2 minutes</p>
-          </div>
-          <div className="mt-16">
-            <HeroMock />
-          </div>
-        </div>
-      </section>
-
-      {/* How it works */}
-      <Section
-        id="how-it-works"
-        eyebrow="How it works"
-        title="Three steps from a comment to a conversation."
-        description="Set it up once. It keeps working on every post you choose, day and night."
-      >
-        <ol className="grid gap-6 md:grid-cols-3">
-          {steps.map((s) => (
-            <li key={s.n} className="relative rounded-lg border bg-card p-6 shadow-card">
-              <span className="font-mono text-xs text-muted-foreground">{s.n}</span>
-              <h3 className="mt-3 text-base font-semibold tracking-tight">{s.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      {/* Features */}
-      <Section
-        id="features"
-        eyebrow="Everything you need"
-        title="One tool for the whole comment-to-DM loop."
-        description="From the first keyword match to the last click, without stitching five apps together."
-        className="border-t bg-muted/30"
-      >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f) => (
-            <FeatureCard key={f.title} icon={f.icon} title={f.title} description={f.description} />
-          ))}
-        </div>
-      </Section>
-
-      {/* Trust strip */}
-      <section className="border-y">
-        <div className="mx-auto grid w-full max-w-6xl gap-px px-0 sm:grid-cols-2 lg:grid-cols-4">
-          {trust.map((t, i) => (
-            <div
-              key={t.title}
-              className={cn(
-                "flex items-start gap-3 px-6 py-6",
-                i > 0 && "border-t sm:border-t-0",
-                i % 2 === 1 && "sm:border-l",
-                i > 0 && "lg:border-l",
-              )}
-            >
-              <t.icon size={18} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-medium">{t.title}</p>
-                <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{t.body}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Pricing preview */}
-      <Section
-        id="pricing"
-        eyebrow="Pricing"
-        title="Start free. Upgrade when the DMs do."
-        description="Every plan uses the same engine. Limits scale with channels, automations and monthly DMs."
-        align="center"
-      >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {PLAN_ORDER.map((tier) => {
-            const plan = PLANS[tier];
-            const highlighted = tier === "PRO";
-            return (
-              <div
-                key={tier}
-                className={cn(
-                  "flex flex-col rounded-lg border p-6 shadow-card",
-                  highlighted ? "border-primary bg-primary text-primary-foreground" : "bg-card",
-                )}
+              <Link
+                href="/pricing"
+                className="group inline-flex items-center gap-1.5 rounded-sm text-[15px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <p className="text-sm font-medium">{plan.label}</p>
-                <p className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-semibold tracking-tight">${plan.priceUsd}</span>
-                  <span className={cn("text-xs", highlighted ? "text-primary-foreground/60" : "text-muted-foreground")}>
-                    /month
-                  </span>
+                See pricing
+                <ArrowRight aria-hidden className="size-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
+              </Link>
+            </div>
+          </div>
+          <HeroVisual />
+        </Container>
+      </section>
+
+      {/* One comment, start to finish */}
+      <section id="how-it-works" className="scroll-mt-14 border-t">
+        <Container className="grid gap-x-14 gap-y-14 py-20 sm:py-28 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start">
+          <FlowVisual className="order-last xl:order-first" />
+          <div className="max-w-2xl xl:max-w-none">
+            <SectionTitle>What happens after someone comments</SectionTitle>
+            <SectionText className="mt-4">
+              An automation is a few steps: what to look for, what to send and what to note down. Himalayan Threads runs
+              this one on two autumn collection posts. Here is what it did when Sita Rai commented on the reel.
+            </SectionText>
+            <div className="mt-9 space-y-4 border-t pt-8">
+              {automationOptions.map((o) => (
+                <p key={o.term} className="text-[15px] leading-[1.65] text-muted-foreground">
+                  <span className="font-medium text-foreground">{o.term}</span> {o.body}
                 </p>
-                <ul
-                  className={cn(
-                    "mt-5 space-y-1.5 text-[13px]",
-                    highlighted ? "text-primary-foreground/80" : "text-muted-foreground",
-                  )}
-                >
-                  <li>
-                    {plan.channels} {plan.channels === 1 ? "channel" : "channels"}
-                  </li>
-                  <li>{formatNumber(plan.dmsPerMonth)} DMs / month</li>
-                  <li>
-                    {plan.automations} {plan.automations === 1 ? "automation" : "automations"}
-                  </li>
-                  <li>{plan.broadcasts ? "Broadcasts included" : "No broadcasts"}</li>
-                </ul>
-                <Button
-                  asChild
-                  size="sm"
-                  variant={highlighted ? "secondary" : "outline"}
-                  className={cn("mt-6", highlighted && "bg-background text-foreground hover:bg-background/90")}
-                >
-                  <Link href="/login">Get started</Link>
-                </Button>
+              ))}
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      {/* Inbox and contacts */}
+      <section id="inbox" className="scroll-mt-14 border-t bg-muted/30">
+        <Container className="py-20 sm:py-28">
+          <div className="grid gap-x-16 gap-y-4 lg:grid-cols-12 lg:items-end">
+            <SectionTitle className="lg:col-span-6">One inbox for Instagram and Messenger</SectionTitle>
+            <SectionText className="lg:col-span-6 lg:col-start-7">
+              When Sita asks about a size, the conversation is waiting in your inbox. Each thread shows how long Meta
+              still lets you reply, who on your team is handling it, and the notes they left.
+            </SectionText>
+          </div>
+          <InboxVisual className="mt-12" />
+          <div className="mt-14 grid gap-10 md:grid-cols-2 md:gap-16">
+            <div>
+              <h3 className="text-[17px] font-semibold tracking-[-0.01em]">Contacts</h3>
+              <p className="mt-2 text-[15px] leading-[1.65] text-muted-foreground">
+                Everyone who comments, messages you or replies to a story becomes a contact. Build pipelines with your
+                own stages, like New, Lead and Customer, and move people through them by hand or from an automation.
+                Give contacts an owner, add tags and notes, save filters as segments and import a customer list from a
+                CSV file.
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[17px] font-semibold tracking-[-0.01em]">Teams and workspaces</h3>
+              <p className="mt-2 text-[15px] leading-[1.65] text-muted-foreground">
+                Invite teammates as admins or members and assign conversations to them. Run several brands or clients
+                as workspaces under one plan, each with its own accounts and contacts, or give a client a separate
+                organization with its own billing.
+              </p>
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      {/* Broadcasts and analytics */}
+      <section id="broadcasts" className="scroll-mt-14 border-t">
+        <Container className="grid gap-x-16 py-20 sm:py-28 lg:grid-cols-2">
+          <div className="lg:col-start-1 lg:row-start-1">
+            <SectionTitle>Message everyone with a tag</SectionTitle>
+            <SectionText className="mt-4 max-w-[31rem]">
+              Pick a tag or a saved segment, write one message, and send it now or later. Meta only allows messages to
+              people who contacted you in the last 24 hours, so you see how many can receive it before you send.
+              Everyone else is skipped.
+            </SectionText>
+          </div>
+          <BroadcastVisual className="mt-10 lg:col-start-1 lg:row-start-2" />
+          <div className="mt-20 lg:col-start-2 lg:row-start-1 lg:mt-0">
+            <SectionTitle>See what each automation did</SectionTitle>
+            <SectionText className="mt-4 max-w-[31rem]">
+              For every automation, see how many people commented, got the DM, clicked or replied, and became a lead.
+              Tracked short links count every click, and the busiest-times chart shows when your audience comments most.
+            </SectionText>
+          </div>
+          <AnalyticsVisual className="mt-10 lg:col-start-2 lg:row-start-2" />
+        </Container>
+      </section>
+
+      {/* Meta's rules */}
+      <section id="meta-rules" className="scroll-mt-14 border-t">
+        <Container className="grid gap-x-16 gap-y-10 py-20 sm:py-28 lg:grid-cols-12">
+          <div className="lg:col-span-4">
+            <div className="lg:sticky lg:top-24">
+              <SectionTitle>Working within Meta’s rules</SectionTitle>
+              <SectionText className="mt-4">
+                Instagram and Facebook limit what automated messages can do. {brand.name} uses Meta’s official API and
+                applies these rules for you. This is what they mean in practice.
+              </SectionText>
+            </div>
+          </div>
+          <dl className="border-t lg:col-span-8">
+            {metaRules.map((rule) => (
+              <div key={rule.term} className="grid gap-1.5 border-b py-6 sm:grid-cols-[210px_minmax(0,1fr)] sm:gap-8">
+                <dt className="text-[15px] font-medium leading-[1.65] text-foreground">{rule.term}</dt>
+                <dd className="text-[15px] leading-[1.65] text-muted-foreground">{rule.body}</dd>
               </div>
-            );
-          })}
-        </div>
-        <p className="mt-6 text-center text-[13px] text-muted-foreground">
-          <Link href="/pricing" className="font-medium text-foreground underline-offset-4 hover:underline">
-            Compare all plans
-          </Link>{" "}
-          · Prices in USD, billed monthly.
-        </p>
-      </Section>
+            ))}
+          </dl>
+        </Container>
+      </section>
+
+      {/* Pricing summary */}
+      <section id="pricing" className="scroll-mt-14 border-t">
+        <Container className="py-20 sm:py-28">
+          <SectionTitle>Pricing</SectionTitle>
+          <SectionText className="mt-4 max-w-2xl">
+            Start on Free with {free.channels === 1 ? "one account" : plural(free.channels, "account", "accounts")} and{" "}
+            {count(free.dmsPerMonth)} DMs a month. Paid plans add accounts, DMs, teammates and broadcasts. Every plan
+            includes automations, the inbox, contacts, tracked links and analytics.
+          </SectionText>
+
+          <div className="mt-12 hidden sm:block">
+            <table className="w-full border-t text-left">
+              <caption className="sr-only">Plans and their monthly limits</caption>
+              <thead>
+                <tr className="border-b text-[13px] text-muted-foreground">
+                  <th scope="col" className="py-3 pr-4 font-normal">
+                    Plan
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-normal">
+                    Per month
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-normal">
+                    Accounts
+                  </th>
+                  <th scope="col" className="hidden px-4 py-3 text-right font-normal md:table-cell">
+                    Automations
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-normal">
+                    DMs a month
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-normal">
+                    Team members
+                  </th>
+                  <th scope="col" className="py-3 pl-4 text-right font-normal">
+                    Broadcasts
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="text-[15px] tabular-nums">
+                {PLAN_ORDER.map((tier) => {
+                  const plan = PLANS[tier];
+                  return (
+                    <tr key={tier} className="border-b">
+                      <th scope="row" className="py-4 pr-4 font-medium text-foreground">
+                        {plan.label}
+                      </th>
+                      <td className="px-4 py-4 text-right">${plan.priceUsd}</td>
+                      <td className="px-4 py-4 text-right">{count(plan.channels)}</td>
+                      <td className="hidden px-4 py-4 text-right md:table-cell">{count(plan.automations)}</td>
+                      <td className="px-4 py-4 text-right">{count(plan.dmsPerMonth)}</td>
+                      <td className="px-4 py-4 text-right">{count(plan.members)}</td>
+                      <td className="py-4 pl-4 text-right">
+                        {plan.broadcasts ? (
+                          <Check role="img" aria-label="Included" className="ml-auto size-4" strokeWidth={2.25} />
+                        ) : (
+                          <Minus role="img" aria-label="Not included" className="ml-auto size-4 text-muted-foreground" strokeWidth={2} />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <ul className="mt-10 border-t sm:hidden">
+            {PLAN_ORDER.map((tier) => {
+              const plan = PLANS[tier];
+              return (
+                <li key={tier} className="border-b py-4">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <p className="text-[16px] font-medium">{plan.label}</p>
+                    <p className="text-[16px] tabular-nums">
+                      ${plan.priceUsd}
+                      <span className="text-[13px] text-muted-foreground"> a month</span>
+                    </p>
+                  </div>
+                  <p className="mt-1 text-[14px] leading-[1.6] text-muted-foreground">
+                    {plural(plan.channels, "account", "accounts")}, {count(plan.dmsPerMonth)} DMs a month,{" "}
+                    {plural(plan.members, "team member", "team members")}
+                    {plan.broadcasts ? ", broadcasts" : ", no broadcasts"}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[14px] text-muted-foreground">
+              Prices are in US dollars. Paying yearly costs {annualSavings}% less.
+            </p>
+            <div className="flex items-center gap-6">
+              <Link
+                href="/pricing"
+                className="group inline-flex items-center gap-1.5 rounded-sm text-[14px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Compare plans
+                <ArrowRight aria-hidden className="size-4 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
+              </Link>
+              <Button asChild>
+                <Link href="/login">Start free</Link>
+              </Button>
+            </div>
+          </div>
+        </Container>
+      </section>
 
       {/* FAQ */}
-      <Section id="faq" eyebrow="FAQ" title="Questions, answered." width="narrow" className="border-t">
-        <div className="divide-y rounded-lg border">
-          {faqs.map((f) => (
-            <details key={f.q} className="group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium">
-                {f.q}
-                <span
-                  aria-hidden
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-muted-foreground transition-transform group-open:rotate-45"
-                >
-                  +
-                </span>
-              </summary>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{f.a}</p>
-            </details>
-          ))}
-        </div>
-      </Section>
-
-      {/* Final CTA */}
-      <Section inverted align="center" className="py-24">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-            Start turning comments into conversations.
-          </h2>
-          <p className="mt-4 text-base text-primary-foreground/70">
-            Connect an account, pick a keyword and watch the first DM go out in under five minutes.
-          </p>
-          <Button
-            asChild
-            size="lg"
-            className="mt-8 h-11 bg-background px-6 text-foreground hover:bg-background/90"
-          >
-            <Link href="/login">
-              Get started free
-              <ArrowRight />
-            </Link>
-          </Button>
-        </div>
-      </Section>
+      <section id="faq" className="scroll-mt-14 border-t">
+        <Container className="grid gap-x-16 gap-y-10 py-20 sm:py-28 lg:grid-cols-12">
+          <div className="lg:col-span-4">
+            <SectionTitle>Common questions</SectionTitle>
+            <SectionText className="mt-4">
+              Can’t find your answer? Email{" "}
+              <a
+                href={`mailto:${brand.supportEmail}`}
+                className="font-medium text-foreground underline underline-offset-4"
+              >
+                {brand.supportEmail}
+              </a>
+              .
+            </SectionText>
+          </div>
+          <FaqList items={faqs} className="lg:col-span-8" />
+        </Container>
+      </section>
     </>
   );
 }

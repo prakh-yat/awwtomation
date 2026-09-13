@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { disconnectChannel, getChannelSummary, purgeChannel } from "@/lib/services/channels";
+import { disconnectChannel, getChannelSummary, purgeChannel, toChannelView } from "@/lib/services/channels";
 import { ApiError, withWorkspace } from "@/lib/workspace/api";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export const GET = withWorkspace<Params>(async (_req, ctx, { params }) => {
   const { id } = await params;
   const channel = await getChannelSummary(ctx.workspace.id, id);
   if (!channel) throw new ApiError(404, "Channel not found", "NOT_FOUND");
-  return NextResponse.json({ channel });
+  return NextResponse.json({ channel: toChannelView(channel) });
 });
 
 /**
@@ -33,7 +33,7 @@ export const DELETE = withWorkspace<Params>(
     }
 
     const channel = await disconnectChannel(ctx.workspace.id, id, ctx.user.id);
-    return NextResponse.json({ ok: true, channel });
+    return NextResponse.json({ ok: true, channel: toChannelView(channel) });
   },
   { minRole: "ADMIN" },
 );

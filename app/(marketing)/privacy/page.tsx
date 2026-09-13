@@ -56,7 +56,7 @@ export default function PrivacyPage() {
       <p>
         We log requests to the Service, delivery results for each message, clicks on tracked links (with a hashed IP
         address and user agent) and product events needed to run and secure the Service. We use strictly necessary
-        cookies for sign-in, the active workspace and interface preferences; we do not use advertising cookies.
+        cookies for sign-in, the active organization and workspace, and interface preferences; we do not use advertising cookies.
       </p>
 
       <h2>3. How we use information</h2>
@@ -85,11 +85,22 @@ export default function PrivacyPage() {
       <h2>5. Sharing</h2>
       <p>We share personal data only with service providers that help us run the Service, under contracts that restrict their use of it:</p>
       <ul>
-        <li>Meta Platforms, Inc. — to send and receive messages and comments through the Instagram and Facebook APIs.</li>
-        <li>Supabase — authentication and our managed Postgres database.</li>
-        <li>Our hosting provider — application servers and background workers.</li>
-        <li>Google — sign-in with Google.</li>
-        <li>An email delivery provider — transactional email, where enabled.</li>
+        <li>
+          <strong>Meta Platforms, Inc.</strong>: to send and receive messages and comments through the Instagram and
+          Facebook APIs.
+        </li>
+        <li>
+          <strong>Supabase</strong>: authentication and our managed Postgres database.
+        </li>
+        <li>
+          <strong>Our hosting provider</strong>: application servers and background workers.
+        </li>
+        <li>
+          <strong>Google</strong>: sign-in with Google.
+        </li>
+        <li>
+          <strong>An email delivery provider</strong>: transactional email, where enabled.
+        </li>
       </ul>
       <p>
         We may also disclose data when required by law, to protect the rights and safety of our users, or as part of a
@@ -100,7 +111,7 @@ export default function PrivacyPage() {
       <p>
         Account data is retained while your account is active. Comments, messages and contact records are retained while
         the workspace that owns them exists. Raw webhook receipts and job records are kept for debugging and idempotency;
-        those that reference a deleted channel are removed with it. Deleting a workspace, or a channel together with its
+        those that reference a deleted channel are removed with it. Deleting an organization, a workspace, or a channel together with its
         data, removes the associated records immediately, and deletion requests received through Meta are processed at
         once. Requests made by email (see our <Link href="/data-deletion">data deletion page</Link>) are completed within
         30 days. Minimal audit records may be kept where we must meet legal obligations.

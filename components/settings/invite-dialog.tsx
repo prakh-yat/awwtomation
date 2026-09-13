@@ -39,8 +39,8 @@ type InviteResponse = {
 
 const ROLE_HINTS: Record<WorkspaceRole, string> = {
   MEMBER: "Builds automations, uses the inbox and manages contacts.",
-  ADMIN: "Everything a member can, plus channels, team and billing.",
-  OWNER: "Full control, including deleting the workspace.",
+  ADMIN: "Everything a member can do, plus connecting accounts, the team and billing.",
+  OWNER: "Full control, including billing and deleting the organization.",
 };
 
 /**
@@ -121,7 +121,7 @@ export function InviteDialog({ actorRole, seats, trigger }: InviteDialogProps) {
             <DialogHeader>
               <DialogTitle>Share the invite link</DialogTitle>
               <DialogDescription>
-                No email is sent. Copy this link and share it with {created.invitation.email} — it only works for that
+                No email is sent. Copy this link and share it with {created.invitation.email}. It only works for that
                 address and expires in 7 days.
               </DialogDescription>
             </DialogHeader>

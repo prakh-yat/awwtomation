@@ -4,7 +4,7 @@ import type { PlanTier } from "@prisma/client";
 import { Check } from "lucide-react";
 
 import { IntervalToggle } from "@/components/billing/interval-toggle";
-import { LogoMark } from "@/components/ui/logo";
+import { LogoMark, Wordmark } from "@/components/ui/logo";
 import {
   annualSavingsPercent,
   type BillingIntervalId,
@@ -39,9 +39,9 @@ export function OrderSummary({
 
   return (
     <aside className="flex h-full flex-col">
-      <div className="mb-8 flex items-center gap-2">
+      <div className="mb-8 flex items-center gap-0.5" aria-label={brand.name}>
         <LogoMark size={22} />
-        <span className="text-sm font-semibold tracking-tight">{brand.name}</span>
+        <Wordmark height={10} />
       </div>
 
       <div className="rounded-lg border bg-card p-5 shadow-card">
@@ -66,7 +66,7 @@ export function OrderSummary({
             {formatUsd(monthlyEquivalentCents(tier, interval))}/month, billed once a year.
           </p>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground">Billed every month. Cancel anytime.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Billed every month. Cancel any time.</p>
         )}
 
         <dl className="mt-5 space-y-2 border-t pt-4 text-[13px]">
@@ -87,7 +87,7 @@ export function OrderSummary({
         </dl>
 
         <div className="mt-5 border-t pt-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">What&apos;s included</p>
+          <p className="text-xs font-medium text-muted-foreground">What&apos;s included</p>
           <ul className="mt-2 space-y-1.5 text-[13px]">
             {included.map((item) => (
               <li key={item} className="flex items-start gap-2">
@@ -103,7 +103,6 @@ export function OrderSummary({
         Prices in USD. Tax is added at checkout where required by your country. Your plan renews automatically until
         cancelled; usage limits reset on the 1st of each month.
       </p>
-      <p className="mt-auto pt-8 text-[11px] text-muted-foreground">Payments processed by Dodo Payments.</p>
     </aside>
   );
 }

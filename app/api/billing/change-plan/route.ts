@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const POST = withWorkspace(
   async (req, ctx) => {
     const { tier, interval } = await parseBody(req, changePlanSchema);
-    return NextResponse.json(await changePlan(ctx.workspace.id, ctx.user.id, tier, interval));
+    return NextResponse.json(await changePlan(ctx.organization.id, ctx.user.id, tier, interval));
   },
   { minRole: "OWNER" },
 );

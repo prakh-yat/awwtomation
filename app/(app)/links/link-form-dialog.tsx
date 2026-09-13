@@ -124,8 +124,8 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
               <DialogTitle>{editing ? "Edit link" : "New tracked link"}</DialogTitle>
               <DialogDescription>
                 {editing
-                  ? "Changing the destination keeps the same short URL — anything already sent will follow the new address."
-                  : "A short link that counts every tap. Works anywhere, but shines inside DM buttons."}
+                  ? "The short link stays the same, so links you've already sent will open the new address."
+                  : "A short link that counts every tap. Use it in DM buttons, broadcasts or your bio."}
               </DialogDescription>
             </DialogHeader>
 
@@ -155,12 +155,12 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
                 </div>
                 <Input
                   id="link-label"
-                  placeholder="Spring sale — reel CTA"
+                  placeholder="Autumn sale reel"
                   value={label}
                   maxLength={LABEL_MAX}
                   onChange={(e) => setLabel(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Optional. Only you see it — helps tell links apart in the list.</p>
+                <p className="text-xs text-muted-foreground">Optional. Only your team sees it.</p>
               </div>
               {error ? (
                 <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">

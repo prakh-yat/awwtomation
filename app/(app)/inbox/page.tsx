@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 
 import { InboxShell } from "@/components/inbox/inbox-shell";
-import { brand } from "@/lib/brand";
 import { getConversation, getInboxCounts, listConversations, listInboxChannels } from "@/lib/services/inbox";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: `Inbox · ${brand.name}` };
+export const metadata: Metadata = { title: "Inbox" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

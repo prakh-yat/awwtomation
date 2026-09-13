@@ -95,7 +95,7 @@ export function DmPreview({
           <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-3 py-3 scrollbar-thin">
             {contactText ? (
               <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{contactLabel}</span>
+                <span className="text-[10px] text-muted-foreground">{contactLabel}</span>
                 <div className="max-w-[80%] rounded-2xl rounded-br-md bg-neutral-900 px-3 py-2 text-[13px] leading-snug text-white">
                   {contactText}
                 </div>

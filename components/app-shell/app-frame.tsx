@@ -13,11 +13,11 @@ export interface AppFrameProps extends ShellProps {
 }
 
 /**
- * Server component that lays out the protected app: sticky sidebar on
- * desktop, topbar + drawer on mobile, and a <main> for the page. The initial
- * collapsed state comes from the cookie so SSR paints the right width.
+ * The signed-in layout: sidebar rail on desktop, header + drawer on mobile. The
+ * collapsed preference comes from a cookie so the server renders the final
+ * width and nothing jumps on load.
  */
-async function AppFrame({ children, ...shell }: AppFrameProps) {
+export async function AppFrame({ children, ...shell }: AppFrameProps) {
   const cookieStore = await cookies();
   const collapsed = isSidebarCollapsed(cookieStore.get(SIDEBAR_COOKIE)?.value);
 
@@ -35,5 +35,3 @@ async function AppFrame({ children, ...shell }: AppFrameProps) {
     </TooltipProvider>
   );
 }
-
-export { AppFrame };

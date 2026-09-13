@@ -13,7 +13,7 @@ export interface MessagePreviewProps {
   className?: string;
 }
 
-const SAMPLE_VARS: Record<string, string> = { username: "@jane.doe", name: "Jane Doe", first_name: "Jane" };
+const SAMPLE_VARS: Record<string, string> = { username: "@sita.rai", name: "Sita Rai", first_name: "Sita" };
 const TEMPLATE_RE = /\{\{\s*([A-Za-z_][\w.]*)\s*(?:\|\s*([^}]*?)\s*)?\}\}/g;
 
 /** Mirrors lib/automation/flow-types.renderTemplate with sample values so the preview reads naturally. */

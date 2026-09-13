@@ -20,12 +20,15 @@ import { z } from "zod";
 
 import {
   defaultFlow,
+  describeFlowErrors,
+  emptyFlow,
   findTriggerNode,
   flowGraphSchema,
   getNode,
   nextNodeId,
   validateFlow,
   type FlowGraph,
+  type FlowNodeData,
 } from "@/lib/automation/flow-types";
 import { matchedKeyword, normalizeText } from "@/lib/automation/matcher";
 import { contactTemplateVars, renderMessage } from "@/lib/automation/send";
@@ -37,6 +40,7 @@ import { enqueue } from "@/lib/queue";
 import { getTemplate, instantiateTemplate } from "@/lib/services/templates";
 import { recordAudit } from "@/lib/services/workspaces";
 import { ApiError } from "@/lib/workspace/api";
+import { customerReason } from "@/lib/errors/customer-messages";
 
 // ───────────────────────── Validation ─────────────────────────
 
@@ -112,7 +116,11 @@ export type AutomationListItem = {
   matchMode: MatchMode;
   keywords: string[];
   channel: ChannelOption;
+  /** Posts the automation is limited to; 0 means every post. */
+  postCount: number;
   sent7d: number;
+  /** Clicks on this automation's tracked links in the last 7 days. */
+  clicks7d: number;
   triggeredCount: number;
   sentCount: number;
   lastTriggeredAt: string | null;
@@ -161,7 +169,8 @@ export type RecentDelivery = {
   contactUsername: string | null;
   contactName: string | null;
   messagePreview: string | null;
-  errorMessage: string | null;
+  /** Plain-language reason for a skip or failure; null when sent. */
+  reason: string | null;
   createdAt: string;
 };
 
@@ -269,19 +278,50 @@ function parseStoredFlow(json: Prisma.JsonValue): { flow: FlowGraph; recovered: 
 function activationBlockers(input: { matchMode: MatchMode; keywords: string[]; flow: FlowGraph }, channel: Pick<Channel, "status">): string[] {
   const blockers: string[] = [];
   if (channel.status !== ChannelStatus.ACTIVE) {
-    blockers.push(`The channel is ${channel.status.toLowerCase().replace("_", " ")} — reconnect it under Channels first`);
+    blockers.push(
+      channel.status === ChannelStatus.DISCONNECTED
+        ? "This account is disconnected. Reconnect it on the Channels page first."
+        : "This account needs to be reconnected on the Channels page first.",
+    );
   }
   const validation = validateFlow(input.flow);
-  if (!validation.ok) blockers.push(...validation.errors);
+  if (!validation.ok) blockers.push(...describeFlowErrors(validation.errors, input.flow));
   if (input.matchMode !== MatchMode.ANY && input.keywords.length === 0) {
-    blockers.push("Add at least one keyword, or switch matching to “Any comment”");
+    blockers.push("Add at least one keyword, or switch matching to “Any”.");
   }
   return blockers;
 }
 
+/**
+ * Pipeline steps point at pipelines and stages by id. Those can be deleted
+ * after the step was set up, which validateFlow can't see, so check them here.
+ * Messages use the same `"<node id>"` form and go through describeFlowErrors.
+ */
+async function pipelineBlockers(workspaceId: string, flow: FlowGraph): Promise<string[]> {
+  const steps = flow.nodes.filter(
+    (n): n is FlowGraph["nodes"][number] & { data: Extract<FlowNodeData, { type: "add_to_pipeline" | "move_stage" | "remove_from_pipeline" }> } =>
+      (n.data.type === "add_to_pipeline" || n.data.type === "move_stage" || n.data.type === "remove_from_pipeline") && Boolean(n.data.pipelineId),
+  );
+  if (steps.length === 0) return [];
+  const pipelines = await prisma.pipeline.findMany({
+    where: { workspaceId, id: { in: steps.map((n) => n.data.pipelineId) } },
+    select: { id: true, stages: { select: { id: true } } },
+  });
+  const stagesByPipeline = new Map(pipelines.map((p) => [p.id, new Set(p.stages.map((st) => st.id))]));
+  const errors: string[] = [];
+  for (const node of steps) {
+    const stages = stagesByPipeline.get(node.data.pipelineId);
+    if (!stages) errors.push(`"${node.id}" uses a pipeline that no longer exists. Pick another.`);
+    else if (node.data.type !== "remove_from_pipeline" && node.data.stageId && !stages.has(node.data.stageId)) {
+      errors.push(`"${node.id}" uses a stage that no longer exists. Pick another.`);
+    }
+  }
+  return describeFlowErrors(errors, flow);
+}
+
 async function requireChannel(workspaceId: string, channelId: string): Promise<Channel> {
   const channel = await prisma.channel.findFirst({ where: { id: channelId, workspaceId } });
-  if (!channel) throw new ApiError(404, "Channel not found in this workspace", "CHANNEL_NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "CHANNEL_NOT_FOUND");
   return channel;
 }
 
@@ -374,6 +414,18 @@ export function countAutomations(workspaceId: string): Promise<number> {
   return prisma.automation.count({ where: { workspaceId } });
 }
 
+/** Automations per status for the list tabs, optionally within one channel. */
+export async function countAutomationsByStatus(workspaceId: string, channelId?: string): Promise<Record<AutomationStatus, number>> {
+  const grouped = await prisma.automation.groupBy({
+    by: ["status"],
+    where: { workspaceId, ...(channelId ? { channelId } : {}) },
+    _count: { _all: true },
+  });
+  const counts: Record<AutomationStatus, number> = { ACTIVE: 0, PAUSED: 0, DRAFT: 0 };
+  for (const g of grouped) counts[g.status] = g._count._all;
+  return counts;
+}
+
 export async function listAutomations(workspaceId: string, filters: AutomationListFilters = {}): Promise<AutomationListItem[]> {
   const q = filters.q?.trim();
   const where: Prisma.AutomationWhereInput = {
@@ -400,6 +452,20 @@ export async function listAutomations(workspaceId: string, filters: AutomationLi
   });
   const sent7d = new Map(counts.map((c) => [c.automationId, c._count._all]));
 
+  const links = await prisma.trackedLink.findMany({
+    where: { workspaceId, automationId: { in: automations.map((a) => a.id) } },
+    select: { id: true, automationId: true },
+  });
+  const clickGroups = links.length
+    ? await prisma.linkClick.groupBy({ by: ["linkId"], where: { linkId: { in: links.map((l) => l.id) }, createdAt: { gte: since } }, _count: { _all: true } })
+    : [];
+  const automationByLink = new Map(links.map((l) => [l.id, l.automationId]));
+  const clicks7d = new Map<string, number>();
+  for (const g of clickGroups) {
+    const automationId = automationByLink.get(g.linkId);
+    if (automationId) clicks7d.set(automationId, (clicks7d.get(automationId) ?? 0) + g._count._all);
+  }
+
   return automations.map((a) => ({
     id: a.id,
     name: a.name,
@@ -408,7 +474,9 @@ export async function listAutomations(workspaceId: string, filters: AutomationLi
     matchMode: a.matchMode,
     keywords: a.keywords,
     channel: channelOption(a.channel),
+    postCount: a.mediaIds.length,
     sent7d: sent7d.get(a.id) ?? 0,
+    clicks7d: clicks7d.get(a.id) ?? 0,
     triggeredCount: a.triggeredCount,
     sentCount: a.sentCount,
     lastTriggeredAt: iso(a.lastTriggeredAt),
@@ -423,7 +491,8 @@ async function toDetail(automation: Automation & { channel: Channel }): Promise<
     automation.mediaIds.length > 0
       ? await prisma.media.findMany({ where: { channelId: automation.channelId, externalId: { in: automation.mediaIds } } })
       : [];
-  const validation = validateFlow(flow);
+  const checked = validateFlow(flow);
+  const validation: FlowValidation = checked.ok ? checked : { ok: false, errors: describeFlowErrors(checked.errors, flow) };
   return {
     id: automation.id,
     name: automation.name,
@@ -446,7 +515,10 @@ async function toDetail(automation: Automation & { channel: Channel }): Promise<
     channel: channelOption(automation.channel),
     selectedMedia: selectedMedia.map(mediaSummary),
     validation,
-    activationBlockers: activationBlockers({ matchMode: automation.matchMode, keywords: automation.keywords, flow }, automation.channel),
+    activationBlockers: [
+      ...activationBlockers({ matchMode: automation.matchMode, keywords: automation.keywords, flow }, automation.channel),
+      ...(await pipelineBlockers(automation.workspaceId, flow)),
+    ],
   };
 }
 
@@ -465,7 +537,7 @@ export async function createAutomation(workspaceId: string, input: AutomationCre
   if (input.templateId && !template) throw new ApiError(404, "Template not found", "TEMPLATE_NOT_FOUND");
   const base = template ? instantiateTemplate(template, { accountHandle: channelHandle(channel) }) : null;
 
-  const flow = input.flow ?? base?.flow ?? defaultFlow();
+  const flow = input.flow ?? base?.flow ?? emptyFlow();
   const created = await prisma.automation.create({
     data: {
       workspaceId,
@@ -526,7 +598,7 @@ export async function updateAutomation(workspaceId: string, id: string, input: A
   const warnings: string[] = [];
   let status = existing.status;
   if (status === AutomationStatus.ACTIVE) {
-    const blockers = activationBlockers(merged, channel);
+    const blockers = [...activationBlockers(merged, channel), ...(await pipelineBlockers(workspaceId, merged.flow))];
     if (blockers.length > 0) {
       status = AutomationStatus.PAUSED;
       warnings.push(...blockers);
@@ -557,7 +629,10 @@ export async function setAutomationStatus(workspaceId: string, id: string, statu
   const existing = await requireAutomation(workspaceId, id);
   if (status === "ACTIVE") {
     const { flow } = parseStoredFlow(existing.flow);
-    const blockers = activationBlockers({ matchMode: existing.matchMode, keywords: existing.keywords, flow }, existing.channel);
+    const blockers = [
+      ...activationBlockers({ matchMode: existing.matchMode, keywords: existing.keywords, flow }, existing.channel),
+      ...(await pipelineBlockers(workspaceId, flow)),
+    ];
     if (blockers.length > 0) throw new ActivationBlockedError(blockers);
   }
   const updated = await prisma.automation.update({ where: { id, workspaceId }, data: { status }, include: { channel: true } });
@@ -614,7 +689,7 @@ export async function deleteAutomation(workspaceId: string, id: string, actorUse
 
 // ───────────────────────── Test (dry run) ─────────────────────────
 
-const SAMPLE_CONTACT = { username: "jane_doe", name: "Jane Doe" };
+const SAMPLE_CONTACT = { username: "sita.rai", name: "Sita Rai" };
 
 function formatDuration(seconds: number): string {
   if (seconds % 86400 === 0) return `${seconds / 86400} day${seconds === 86400 ? "" : "s"}`;
@@ -644,7 +719,7 @@ export async function testAutomation(workspaceId: string, id: string, input: Aut
 
   if (triggerType === TriggerType.COMMENT && mediaIds.length > 0 && (!input.mediaId || !mediaIds.includes(input.mediaId))) {
     matches = false;
-    reason = input.mediaId ? "This post isn't in the automation's selected posts" : "Only specific posts are selected — pick one to test against";
+    reason = input.mediaId ? "This post isn't in the automation's selected posts" : "This automation only runs on specific posts. Pick one to test with.";
   } else {
     matched = matchedKeyword(input.text, keywords, matchMode, excludeKeywords);
     if (!matched) {
@@ -652,7 +727,7 @@ export async function testAutomation(workspaceId: string, id: string, input: Aut
       const normalized = normalizeText(input.text);
       const excluded = excludeKeywords.find((k) => normalized.includes(normalizeText(k)));
       if (excluded) reason = `Contains the excluded keyword “${excluded}”`;
-      else if (matchMode !== MatchMode.ANY && keywords.length === 0) reason = "No keywords set — add one or switch to “Any comment”";
+      else if (matchMode !== MatchMode.ANY && keywords.length === 0) reason = "No keywords yet. Add one, or switch matching to “Any”.";
       else reason = matchMode === MatchMode.EXACT ? "No keyword appears as a whole word" : "No keyword found in the text";
     }
   }
@@ -691,6 +766,12 @@ export async function testAutomation(workspaceId: string, id: string, input: Aut
       path.push(`Add tag “${data.tag}”`);
     } else if (data.type === "remove_tag") {
       path.push(`Remove tag “${data.tag}”`);
+    } else if (data.type === "add_to_pipeline") {
+      path.push("Add to a pipeline");
+    } else if (data.type === "move_stage") {
+      path.push("Move to a stage");
+    } else if (data.type === "remove_from_pipeline") {
+      path.push("Remove from a pipeline");
     }
     cursor = nextNodeId(flow, node.id, "next");
   }
@@ -740,6 +821,27 @@ function startOfDayInTz(key: string, tz: string): Date {
   const [y, m, d] = key.split("-").map(Number);
   const guess = Date.UTC(y, m - 1, d);
   return new Date(guess - tzOffsetMs(new Date(guess), tz));
+}
+
+/** The latest delivery attempts for one automation, newest first, with customer-safe reasons. */
+export async function listRecentDeliveries(workspaceId: string, automationId: string, limit = 20): Promise<RecentDelivery[]> {
+  const rows = await prisma.deliveryLog.findMany({
+    where: { workspaceId, automationId },
+    orderBy: { createdAt: "desc" },
+    take: Math.min(Math.max(limit, 1), 100),
+    include: { contact: { select: { id: true, username: true, name: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    kind: r.kind,
+    contactId: r.contact?.id ?? r.contactId,
+    contactUsername: r.contact?.username ?? r.recipientUsername,
+    contactName: r.contact?.name ?? null,
+    messagePreview: r.messagePreview,
+    reason: customerReason(r.status, r.errorMessage),
+    createdAt: r.createdAt.toISOString(),
+  }));
 }
 
 export async function getAutomationAnalytics(workspaceId: string, id: string, days = 30): Promise<AutomationAnalytics> {
@@ -842,7 +944,7 @@ export async function getAutomationAnalytics(workspaceId: string, id: string, da
       contactUsername: r.contact?.username ?? r.recipientUsername,
       contactName: r.contact?.name ?? null,
       messagePreview: r.messagePreview,
-      errorMessage: r.errorMessage,
+      reason: customerReason(r.status, r.errorMessage),
       createdAt: r.createdAt.toISOString(),
     })),
   };

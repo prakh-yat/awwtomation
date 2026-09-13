@@ -26,12 +26,15 @@ export function PaymentHistory({ payments, hasSubscription }: { payments: Paymen
         title="No payments yet"
         description={
           hasSubscription
-            ? "Your first receipt appears here as soon as Dodo confirms the payment."
+            ? "Your first receipt appears here once the payment is confirmed."
             : "Receipts and invoices for paid plans will be listed here."
         }
       />
     );
   }
+
+  // Invoice links arrive with the payment webhook; hide the column rather than show a row of dashes until one exists.
+  const hasInvoices = payments.some((p) => p.invoiceUrl);
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card shadow-card">
@@ -42,18 +45,19 @@ export function PaymentHistory({ payments, hasSubscription }: { payments: Paymen
             <TableHead>Description</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Invoice</TableHead>
+            {hasInvoices ? <TableHead className="text-right">Invoice</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
           {payments.map((p) => (
             <TableRow key={p.id}>
-              <TableCell className="tabular-nums text-muted-foreground">{formatDate(p.paidAt ?? p.createdAt)}</TableCell>
+              <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground">{formatDate(p.paidAt ?? p.createdAt)}</TableCell>
               <TableCell className="font-medium">{p.description ?? "Payment"}</TableCell>
               <TableCell className="text-right tabular-nums">{formatAmount(p.amountCents, p.currency)}</TableCell>
               <TableCell>
                 <PaymentStatusBadge status={p.status} />
               </TableCell>
+              {hasInvoices ? (
               <TableCell className="text-right">
                 {p.invoiceUrl ? (
                   <a
@@ -69,6 +73,7 @@ export function PaymentHistory({ payments, hasSubscription }: { payments: Paymen
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
               </TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>

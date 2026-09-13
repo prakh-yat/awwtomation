@@ -14,7 +14,7 @@ Code map:
 | Service (checkout, sync, webhooks, cancel/resume/change, portal, overview) | `lib/services/billing.ts` |
 | API | `app/api/billing/{checkout,webhook,status,reconcile,portal,cancel,resume,change-plan,payments}` |
 | UI | `app/checkout/*`, `app/(app)/settings/billing/page.tsx`, `components/billing/*` |
-| Admin | `lib/services/admin.ts` (`setWorkspacePlan`, `clearWorkspacePlanOverride`), `app/api/admin/workspaces/[id]/plan` |
+| Plan overrides | `scripts/set-plan.ts` (command line only; there is no admin page) |
 | Ops | `scripts/create-dodo-products.mjs` |
 
 ## 1. Setup
@@ -100,38 +100,47 @@ exercise `payment.failed` / `subscription.on_hold`.
 ## 2. Flow
 
 ```
-Settings → Billing → "Upgrade to Pro"      (owner only)
+Settings → Billing → "Upgrade to Pro"      (organization owners only)
    └─ /checkout?tier=PRO&interval=MONTHLY   name · email (read-only) · country · business name
-        └─ POST /api/billing/checkout      → Dodo checkout session (metadata: workspace_id, plan_tier, billing_interval, user_id)
+        └─ POST /api/billing/checkout      → Dodo checkout session (metadata: organization_id, plan_tier, billing_interval, user_id)
              └─ dodopayments-checkout overlay (falls back to redirecting to checkout_url)
-                  └─ Dodo → return_url  /checkout/success?workspace=&tier=&interval=&payment_id=&subscription_id=&status=
+                  └─ Dodo → return_url  /checkout/success?organization=&tier=&interval=&payment_id=&subscription_id=&status=
                        └─ ActivationPoller: POST /api/billing/reconcile every 2 s (≤ 60 s) until serviceState ∈ {active, trialing}
 Meanwhile: Dodo → POST /api/billing/webhook  subscription.active / payment.succeeded → syncSubscription / Payment row
 ```
 
 `syncSubscription(id, snapshot?)` always prefers a fresh `subscriptions.retrieve` (webhooks can
 arrive out of order) and falls back to the webhook payload if the API is unreachable. It is
-idempotent and safe to call from webhooks, the poller and the admin panel.
+idempotent and safe to call from webhooks, the poller and `scripts/set-plan.ts`.
 
-### Workspace resolution (security)
+Checkout uses `redirect_immediately`, so after paying the customer goes straight back to
+`/checkout/success` instead of Dodo's own status page. The overlay's footer naming Dodo as the
+merchant of record is part of Dodo's checkout and can't be hidden. The name and logo shown inside
+the overlay come from the brand assigned to each product in the Dodo dashboard
+(Settings → Business → Brands), not from the API.
 
-A subscription is attached to a workspace in this order:
+### Organization resolution (security)
 
-1. The workspace whose `billingSubscriptionId` already equals the subscription id (authoritative).
-2. Otherwise `metadata.workspace_id` — but only if that workspace has **no other live**
-   subscription (ACTIVE / TRIALING / PAST_DUE / ON_HOLD). A stray or replayed event can never
-   re-point a paying workspace at someone else's subscription.
+Billing belongs to the **organization** (the account that owns workspaces and the team), never to a
+single workspace. A subscription is attached to an organization in this order:
 
-`POST /api/billing/reconcile` additionally refuses (403) when the ids resolve to a workspace other
-than the caller's active one.
+1. The organization whose `billingSubscriptionId` already equals the subscription id (authoritative).
+2. Otherwise `metadata.organization_id` (or `workspace_id` on subscriptions created before
+   organizations existed; migrated organizations kept their workspace's id) — but only if that
+   organization has **no other live** subscription (ACTIVE / TRIALING / PAST_DUE / ON_HOLD). A stray
+   or replayed event can never re-point a paying organization at someone else's subscription.
+
+`POST /api/billing/reconcile` additionally refuses (403) when the ids resolve to an organization
+other than the caller's active one. The success page opens the organization named in its return URL
+first (members only), so paying from one tab while another tab switched organizations still works.
 
 ## 3. Entitlements
 
-`Workspace` carries `plan`, `planSource` (DEFAULT / SUBSCRIPTION / ADMIN_OVERRIDE), `billingStatus`,
+`Organization` carries `plan`, `planSource` (DEFAULT / SUBSCRIPTION / ADMIN_OVERRIDE), `billingStatus`,
 `subscribedPlan`, `billingInterval`, `currentPeriodEnd`, `cancelAtPeriodEnd`, `billingCustomerId`,
 `billingSubscriptionId`, `billingEmail`.
 
-`effectivePlan(workspace)` (`lib/billing/entitlements.ts`) decides which limits apply:
+`effectivePlan(organization)` (`lib/billing/entitlements.ts`) decides which limits apply:
 
 | planSource | billingStatus | Effective plan |
 |---|---|---|
@@ -139,11 +148,14 @@ than the caller's active one.
 | SUBSCRIPTION | ACTIVE, TRIALING | `subscribedPlan` |
 | SUBSCRIPTION | PAST_DUE, ON_HOLD | `subscribedPlan` for 7 days after `currentPeriodEnd` (grace), then FREE |
 | SUBSCRIPTION | NONE, CANCELLED, EXPIRED | FREE |
-| DEFAULT | — | `plan` (FREE for new workspaces) |
+| DEFAULT | — | `plan` (FREE for new organizations) |
 
-`lib/billing/usage.ts` (`reserveDmQuota`, `getUsage`, `checkLimit`, `canAdd*`, `canUseBroadcasts`)
-reads limits through `effectivePlan`, so quota enforcement follows the subscription automatically.
-`serviceState(workspace)` → `free | active | trialing | grace | lapsed | cancelling` feeds the
+`lib/billing/usage.ts` (`reserveDmQuota`, `getOrganizationUsage`, `getUsage`, `checkOrganizationLimit`,
+`checkLimit`, `canAdd*`, `canUseBroadcasts`) reads limits through `effectivePlan`, so quota
+enforcement follows the subscription automatically. Limits are shared by every workspace in the
+organization: DMs, accounts and automations are counted across all of them, seats are organization
+members. Functions that take a `workspaceId` look up its organization first.
+`serviceState(organization)` → `free | active | trialing | grace | lapsed | cancelling` feeds the
 badge and copy on the billing page; `serviceStateInfo` returns the label/description/tone.
 
 Dodo status mapping: `active → ACTIVE` (or `TRIALING` while inside `trial_period_days`),
@@ -152,7 +164,7 @@ Dodo status mapping: `active → ACTIVE` (or `TRIALING` while inside `trial_peri
 
 `syncSubscription` keeps the stored `plan` column consistent as well (tier while ACTIVE/TRIALING/
 PAST_DUE/ON_HOLD, FREE once CANCELLED/EXPIRED) unless an admin override is active, so code that
-still reads `workspace.plan` directly sees the right tier outside the grace-expiry edge case.
+still reads `organization.plan` directly sees the right tier outside the grace-expiry edge case.
 
 ### Cancel / resume / change plan
 
@@ -169,15 +181,15 @@ still reads `workspace.plan` directly sees the right tier outside the grace-expi
 
 ## 4. Admin overrides
 
-`/admin/workspaces/[id]` → plan selector. Choosing a plan calls
-`POST /api/admin/workspaces/:id/plan` → `setWorkspacePlan`, which sets `plan` **and**
-`planSource = ADMIN_OVERRIDE`. From then on webhooks keep recording billing columns but leave
-`plan` alone, so a comped or extended workspace can't be downgraded by a renewal event.
+`npx tsx scripts/set-plan.ts set <organization> <plan>` sets `plan` **and**
+`planSource = ADMIN_OVERRIDE` (`<organization>` is an organization id or slug, or the id or slug of
+any workspace in it). From then on webhooks keep recording billing columns but leave `plan` alone,
+so a comped or extended organization can't be downgraded by a renewal event.
 
-"Clear override" (`DELETE` on the same route → `clearWorkspacePlanOverride`) resets the source and
-re-runs `syncSubscription` when a subscription exists (plan follows Dodo again) or drops the
-workspace to FREE/DEFAULT otherwise. Both actions are written to the audit log
-(`admin.plan_changed`, `admin.plan_override_cleared`) and shown on the workspace page's Billing card.
+`npx tsx scripts/set-plan.ts clear <organization>` resets the source and re-runs `syncSubscription`
+when a subscription exists (plan follows Dodo again) or drops the organization to FREE/DEFAULT
+otherwise. `list` prints every organization with its plan, source and workspace count. Both changes are written to the
+audit log. Customers see the result on their Billing page as a "Custom plan".
 
 ## 5. Troubleshooting
 
@@ -186,7 +198,7 @@ workspace to FREE/DEFAULT otherwise. Both actions are written to the audit log
   with `{ subscriptionId }`. Most often the webhook secret or the product ids are wrong.
 - **`billing.unknown_product`** — a subscription references a product id that isn't in
   `DODO_PRODUCT_*`; the billing columns are recorded but no plan is granted. Fix the env and reconcile.
-- **`billing.subscription_workspace_mismatch`** — the resolution rule above refused to attach a
-  subscription; inspect the workspace's `billingSubscriptionId` before intervening manually.
+- **`billing.subscription_organization_mismatch`** — the resolution rule above refused to attach a
+  subscription; inspect the organization's `billingSubscriptionId` before intervening manually.
 - **401 from the webhook route** — secret mismatch (test vs live endpoint) or a proxy that rewrites
   the body. The signature must be computed over the exact bytes Dodo sent.

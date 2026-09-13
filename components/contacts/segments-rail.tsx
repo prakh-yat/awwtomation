@@ -5,11 +5,11 @@ import { Layers, MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger } from "@/components/ui/select";
 import type { SegmentSummary } from "@/lib/services/segments";
 import { cn, formatNumber } from "@/lib/utils";
 
-import { describeSegmentFilters } from "./filters";
+import { describeSegmentFilters, type PipelineNames } from "./filters";
 
 const ALL = "__all__";
 
@@ -21,6 +21,8 @@ export interface SegmentsRailProps {
   onSelect: (id: string | null) => void;
   onRename: (segment: SegmentSummary) => void;
   onDelete: (segment: SegmentSummary) => void;
+  /** Names for pipeline and stage filters in the row tooltips. */
+  pipelines?: PipelineNames;
   className?: string;
 }
 
@@ -51,16 +53,16 @@ function SegmentActionsMenu({ segment, onRename, onDelete, className }: { segmen
  * Left rail: "All contacts" plus every saved segment with its live count.
  * Desktop only — `SegmentsSelect` is the compact equivalent for narrow screens.
  */
-function SegmentsRail({ segments, activeId, totalCount, onSelect, onRename, onDelete, className }: SegmentsRailProps) {
+function SegmentsRail({ segments, activeId, totalCount, onSelect, onRename, onDelete, pipelines, className }: SegmentsRailProps) {
   return (
     <nav aria-label="Segments" className={cn("w-[240px] shrink-0", className)}>
       <div className="mb-2 flex items-center justify-between px-2">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Segments</span>
+        <span className="text-xs font-medium text-muted-foreground">Segments</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{segments.length}</span>
       </div>
       <ul className="space-y-0.5">
         <li>
-          <RailRow active={activeId === null} onClick={() => onSelect(null)} icon={<Users className="h-3.5 w-3.5" />} label="All contacts" count={totalCount} />
+          <RailRow active={activeId === null} onClick={() => onSelect(null)} icon={<Users className="h-3.5 w-3.5" />} label="No segment" count={totalCount} />
         </li>
         {segments.map((s) => (
           <li key={s.id} className="group relative">
@@ -70,7 +72,7 @@ function SegmentsRail({ segments, activeId, totalCount, onSelect, onRename, onDe
               icon={<Layers className="h-3.5 w-3.5" />}
               label={s.name}
               count={s.count}
-              title={s.description || describeSegmentFilters(s.filters)}
+              title={s.description || describeSegmentFilters(s.filters, pipelines)}
               trailingSpace
             />
             <SegmentActionsMenu
@@ -147,14 +149,18 @@ function SegmentsSelect({ segments, activeId, totalCount, onSelect, onRename, on
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <Select value={activeId ?? ALL} onValueChange={(v) => onSelect(v === ALL ? null : v)}>
-        <SelectTrigger className="h-8 flex-1 text-[13px]" aria-label="Segment">
-          <SelectValue placeholder="All contacts" />
+        <SelectTrigger className={cn("h-8 w-auto min-w-[8.5rem] max-w-[14rem] gap-2 text-[13px]", active && "border-foreground")} aria-label="Segment">
+          {/* A div, not a span: the trigger line-clamps direct span children. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <div className={cn("truncate", !active && "text-muted-foreground")}>{active ? active.name : "Segments"}</div>
+          </div>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>
             <span className="inline-flex items-center gap-2">
               <Users className="h-3.5 w-3.5 text-muted-foreground" />
-              All contacts
+              No segment
               <span className="tabular-nums text-muted-foreground">{formatNumber(totalCount)}</span>
             </span>
           </SelectItem>

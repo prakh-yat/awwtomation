@@ -21,11 +21,12 @@ import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { validateFlow } from "@/lib/automation/flow-types";
+import { describeFlowErrors, normalizeHandle, validateFlow } from "@/lib/automation/flow-types";
 import type { AutomationDetail, ChannelOption, UpdateAutomationResult } from "@/lib/services/automations";
+import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
-import { builderReducer, conversationPreview, initBuilderState, isDirty, nodeErrorsFrom, toFlowGraph } from "./builder-state";
+import { builderReducer, conversationPreview, initBuilderState, isDirty, nodeErrorsFrom, prefilledNodeData, toFlowGraph, type AddableNodeType } from "./builder-state";
 import { FlowCanvas } from "./flow-canvas";
 import { Inspector } from "./inspector";
 import { BuilderNodeContext } from "./nodes";
@@ -35,6 +36,7 @@ import { TriggerPanel } from "./trigger-panel";
 export type AutomationBuilderProps = {
   automation: AutomationDetail;
   channels: ChannelOption[];
+  pipelines: PipelineSummary[];
 };
 
 function handleFor(channel: ChannelOption | undefined): string {
@@ -45,7 +47,7 @@ function handleFor(channel: ChannelOption | undefined): string {
 
 const CONTACT_LABEL: Record<AutomationDetail["triggerType"], string> = { COMMENT: "Their comment", DM: "Their message", STORY_REPLY: "Their story reply" };
 
-export function AutomationBuilder({ automation, channels }: AutomationBuilderProps) {
+export function AutomationBuilder({ automation, channels, pipelines }: AutomationBuilderProps) {
   const router = useRouter();
   const [state, dispatch] = React.useReducer(builderReducer, automation, initBuilderState);
   const [saving, setSaving] = React.useState(false);
@@ -53,6 +55,8 @@ export function AutomationBuilder({ automation, channels }: AutomationBuilderPro
   const [testOpen, setTestOpen] = React.useState(false);
   const [leaveOpen, setLeaveOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  // Hides the settings and inspector panels so the canvas gets the whole width.
+  const [canvasOnly, setCanvasOnly] = React.useState(false);
 
   const { settings, nodes, edges, selectedNodeId, status, mediaById } = state;
   const channel = channels.find((c) => c.id === settings.channelId);
@@ -63,26 +67,43 @@ export function AutomationBuilder({ automation, channels }: AutomationBuilderPro
     const validation = validateFlow(flow);
     return validation.ok ? [] : validation.errors;
   }, [flow]);
-  const nodeErrors = React.useMemo(() => nodeErrorsFrom(flowErrors, nodes), [flowErrors, nodes]);
+  // Pinned to their step by id, then worded with step names for display.
+  const nodeErrors = React.useMemo(() => {
+    const described = new Map<string, string[]>();
+    for (const [id, list] of nodeErrorsFrom(flowErrors, nodes)) described.set(id, describeFlowErrors(list, flow));
+    return described;
+  }, [flowErrors, nodes, flow]);
   const dirty = isDirty(state);
 
   // Same rules as the server's activation check, so the user sees blockers before pressing Activate.
   const blockers = React.useMemo(() => {
     const out: string[] = [];
-    if (!channel) out.push("Pick a channel");
-    else if (channel.status !== "ACTIVE") out.push(`The channel is ${channel.status.toLowerCase().replace("_", " ")} — reconnect it under Channels first`);
-    out.push(...flowErrors);
-    if (settings.matchMode !== "ANY" && settings.keywords.length === 0) out.push("Add at least one keyword, or switch matching to “Any”");
+    if (!channel) out.push("Pick an account.");
+    else if (channel.status !== "ACTIVE") out.push("This account needs to be reconnected on the Channels page first.");
+    out.push(...describeFlowErrors(flowErrors, flow));
+    if (settings.matchMode !== "ANY" && settings.keywords.length === 0) out.push("Add at least one keyword, or switch matching to “Any”.");
     return out;
-  }, [channel, flowErrors, settings.matchMode, settings.keywords.length]);
+  }, [channel, flowErrors, flow, settings.matchMode, settings.keywords.length]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const conversation = React.useMemo(() => conversationPreview(nodes, edges, accountHandle), [nodes, edges, accountHandle]);
-  const triggerSummary =
-    settings.matchMode === "ANY" ? "Any comment" : settings.keywords.length ? settings.keywords.slice(0, 4).join(", ") + (settings.keywords.length > 4 ? "…" : "") : "";
+  const connectedHandles = React.useMemo(() => new Set(edges.map((e) => `${e.source}::${normalizeHandle(e.sourceHandle)}`)), [edges]);
+  const onAddAfter = React.useCallback(
+    (nodeId: string, handle: string, nodeType: AddableNodeType) => dispatch({ type: "addNode", nodeType, data: prefilledNodeData(nodeType, pipelines), after: { nodeId, handle } }),
+    [pipelines],
+  );
   const nodeContext = React.useMemo(
-    () => ({ nodeErrors, triggerType: settings.triggerType, triggerSummary, accountHandle }),
-    [nodeErrors, settings.triggerType, triggerSummary, accountHandle],
+    () => ({
+      nodeErrors,
+      triggerType: settings.triggerType,
+      matchMode: settings.matchMode,
+      keywords: settings.keywords,
+      accountHandle,
+      pipelines,
+      connectedHandles,
+      onAddAfter,
+    }),
+    [nodeErrors, settings.triggerType, settings.matchMode, settings.keywords, accountHandle, pipelines, connectedHandles, onAddAfter],
   );
 
   const save = React.useCallback(async (): Promise<AutomationDetail | null> => {
@@ -185,7 +206,7 @@ export function AutomationBuilder({ automation, channels }: AutomationBuilderPro
   const contactText = settings.matchMode === "ANY" ? "Love this! 🔥" : (settings.keywords[0] ?? null);
 
   return (
-    <div className="-mx-6 -my-6 flex h-[calc(100vh-3.5rem)] flex-col bg-background md:h-screen lg:-mx-8">
+    <div className="flex h-[calc(100dvh-3.5rem)] flex-col bg-background md:h-dvh">
       {/* Top bar */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
         <Tooltip>
@@ -304,19 +325,23 @@ export function AutomationBuilder({ automation, channels }: AutomationBuilderPro
         </div>
       </header>
 
+      <p className="shrink-0 border-b bg-muted/50 px-4 py-2 text-xs text-muted-foreground md:hidden">
+        The canvas needs a wider screen. Scroll sideways to reach it, or open this automation on a computer.
+      </p>
+
       {/* Body: settings · canvas · inspector */}
       <div className="flex min-h-0 flex-1 overflow-x-auto">
-        <aside className="w-[380px] shrink-0 overflow-y-auto border-r bg-background scrollbar-thin">
+        <aside className={cn("w-[340px] shrink-0 overflow-y-auto border-r bg-background scrollbar-thin", canvasOnly && "hidden")}>
           <TriggerPanel settings={settings} channels={channels} mediaById={mediaById} dispatch={dispatch} />
         </aside>
-        <div className={cn("relative min-w-[480px] flex-1")}>
+        <div className={cn("relative min-w-[420px] flex-1")}>
           <BuilderNodeContext.Provider value={nodeContext}>
             <ReactFlowProvider>
-              <FlowCanvas nodes={nodes} edges={edges} dispatch={dispatch} />
+              <FlowCanvas nodes={nodes} edges={edges} pipelines={pipelines} dispatch={dispatch} canvasOnly={canvasOnly} onCanvasOnlyChange={setCanvasOnly} />
             </ReactFlowProvider>
           </BuilderNodeContext.Provider>
         </div>
-        <aside className="w-[360px] shrink-0 overflow-y-auto border-l bg-background scrollbar-thin">
+        <aside className={cn("w-[320px] shrink-0 overflow-y-auto border-l bg-background scrollbar-thin", canvasOnly && "hidden")}>
           <Inspector
             node={selectedNode}
             errors={selectedNode ? (nodeErrors.get(selectedNode.id) ?? []) : []}
@@ -326,6 +351,7 @@ export function AutomationBuilder({ automation, channels }: AutomationBuilderPro
             conversation={conversation}
             contactText={contactText}
             contactLabel={CONTACT_LABEL[settings.triggerType]}
+            pipelines={pipelines}
           />
         </aside>
       </div>

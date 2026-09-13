@@ -1,4 +1,5 @@
 /** Tiny fetch helpers shared by the broadcast client components. */
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
 
 type ErrorBody = { error?: string; fieldErrors?: Record<string, string[] | undefined> };
 
@@ -24,6 +25,7 @@ export async function apiFetch<T>(input: string, init: RequestInit & { json?: un
   return (await res.json()) as T;
 }
 
+/** API messages are already customer copy; transport failures and anything technical get translated. */
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }

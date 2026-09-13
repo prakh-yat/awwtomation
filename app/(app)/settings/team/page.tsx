@@ -6,8 +6,9 @@ import { InviteDialog } from "@/components/settings/invite-dialog";
 import { InvitationsTable, MembersTable, type PendingInvitation, type TeamMember } from "@/components/settings/team-table";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { getUsage } from "@/lib/billing/usage";
-import { listInvitations, listMembers } from "@/lib/services/workspaces";
+import { PageHeader } from "@/components/ui/page-header";
+import { getOrganizationUsage } from "@/lib/billing/usage";
+import { listInvitations, listMembers } from "@/lib/services/organizations";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 import { canManageTeam } from "@/lib/workspace/permissions";
 
@@ -28,12 +29,12 @@ function SectionHeader({ title, description, actions }: { title: string; descrip
 export default async function TeamSettingsPage() {
   const ctx = await requireWorkspaceContext();
   if (!canManageTeam(ctx.role)) redirect("/settings");
-  const workspaceId = ctx.workspace.id;
+  const organizationId = ctx.organization.id;
 
   const [memberRows, invitationRows, usage] = await Promise.all([
-    listMembers(workspaceId),
-    listInvitations(workspaceId, { status: "PENDING", includeLinks: true }),
-    getUsage(workspaceId),
+    listMembers(organizationId),
+    listInvitations(organizationId, { status: "PENDING", includeLinks: true }),
+    getOrganizationUsage(organizationId),
   ]);
 
   // Plain-data props: dates go over the RSC boundary as ISO strings.
@@ -60,7 +61,13 @@ export default async function TeamSettingsPage() {
   const invite = <InviteDialog actorRole={ctx.role} seats={seats} />;
 
   return (
-    <div className="space-y-8">
+    <div>
+      <PageHeader
+        title="Team"
+        description={`People in ${ctx.organization.name}. Everyone here can open all ${ctx.workspaces.length === 1 ? "of its workspace" : `${ctx.workspaces.length} of its workspaces`}; their role decides what they can change.`}
+        actions={invite}
+      />
+      <div className="space-y-8">
       <section>
         <SectionHeader
           title="Members"
@@ -71,19 +78,18 @@ export default async function TeamSettingsPage() {
               </span>
               {seatsFull ? (
                 <Badge variant="warning">
-                  Plan limit —{" "}
+                  All seats in use.{" "}
                   <Link href="/settings/billing" className="underline underline-offset-2">
-                    upgrade
+                    Upgrade
                   </Link>
                 </Badge>
               ) : null}
-              <span className="text-muted-foreground/70">· pending invitations count toward seats</span>
+              <span className="text-muted-foreground/70">· pending invitations use a seat</span>
             </span>
           }
-          actions={invite}
         />
         <Card className="overflow-hidden">
-          <MembersTable workspaceId={workspaceId} members={members} currentUserId={ctx.user.id} actorRole={ctx.role} />
+          <MembersTable organizationId={organizationId} members={members} currentUserId={ctx.user.id} actorRole={ctx.role} />
         </Card>
       </section>
 
@@ -100,6 +106,7 @@ export default async function TeamSettingsPage() {
           <InvitationsTable invitations={invitations} inviteAction={invite} />
         )}
       </section>
+      </div>
     </div>
   );
 }

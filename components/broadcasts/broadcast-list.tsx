@@ -107,10 +107,10 @@ function BroadcastList({ rows, timeZone }: { rows: BroadcastRow[]; timeZone: str
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Name</TableHead>
-              <TableHead>Channel</TableHead>
+              <TableHead className="hidden md:table-cell">Account</TableHead>
               <TableHead className="hidden lg:table-cell">Audience</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Delivery</TableHead>
+              <TableHead className="hidden sm:table-cell">Delivery</TableHead>
               <TableHead className="hidden md:table-cell">When</TableHead>
               <TableHead className="w-12 text-right">
                 <span className="sr-only">Actions</span>
@@ -130,13 +130,13 @@ function BroadcastList({ rows, timeZone }: { rows: BroadcastRow[]; timeZone: str
                 const when = whenLabel(row, timeZone);
                 return (
                   <TableRow key={row.id}>
-                    <TableCell className="max-w-[260px]">
+                    <TableCell className="max-w-[180px] sm:max-w-[260px]">
                       <Link href={`/broadcasts/${row.id}`} className="block truncate font-medium text-foreground hover:underline">
                         {row.name}
                       </Link>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">Created {formatDateTime(row.createdAt, timeZone)}</p>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       <span className="inline-flex items-center gap-1.5">
                         <PlatformIcon platform={row.channel.platform} size={14} className="text-muted-foreground" />
                         <span className="truncate">{channelLabel(row.channel)}</span>
@@ -157,11 +157,11 @@ function BroadcastList({ rows, timeZone }: { rows: BroadcastRow[]; timeZone: str
                         {meta.label}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <DeliveryCell row={row} />
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{when.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{when.label}</p>
                       <p className="tabular-nums">{when.value}</p>
                     </TableCell>
                     <TableCell className="text-right">

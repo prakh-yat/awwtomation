@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { AutomationBuilder } from "@/components/automations/builder/builder";
-import { brand } from "@/lib/brand";
 import { getAutomation, listChannelOptions } from "@/lib/services/automations";
+import { listPipelines } from "@/lib/services/pipelines";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
 type Params = Promise<{ id: string }>;
@@ -16,20 +16,24 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const ctx = await requireWorkspaceContext();
   const { id } = await params;
   const automation = await loadAutomation(ctx.workspace.id, id);
-  return { title: `${automation?.name ?? "Automation"} · ${brand.name}` };
+  return { title: automation?.name ?? "Automation" };
 }
 
 export default async function AutomationBuilderPage({ params }: { params: Params }) {
   const ctx = await requireWorkspaceContext();
   const { id } = await params;
-  const [automation, channels] = await Promise.all([loadAutomation(ctx.workspace.id, id), listChannelOptions(ctx.workspace.id)]);
+  const [automation, channels, pipelines] = await Promise.all([
+    loadAutomation(ctx.workspace.id, id),
+    listChannelOptions(ctx.workspace.id),
+    listPipelines(ctx.workspace.id),
+  ]);
   if (!automation) notFound();
 
   // The builder owns the whole viewport; the page's <h1> is the editable name inside it.
   return (
     <>
       <h1 className="sr-only">{automation.name}</h1>
-      <AutomationBuilder key={automation.id} automation={automation} channels={channels} />
+      <AutomationBuilder key={automation.id} automation={automation} channels={channels} pipelines={pipelines} />
     </>
   );
 }

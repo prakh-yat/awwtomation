@@ -46,6 +46,7 @@ import {
   type OutboundMessage,
 } from "@/lib/meta/types";
 import { enqueue } from "@/lib/queue";
+import { removeContactsFromPipeline, setContactsStage } from "@/lib/services/pipelines";
 import {
   DEFAULT_ASK_RETRIES,
   DEFAULT_ASK_RETRY_PROMPT,
@@ -605,7 +606,7 @@ function templateVars(contact: Contact, context: FlowSessionContext): Record<str
 
 function defaultRetryPrompt(channel: Channel): string {
   const handle = channel.username ? `@${channel.username.replace(/^@/, "")}` : "us";
-  return `Looks like you're not following ${handle} yet. Follow, then tap the button below to continue 👇`;
+  return `It looks like you're not following ${handle} yet. Follow, then tap the button below to continue.`;
 }
 
 /**
@@ -657,6 +658,24 @@ async function updateTags(contact: Contact, tag: string, add: boolean): Promise<
   if (add === has) return contact;
   const tags = add ? [...contact.tags, clean] : contact.tags.filter((t) => t !== clean);
   return prisma.contact.update({ where: { id: contact.id }, data: { tags: { set: tags } } });
+}
+
+/**
+ * Pipeline steps never stop a flow: a pipeline or stage deleted after the
+ * automation went live is logged and skipped, and the flow carries on.
+ */
+async function applyPipelineStep(run: SessionRun, data: Extract<FlowNodeData, { type: "add_to_pipeline" | "move_stage" | "remove_from_pipeline" }>): Promise<void> {
+  const workspaceId = run.channel.workspaceId;
+  const source = { automationId: run.automation.id };
+  try {
+    if (data.type === "remove_from_pipeline") {
+      await removeContactsFromPipeline(workspaceId, [run.contact.id], data.pipelineId, source);
+    } else {
+      await setContactsStage(workspaceId, [run.contact.id], data.pipelineId, data.stageId, source, { onlyIfAbsent: data.type === "add_to_pipeline" });
+    }
+  } catch (err) {
+    logger.warn("flow.pipeline_step_skipped", { automationId: run.automation.id, sessionId: run.session.id, step: data.type, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /**
@@ -764,6 +783,14 @@ export async function executeFlowStep(job: Job): Promise<void> {
       case "add_tag":
       case "remove_tag": {
         run.contact = await updateTags(run.contact, node.data.tag, node.data.type === "add_tag");
+        nodeId = nextNodeId(flow, node.id, "next");
+        continue;
+      }
+
+      case "add_to_pipeline":
+      case "move_stage":
+      case "remove_from_pipeline": {
+        await applyPipelineStep(run, node.data);
         nodeId = nextNodeId(flow, node.id, "next");
         continue;
       }
@@ -895,7 +922,7 @@ export async function executeFlowStep(job: Job): Promise<void> {
         // No "no" branch wired: ask them to follow and park on this node until `follow_check` comes back.
         const prompt: OutboundMessage = {
           text: node.data.retryPrompt?.trim() || defaultRetryPrompt(channel),
-          buttons: [{ type: "postback", title: "I'm following ✓", payload: `follow_check:${node.id}` }],
+          buttons: [{ type: "postback", title: "I'm following", payload: `follow_check:${node.id}` }],
         };
         const result = await sendToContact({
           channel,

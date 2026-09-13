@@ -15,14 +15,15 @@ export function SkipHelpPopover() {
       <PopoverTrigger asChild>
         <Button type="button" variant="ghost" size="sm" className="text-muted-foreground">
           <CircleHelp />
-          Why skipped?
+          Why not sent?
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[380px] max-w-[calc(100vw-2rem)] p-0">
         <div className="border-b px-4 py-3">
-          <p className="text-sm font-medium">Delivery outcomes</p>
+          <p className="text-sm font-medium">What each outcome means</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Skips are the platform obeying Meta&apos;s messaging rules, not errors. Failures are responses from Meta.
+            A message that wasn&apos;t sent isn&apos;t an error: an Instagram or Facebook rule, or one of your own settings, held it back. A failed
+            message is one Instagram or Facebook refused.
           </p>
         </div>
         <ul className="max-h-[60vh] divide-y overflow-y-auto scrollbar-thin">

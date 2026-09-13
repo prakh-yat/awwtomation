@@ -36,12 +36,12 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex h-full flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition-all",
+              "inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[13px] font-medium transition-all",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
               active ? "bg-background text-foreground shadow-sm" : "hover:text-foreground",
             )}
           >
-            {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+            {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" /> : null}
             {o.label}
           </button>
         );

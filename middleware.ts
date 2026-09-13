@@ -17,9 +17,10 @@ const PROTECTED_PREFIXES = [
   "/links",
   "/logs",
   "/settings",
-  "/admin",
   "/onboarding",
   "/checkout",
+  "/organizations",
+  "/usage",
 ];
 
 function isProtected(pathname: string): boolean {

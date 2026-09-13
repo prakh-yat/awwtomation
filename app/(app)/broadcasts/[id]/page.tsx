@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function BroadcastPage({ params }: Props) {
   const { id } = await params;
   const ctx = await requireWorkspaceContext();
-  if (!limitsFor(effectivePlan(ctx.workspace)).broadcasts) redirect("/broadcasts");
+  if (!limitsFor(effectivePlan(ctx.organization)).broadcasts) redirect("/broadcasts");
 
   const detail = await loadBroadcast(ctx.workspace.id, id);
   if (!detail) notFound();

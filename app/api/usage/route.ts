@@ -17,5 +17,5 @@ const querySchema = z.object({
  */
 export const GET = withWorkspace(async (req, ctx) => {
   const { months } = parseQuery(req, querySchema);
-  return NextResponse.json(await getUsageHistory(ctx.workspace.id, months));
+  return NextResponse.json(await getUsageHistory(ctx.organization.id, months));
 });

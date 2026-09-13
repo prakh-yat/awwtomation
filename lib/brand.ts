@@ -5,7 +5,7 @@ export const brand = {
   wordmark: "Awwtomation.",
   tagline: "Comment-to-DM automation for Instagram and Facebook.",
   description:
-    "Turn every comment into a conversation. Awwtomation sends instant DMs, replies publicly, gates content behind follows and tracks every click — on the official Meta API.",
+    "Awwtomation sends a private message to people who comment a keyword on your Instagram or Facebook posts, replies under their comment and saves them as a contact.",
   supportEmail: "support@awwtomation.com",
   company: "Awwtomation",
   colors: { ink: "#18181B", lavender: "#C1C1D7" },

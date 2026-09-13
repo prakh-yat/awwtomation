@@ -15,7 +15,7 @@ export default function NewBroadcastLoading() {
         </div>
       </div>
       <Skeleton className="mb-6 h-16 w-full" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-44 w-full rounded-lg" />

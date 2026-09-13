@@ -78,12 +78,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder
 
 ```bash
 npx prisma db push        # terminal 2 — create the tables
-npm run db:seed           # demo workspace with channels, contacts, logs (SEED_EMAIL=you@example.com to own it)
+npm run db:seed           # demo organizations with channels, contacts, pipelines, logs (SEED_EMAIL=you@example.com to own it)
 npm run dev               # http://localhost:3000 — you are signed in as DEV_AUTH_EMAIL
 npm run worker            # terminal 3 — sends the DMs (demo channels have fake tokens and cannot send)
 ```
 
-Put `DEV_AUTH_EMAIL` in `SUPER_ADMIN_EMAILS` too to see `/admin`. The bypass is ignored in production builds.
+The bypass is ignored in production builds.
 
 ### With real Supabase + Meta
 
@@ -128,14 +128,14 @@ The short version:
 
 ## 6. First login
 
-Sign in with Google → you land on onboarding → name your workspace → connect Instagram. Add your email to `SUPER_ADMIN_EMAILS` to see the `/admin` panel (all workspaces, plans, job queue, health).
+Sign in with Google → you land on onboarding → name your organization and first workspace → connect Instagram.
 
 ## 7. Billing (Dodo Payments)
 
-Plans are enforced server-side from day one; without Dodo credentials every workspace stays on FREE and the Billing page shows the plans as "contact us". To charge money: create the six products (`node --env-file=.env scripts/create-dodo-products.mjs`), fill in `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET` and the `DODO_PRODUCT_*` ids, and register the webhook endpoint `https://yourdomain.com/api/billing/webhook`. Test mode and live mode use different keys and product ids. Everything else — checkout, portal, plan changes, cancellations, reconciliation, admin overrides — is in **[docs/BILLING.md](BILLING.md)**.
+Plans are enforced server-side from day one; without Dodo credentials every organization stays on FREE and the Billing page shows the plans as "contact us". To charge money: create the six products (`node --env-file=.env scripts/create-dodo-products.mjs`), fill in `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET` and the `DODO_PRODUCT_*` ids, and register the webhook endpoint `https://yourdomain.com/api/billing/webhook`. Test mode and live mode use different keys and product ids. Everything else (checkout, portal, plan changes, cancellations, reconciliation, plan overrides) is in **[docs/BILLING.md](BILLING.md)**.
 
 ## 8. Product notes worth knowing
 
 - **Segments** (saved from the Contacts page, `/api/segments`): named contact filters — channel or platform, tags (all / any), followers only or non-followers, interacted within the last N days, opted-out excluded — that broadcasts can target instead of a single tag. A segment is evaluated when the broadcast runs, so the 24-hour-window eligibility count on the broadcast page is live.
 - **Delete channel & data** (Channels → ⋯ → Delete channel & data, OWNER only): unlike *Disconnect*, which keeps contacts, conversations and logs for reconnection, this removes the channel and everything cascading from it (contacts, conversations, messages, delivery logs, media cache, sessions). It is the action to offer a client who leaves and asks for their data to be erased, and what Meta's data-deletion callback triggers automatically. It cannot be undone; the audit log records who did it and the row counts.
-- **Admin overrides**: super admins can pin a workspace to a plan from `/admin/workspaces/[id]`; the override wins over the Dodo subscription until it is cleared.
+- **Plan overrides**: run `npx tsx scripts/set-plan.ts set <organization> <plan>` to pin an organization to a plan; the override wins over the Dodo subscription until `scripts/set-plan.ts clear <organization>`. There is no admin page by design.

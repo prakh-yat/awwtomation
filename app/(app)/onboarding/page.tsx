@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { LogoMark, Wordmark } from "@/components/ui/logo";
 import { getCurrentUser } from "@/lib/auth/session";
 import { brand } from "@/lib/brand";
-import { defaultWorkspaceName } from "@/lib/services/workspaces";
+import { defaultOrganizationName } from "@/lib/services/organizations";
 import { getWorkspaceContext } from "@/lib/workspace/context";
 
 import { OnboardingForm } from "./onboarding-form";
@@ -12,12 +13,12 @@ import { StepIndicator } from "./step-indicator";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: `Create your workspace · ${brand.name}` };
+export const metadata: Metadata = { title: "Create your organization" };
 
 /**
- * Shown only to signed-in users with zero memberships (declined/expired
- * invite, left their only team, or the login bootstrap failed). Anyone who
- * already has a workspace goes straight to the dashboard.
+ * Shown only to signed-in users with no organization to open (declined or
+ * expired invite, left their only team, or the login bootstrap failed). Anyone
+ * who already has one goes straight to the dashboard.
  */
 export default async function OnboardingPage() {
   const user = await getCurrentUser();
@@ -30,22 +31,23 @@ export default async function OnboardingPage() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md animate-fade-in">
         <div className="mb-8 space-y-4 text-center">
-          <Link href="/" className="text-lg font-semibold tracking-tight text-foreground">
-            {brand.name}
+          <Link href="/" aria-label={brand.name} className="inline-flex items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <LogoMark size={26} />
+            <Wordmark height={12} />
           </Link>
           <StepIndicator current={1} />
         </div>
 
         <div className="rounded-lg border bg-card p-8 shadow-card">
           <div className="mb-6 space-y-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Create your workspace</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Create your organization</h1>
             <p className="text-sm text-muted-foreground">
-              A workspace holds your connected accounts, automations and team. Next you&apos;ll connect an Instagram or
-              Facebook account.
+              An organization holds your plan and your team, and its first workspace holds your connected accounts and
+              automations. Next you&apos;ll connect an Instagram or Facebook account.
             </p>
           </div>
 
-          <OnboardingForm defaultName={defaultWorkspaceName(user)} />
+          <OnboardingForm defaultName={defaultOrganizationName(user)} />
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">

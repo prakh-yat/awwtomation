@@ -42,8 +42,6 @@ const serverSchema = z.object({
   INSTAGRAM_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
 
-  /** Comma-separated emails that get the platform admin panel. */
-  SUPER_ADMIN_EMAILS: z.string().optional(),
   /** Dev-only: sign in as this email without Supabase (ignored unless NODE_ENV=development). */
   DEV_AUTH_EMAIL: z.string().optional(),
 
@@ -116,12 +114,6 @@ export function appUrl(path = ""): string {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-export function superAdminEmails(): string[] {
-  return (process.env.SUPER_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
 
 export function isMetaConfigured(): { instagram: boolean; facebook: boolean } {
   return {

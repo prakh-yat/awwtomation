@@ -23,7 +23,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 function DeletionStatus({ code, record }: { code: string; record: DataDeletionRecord | null }) {
   return (
     <div className="mt-8 rounded-lg border bg-muted/40 px-5 py-4 text-sm">
-      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Deletion request status</p>
+      <p className="text-[13px] font-medium text-muted-foreground">Deletion request status</p>
       <p className="mt-2">
         Confirmation code <code className="rounded bg-background px-1.5 py-0.5 font-mono text-[13px]">{code}</code>
       </p>
@@ -61,7 +61,7 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
       {code ? <DeletionStatus code={code} record={record} /> : null}
 
       <h2>1. Disconnect a channel (keeps data for reconnection)</h2>
-      <p>Workspace admins and owners can disconnect an Instagram account or Facebook Page from inside {brand.name}:</p>
+      <p>Admins and owners can disconnect an Instagram account or Facebook Page from inside {brand.name}:</p>
       <ol>
         <li>Sign in and open <strong>Channels</strong> in the sidebar.</li>
         <li>Open the menu on the account card and choose <strong>Disconnect</strong>, then confirm.</li>
@@ -75,9 +75,9 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
       </p>
 
       <h2>2. Delete a channel and all of its data (permanent)</h2>
-      <p>The workspace owner can permanently erase everything an account ever produced in the workspace:</p>
+      <p>An owner can permanently erase everything an account ever produced in the workspace:</p>
       <ol>
-        <li>Open <strong>Channels</strong>, open the menu on the account card and choose <strong>Delete channel &amp; data</strong>.</li>
+        <li>Open <strong>Channels</strong>, open the menu on the account card and choose <strong>Delete account and data</strong>.</li>
         <li>Type the account&apos;s username (or the Page name) to confirm.</li>
       </ol>
       <p>
@@ -89,13 +89,16 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
         entry in your workspace stating that the channel was deleted, when, by whom, and how many records it contained.
       </p>
 
-      <h2>3. Delete a workspace</h2>
+      <h2>3. Delete a workspace or an organization</h2>
       <p>
-        The workspace owner can delete the entire workspace from <strong>Settings → General</strong> (Danger zone). This
-        removes every channel with all the data listed in section 2, plus team memberships, pending invitations,
-        tracked links, logs, payment history, queued jobs and the workspace&apos;s audit log. Connected accounts are
-        released so they can be connected elsewhere. To delete your user account as well, or if you can no longer sign
-        in, email us (section 6).
+        An owner can delete a workspace from <strong>Settings → General</strong> (Ownership and deletion). This removes
+        every channel in it with all the data listed in section 2, plus its pipelines, tracked links, logs, queued jobs
+        and the workspace&apos;s audit log. Connected accounts are released so they can be connected elsewhere.
+      </p>
+      <p>
+        Deleting the organization, from the same place, removes all of its workspaces in the same way, plus team
+        memberships, pending invitations and payment history. Cancel a paid subscription first so nothing is charged
+        again. To delete your user account as well, or if you can no longer sign in, email us (section 6).
       </p>
 
       <h2>4. Remove {brand.name} from your Instagram or Facebook settings</h2>
@@ -109,8 +112,8 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
         section 1 describes: the token is destroyed at once and processing stops, while the workspace&apos;s data is
         kept until an owner deletes it (sections 2, 3 or 5) or asks us to (section 6). For Facebook Pages, Meta
         identifies the <em>person</em> who removed the app rather than the Page, which we cannot always map to a
-        connected Page; in that case the Page token simply stops working on its next use and the channel shows as
-        &quot;Token expired&quot; until someone in the workspace disconnects or deletes it.
+        connected Page; in that case the Page token simply stops working on its next use and the account shows as
+        &quot;Reconnect needed&quot; until someone in the workspace disconnects or deletes it.
       </p>
 
       <h2>5. Meta&apos;s data deletion request</h2>
@@ -124,11 +127,11 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
 
       <h2>6. Request deletion by email</h2>
       <p>
-        For anything the options above do not cover — deleting your user account, removing data when you cannot sign
-        in, or requests from people who interacted with a business that uses {brand.name} — email{" "}
+        For anything the options above do not cover, such as deleting your user account, removing data when you cannot
+        sign in, or requests from people who interacted with a business that uses {brand.name}, email{" "}
         <a href={`mailto:${brand.supportEmail}?subject=Data%20deletion%20request`}>{brand.supportEmail}</a> with the
-        subject &quot;Data deletion request&quot;. Tell us what you want deleted: a specific channel, a workspace, your
-        whole account, or — if you are a member of someone else&apos;s audience — the Instagram or Facebook username the
+        subject &quot;Data deletion request&quot;. Tell us what you want deleted: a specific channel, a workspace, an organization, your
+        whole account, or, if you are a member of someone else&apos;s audience, the Instagram or Facebook username the
         data relates to.
       </p>
       <p>
@@ -140,8 +143,8 @@ export default async function DataDeletionPage({ searchParams }: { searchParams:
       <h2>7. What remains after deletion</h2>
       <ul>
         <li>
-          Audit entries that record that a deletion happened (timestamp, actor, account id and record counts) — never
-          message content or contact details.
+          Audit entries that record that a deletion happened (timestamp, actor, account id and record counts). These
+          never include message content or contact details.
         </li>
         <li>Invoices, payment records and payment-provider receipts we are legally required to keep for accounting.</li>
         <li>Aggregated, anonymised statistics that cannot identify anyone.</li>

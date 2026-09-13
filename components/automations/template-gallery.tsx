@@ -2,36 +2,24 @@
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, HelpCircle, MessageSquare, PenLine, Sparkles, Tag, Timer, UserCheck, Zap } from "lucide-react";
+import { ArrowRight, PenLine } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
-import { TriggerBadge } from "@/components/automations/badges";
-import { Badge } from "@/components/ui/badge";
+import { STEP_INFO } from "@/components/automations/builder/step-catalog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
-import type { FlowNodeType } from "@/lib/automation/flow-types";
 import type { AutomationDetail, ChannelOption } from "@/lib/services/automations";
 import type { TemplateStep, TemplateSummary } from "@/lib/services/templates";
 import { cn } from "@/lib/utils";
-
-const STEP_ICONS: Record<FlowNodeType, typeof Zap> = {
-  trigger: Zap,
-  send_message: MessageSquare,
-  ask_question: HelpCircle,
-  condition_follow: UserCheck,
-  delay: Timer,
-  add_tag: Tag,
-  remove_tag: Tag,
-};
 
 function StepChain({ steps }: { steps: TemplateStep[] }) {
   return (
     <ol className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
       {steps.map((s, i) => {
-        const Icon = STEP_ICONS[s.type];
+        const Icon = STEP_INFO[s.type].icon;
         return (
           <li key={i} className="flex items-center gap-1">
             <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-foreground">
@@ -81,7 +69,7 @@ export function TemplateGallery({ templates, channels }: { templates: TemplateSu
   }
 
   React.useEffect(() => {
-    // /automations/new?template=<id> (from the list page's empty state) skips the browse step.
+    // /automations/templates?template=<id> (from the list page's empty state) skips the browse step.
     const wanted = searchParams.get("template");
     if (!wanted || autoStarted.current || channels.length === 0) return;
     if (!templates.some((t) => t.id === wanted)) return;
@@ -107,36 +95,18 @@ export function TemplateGallery({ templates, channels }: { templates: TemplateSu
               "disabled:pointer-events-none disabled:opacity-60",
             )}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t.name}</p>
-                <p className="mt-1 text-[13px] text-muted-foreground">{t.description}</p>
-              </div>
-              <Badge variant="secondary" className="shrink-0">
-                {t.category}
-              </Badge>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-1.5">
-              <TriggerBadge trigger={t.triggerType} />
-              {t.followGate ? (
-                <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
-                  <UserCheck className="h-3 w-3" /> Follow gate
-                </Badge>
-              ) : null}
-              {t.publicReplyEnabled ? (
-                <Badge variant="outline" className="font-normal text-muted-foreground">
-                  Public reply
-                </Badge>
-              ) : null}
-            </div>
-            <div className="mt-4 border-t pt-3">
+            <p className="text-sm font-medium">{t.name}</p>
+            <p className="mt-1 text-[13px] text-muted-foreground">{t.description}</p>
+            <div className="mt-4 flex-1 border-t pt-3">
               <StepChain steps={t.steps} />
             </div>
-            <div className="mt-4 flex items-center justify-between text-[12px]">
-              <span className="text-muted-foreground">
-                {t.matchMode === "ANY" ? "Fires on every comment" : `Keywords: ${t.keywords.join(", ")}`}
+            <div className="mt-4 flex items-center justify-between gap-3 text-[12px]">
+              <span className="truncate text-muted-foreground">
+                {t.matchMode === "ANY"
+                  ? `Any ${t.triggerType === "COMMENT" ? "comment" : t.triggerType === "DM" ? "DM" : "story reply"}`
+                  : `Keywords: ${t.keywords.join(", ")}`}
               </span>
-              <span className="inline-flex items-center gap-1 font-medium">
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium">
                 {pending === t.id ? "Creating…" : "Use template"}
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
@@ -158,9 +128,7 @@ export function TemplateGallery({ templates, channels }: { templates: TemplateSu
             <PenLine className="h-5 w-5" strokeWidth={1.75} />
           </div>
           <p className="text-sm font-medium">{pending === SCRATCH ? "Creating…" : "Start from scratch"}</p>
-          <p className="mt-1 max-w-[220px] text-[13px] text-muted-foreground">
-            A comment trigger and one message with a link button. Shape it however you like.
-          </p>
+          <p className="mt-1 max-w-[220px] text-[13px] text-muted-foreground">An empty canvas with just the trigger. Add the steps you need.</p>
         </button>
       </div>
 
@@ -169,14 +137,14 @@ export function TemplateGallery({ templates, channels }: { templates: TemplateSu
           <DialogHeader>
             <DialogTitle>Which account?</DialogTitle>
             <DialogDescription>
-              {pickedTemplate ? `“${pickedTemplate.name}” will listen on this account.` : "The new automation will listen on this account."}
+              {pickedTemplate ? `“${pickedTemplate.name}” will reply from this account.` : "The new automation will reply from this account."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="template-channel">Channel</Label>
+            <Label htmlFor="template-channel">Account</Label>
             <Select value={channelId} onValueChange={setChannelId}>
               <SelectTrigger id="template-channel">
-                <SelectValue placeholder="Pick a channel" />
+                <SelectValue placeholder="Pick an account" />
               </SelectTrigger>
               <SelectContent>
                 {channels.map((c) => (
@@ -196,7 +164,7 @@ export function TemplateGallery({ templates, channels }: { templates: TemplateSu
               disabled={!channelId}
               loading={pending !== null}
             >
-              <Sparkles /> Create
+              Create
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import * as React from "react";
-import { Download, ScrollText, Search, X } from "lucide-react";
+import { CalendarRange, ChevronDown, Download, ScrollText, Search, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -46,6 +47,92 @@ function useDebounced<T>(value: T, delay: number): T {
     return () => clearTimeout(timer);
   }, [value, delay]);
   return debounced;
+}
+
+/** "Sep 1": the filter stores YYYY-MM-DD days in the workspace time zone, so read them back as plain dates. */
+function dayLabel(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (!y || !m || !d) return key;
+  const sameYear = y === new Date().getUTCFullYear();
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: sameYear ? undefined : "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, d)),
+  );
+}
+
+function rangeLabel(from: string, to: string): string {
+  if (from && to) return from === to ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(to)}`;
+  if (from) return `From ${dayLabel(from)}`;
+  if (to) return `Until ${dayLabel(to)}`;
+  return "Any date";
+}
+
+function DateRangeFilter({ from, to, max, onChange }: { from: string; to: string; max: string; onChange: (range: { from: string; to: string }) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [draftFrom, setDraftFrom] = React.useState(from);
+  const [draftTo, setDraftTo] = React.useState(to);
+  const active = Boolean(from || to);
+
+  function handleOpenChange(next: boolean) {
+    if (next) {
+      setDraftFrom(from);
+      setDraftTo(to);
+    }
+    setOpen(next);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className={cn("h-8 gap-1.5 text-[13px] font-normal", !active && "text-muted-foreground")}>
+          <CalendarRange className="h-3.5 w-3.5" />
+          {rangeLabel(from, to)}
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const swap = draftFrom && draftTo && draftFrom > draftTo;
+            onChange(swap ? { from: draftTo, to: draftFrom } : { from: draftFrom, to: draftTo });
+            setOpen(false);
+          }}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="logs-from">From</Label>
+              <Input id="logs-from" type="date" value={draftFrom} max={draftTo || max} onChange={(e) => setDraftFrom(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="logs-to">To</Label>
+              <Input id="logs-to" type="date" value={draftTo} min={draftFrom || undefined} max={max} onChange={(e) => setDraftTo(e.target.value)} />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Leave one side empty to keep the range open.</p>
+          <div className="flex gap-2">
+            {active ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  onChange({ from: "", to: "" });
+                  setOpen(false);
+                }}
+              >
+                Clear dates
+              </Button>
+            ) : null}
+            <Button type="submit" size="sm" className="flex-1">
+              Apply
+            </Button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function StatusChip({ active, label, count, variant, onClick }: { active: boolean; label: string; count: number; variant?: "success" | "destructive" | "secondary"; onClick: () => void }) {
@@ -168,8 +255,8 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
   return (
     <>
       <PageHeader
-        title="Delivery logs"
-        description="Every DM, private reply, public reply and broadcast message — sent, failed or skipped, with the reason."
+        title="Logs"
+        description="Every message your automations and broadcasts sent, and the ones that were held back, with the reason."
         actions={
           <>
             <SkipHelpPopover />
@@ -238,10 +325,10 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
           {options.channels.length > 1 ? (
             <Select value={filters.channelId || ALL} onValueChange={(v) => patch({ channelId: v === ALL ? "" : v })}>
               <SelectTrigger className="h-8 w-[170px] text-[13px]" aria-label="Channel">
-                <SelectValue placeholder="Channel" />
+                <SelectValue placeholder="Account" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All channels</SelectItem>
+                <SelectItem value={ALL}>All accounts</SelectItem>
                 {options.channels.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.username ? `@${c.username}` : (c.name ?? c.id)}
@@ -267,34 +354,7 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
             </Select>
           ) : null}
 
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="logs-from" className="sr-only">
-              From date
-            </Label>
-            <Input
-              id="logs-from"
-              type="date"
-              value={filters.from}
-              max={filters.to || maxDay}
-              onChange={(e) => patch({ from: e.target.value })}
-              className="h-8 w-[140px] text-[13px]"
-              aria-label="From date"
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <Label htmlFor="logs-to" className="sr-only">
-              To date
-            </Label>
-            <Input
-              id="logs-to"
-              type="date"
-              value={filters.to}
-              min={filters.from || undefined}
-              max={maxDay}
-              onChange={(e) => patch({ to: e.target.value })}
-              className="h-8 w-[140px] text-[13px]"
-              aria-label="To date"
-            />
-          </div>
+          <DateRangeFilter from={filters.from} to={filters.to} max={maxDay} onChange={(range) => patch(range)} />
 
           {filters.broadcastId ? (
             <Badge variant="outline" className="h-8 gap-1.5 px-2.5">
@@ -333,9 +393,6 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
               onClick={() => patch({ status: filters.status === s ? "" : s })}
             />
           ))}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {filters.from || filters.to ? "Selected range" : "All time"} · {timezone}
-          </span>
         </div>
 
         {items.length === 0 && !loading ? (
@@ -371,12 +428,11 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
                     <span className="sr-only">Expand</span>
                   </TableHead>
                   <TableHead>Time</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Recipient</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Message</TableHead>
-                  <TableHead>Error</TableHead>
+                  <TableHead className="hidden md:table-cell">Type</TableHead>
+                  <TableHead>Outcome</TableHead>
+                  <TableHead className="hidden sm:table-cell">Recipient</TableHead>
+                  <TableHead className="hidden lg:table-cell">Sent by</TableHead>
+                  <TableHead className="hidden xl:table-cell">Message</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

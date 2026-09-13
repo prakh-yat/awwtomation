@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/sonner";
-import type { ChannelSummary, MediaSummary } from "@/lib/services/channels";
+import type { ChannelView, MediaSummary } from "@/lib/services/channels";
 import { formatNumber, truncate } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./api";
@@ -20,7 +20,7 @@ import { channelDisplayName } from "./channel-status";
 type MediaResponse = { media: MediaSummary[]; syncedAt: string | null };
 
 export interface MediaDialogProps {
-  channel: Pick<ChannelSummary, "id" | "platform" | "username" | "name" | "externalId">;
+  channel: Pick<ChannelView, "id" | "platform" | "username" | "name">;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }

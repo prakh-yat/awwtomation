@@ -32,19 +32,24 @@ export type TransferCandidate = {
 };
 
 export interface DangerZoneProps {
+  organization: { id: string; name: string };
   workspace: { id: string; name: string };
+  /** Workspaces in the organization — its last one can't be deleted on its own. */
+  workspaceCount: number;
   role: WorkspaceRole;
   currentUserId: string;
   /** Number of OWNER members — the last owner can neither leave nor be demoted. */
   ownerCount: number;
-  /** Members the owner may hand the workspace to (everyone but themselves). Empty for non-owners. */
+  /** Members the owner may hand the organization to (everyone but themselves). Empty for non-owners. */
   transferCandidates: TransferCandidate[];
+  /** A subscription that will charge again blocks deleting the organization. */
+  subscriptionActive: boolean;
 }
 
 /**
- * After leaving or deleting, the API has already cleared the `or_workspace`
- * cookie; a full navigation (not a soft router push) guarantees the shell
- * re-resolves the next membership or lands on /onboarding.
+ * After leaving or deleting, the API has already cleared the active cookies; a
+ * full navigation (not a soft router push) guarantees the shell re-resolves the
+ * next membership or lands on /onboarding.
  */
 function hardNavigate(path: string) {
   window.location.assign(path);
@@ -66,7 +71,7 @@ function Row({ title, description, children }: { title: string; description: str
   );
 }
 
-function TransferOwnership({ workspace, candidates }: { workspace: { id: string; name: string }; candidates: TransferCandidate[] }) {
+function TransferOwnership({ organization, candidates }: { organization: { id: string; name: string }; candidates: TransferCandidate[] }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [targetId, setTargetId] = React.useState("");
@@ -77,11 +82,11 @@ function TransferOwnership({ workspace, candidates }: { workspace: { id: string;
     if (!target) return;
     setPending(true);
     try {
-      await apiFetch<{ ok: true }>(`/api/workspaces/${workspace.id}/transfer`, {
+      await apiFetch<{ ok: true }>(`/api/organizations/${organization.id}/transfer`, {
         method: "POST",
         json: { userId: target.userId },
       });
-      toast.success(`${displayName(target)} now owns ${workspace.name}. You are an admin.`);
+      toast.success(`${displayName(target)} now owns ${organization.name}. You are an admin.`);
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -102,7 +107,7 @@ function TransferOwnership({ workspace, candidates }: { workspace: { id: string;
         <DialogHeader>
           <DialogTitle>Transfer ownership</DialogTitle>
           <DialogDescription>
-            The new owner gets full control, including billing and deleting the workspace. You stay on as an admin.
+            The new owner gets full control of {organization.name}, including billing and deleting it. You stay on as an admin.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -139,21 +144,34 @@ function TransferOwnership({ workspace, candidates }: { workspace: { id: string;
   );
 }
 
-function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string } }) {
+/** Type-the-name confirmation shared by both deletes. */
+function DeleteDialog({
+  name,
+  triggerLabel,
+  description,
+  endpoint,
+  failure,
+}: {
+  name: string;
+  triggerLabel: string;
+  description: string;
+  endpoint: string;
+  failure: string;
+}) {
   const [open, setOpen] = React.useState(false);
   const [typed, setTyped] = React.useState("");
   const [pending, setPending] = React.useState(false);
-  const matches = typed.trim() === workspace.name;
+  const matches = typed.trim() === name;
 
   async function handleDelete() {
     if (!matches) return;
     setPending(true);
     try {
-      await apiFetch<{ ok: true }>(`/api/workspaces/${workspace.id}`, { method: "DELETE" });
-      toast.success(`${workspace.name} was deleted`);
+      await apiFetch<{ ok: true }>(endpoint, { method: "DELETE" });
+      toast.success(`${name} was deleted`);
       hardNavigate("/dashboard");
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't delete the workspace"));
+      toast.error(errorMessage(err, failure));
       setPending(false);
     }
   }
@@ -169,7 +187,7 @@ function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string 
     >
       <DialogTrigger asChild>
         <Button variant="destructive" size="sm">
-          Delete workspace
+          {triggerLabel}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
@@ -181,15 +199,12 @@ function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string 
           className="space-y-4"
         >
           <DialogHeader>
-            <DialogTitle>Delete {workspace.name}?</DialogTitle>
-            <DialogDescription>
-              This permanently removes every channel, automation, contact, conversation and log in this workspace.
-              Connected Instagram and Facebook accounts are released. This cannot be undone.
-            </DialogDescription>
+            <DialogTitle>Delete {name}?</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="delete-confirm">
-              Type <span className="font-semibold">{workspace.name}</span> to confirm
+              Type <span className="font-semibold">{name}</span> to confirm
             </Label>
             <Input
               id="delete-confirm"
@@ -198,7 +213,7 @@ function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string 
               autoComplete="off"
               autoFocus
               disabled={pending}
-              placeholder={workspace.name}
+              placeholder={name}
             />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -206,7 +221,7 @@ function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string 
               Cancel
             </Button>
             <Button type="submit" variant="destructive" loading={pending} disabled={!matches}>
-              Delete workspace
+              {triggerLabel}
             </Button>
           </DialogFooter>
         </form>
@@ -215,16 +230,14 @@ function DeleteWorkspace({ workspace }: { workspace: { id: string; name: string 
   );
 }
 
-function LeaveWorkspace({ workspace, userId }: { workspace: { id: string; name: string }; userId: string }) {
+function LeaveOrganization({ organization, userId }: { organization: { id: string; name: string }; userId: string }) {
   async function handleLeave() {
     try {
-      await apiFetch<{ ok: true; left: boolean }>(`/api/workspaces/${workspace.id}/members/${userId}`, {
-        method: "DELETE",
-      });
-      toast.success(`You left ${workspace.name}`);
+      await apiFetch<{ ok: true; left: boolean }>(`/api/organizations/${organization.id}/members/${userId}`, { method: "DELETE" });
+      toast.success(`You left ${organization.name}`);
       hardNavigate("/dashboard");
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't leave the workspace"));
+      toast.error(errorMessage(err, "Couldn't leave the organization"));
       throw err; // keeps the dialog open so the user can retry
     }
   }
@@ -233,28 +246,38 @@ function LeaveWorkspace({ workspace, userId }: { workspace: { id: string; name: 
     <ConfirmDialog
       trigger={
         <Button variant="outline" size="sm">
-          Leave workspace
+          Leave organization
         </Button>
       }
-      title={`Leave ${workspace.name}?`}
-      description="You'll lose access immediately. An admin can invite you back later."
-      confirmLabel="Leave workspace"
+      title={`Leave ${organization.name}?`}
+      description="You'll lose access to all of its workspaces immediately. An admin can invite you back later."
+      confirmLabel="Leave organization"
       destructive
       onConfirm={handleLeave}
     />
   );
 }
 
-export function DangerZone({ workspace, role, currentUserId, ownerCount, transferCandidates }: DangerZoneProps) {
+export function DangerZone({
+  organization,
+  workspace,
+  workspaceCount,
+  role,
+  currentUserId,
+  ownerCount,
+  transferCandidates,
+  subscriptionActive,
+}: DangerZoneProps) {
   const isOwner = role === "OWNER";
   // The last owner must transfer before leaving; a co-owner may simply leave.
   const canLeave = !isOwner || ownerCount > 1;
+  const onlyWorkspace = workspaceCount <= 1;
 
   return (
-    <Card className="border-destructive/30">
+    <Card>
       <CardHeader>
-        <CardTitle className="text-destructive">Danger zone</CardTitle>
-        <CardDescription>These actions affect everyone in the workspace and can&apos;t be undone.</CardDescription>
+        <CardTitle>Ownership and deletion</CardTitle>
+        <CardDescription>These affect everyone in {organization.name}. Deleting can&apos;t be undone.</CardDescription>
       </CardHeader>
       <CardContent className="divide-y">
         {isOwner ? (
@@ -262,37 +285,78 @@ export function DangerZone({ workspace, role, currentUserId, ownerCount, transfe
             title="Transfer ownership"
             description={
               transferCandidates.length === 0
-                ? "Invite a teammate first — there's nobody to hand the workspace to yet."
-                : "Make another member the owner. You'll remain an admin."
+                ? "Invite a teammate first. There's nobody to hand the organization to yet."
+                : "Make another member the owner of the organization. You'll remain an admin."
             }
           >
-            <TransferOwnership workspace={workspace} candidates={transferCandidates} />
+            <TransferOwnership organization={organization} candidates={transferCandidates} />
           </Row>
         ) : null}
 
         <Row
-          title="Leave workspace"
+          title="Leave organization"
           description={
             canLeave
-              ? "Remove yourself from this workspace. Your automations and messages stay with the team."
+              ? `Remove yourself from ${organization.name} and all of its workspaces. Your automations and messages stay with the team.`
               : "You're the only owner. Transfer ownership before leaving."
           }
         >
           {canLeave ? (
-            <LeaveWorkspace workspace={workspace} userId={currentUserId} />
+            <LeaveOrganization organization={organization} userId={currentUserId} />
           ) : (
             <Button variant="outline" size="sm" disabled>
-              Leave workspace
+              Leave organization
             </Button>
           )}
         </Row>
 
         {isOwner ? (
           <Row
-            title="Delete workspace"
-            description="Permanently delete this workspace and all of its data. Connected accounts are disconnected."
+            title={`Delete the ${workspace.name} workspace`}
+            description={
+              onlyWorkspace
+                ? "This is the organization's only workspace. Delete the organization instead."
+                : "Permanently delete this workspace and all of its data. Its connected accounts are disconnected."
+            }
           >
-            <DeleteWorkspace workspace={workspace} />
+            {onlyWorkspace ? (
+              <Button variant="destructive" size="sm" disabled>
+                Delete workspace
+              </Button>
+            ) : (
+              <DeleteDialog
+                name={workspace.name}
+                triggerLabel="Delete workspace"
+                description="This permanently removes every account, automation, contact, conversation and log in this workspace. Connected Instagram and Facebook accounts are released."
+                endpoint={`/api/workspaces/${workspace.id}`}
+                failure="Couldn't delete the workspace"
+              />
+            )}
+          </Row>
+        ) : null}
+
+        {isOwner ? (
+          <Row
+            title="Delete organization"
+            description={
+              subscriptionActive
+                ? "Cancel the subscription under Billing first. You can delete the organization once it won't charge again."
+                : `Permanently delete ${organization.name}, all ${workspaceCount === 1 ? "of its data" : `${workspaceCount} workspaces`} and its payment history.`
+            }
+          >
+            {subscriptionActive ? (
+              <Button variant="destructive" size="sm" disabled>
+                Delete organization
+              </Button>
+            ) : (
+              <DeleteDialog
+                name={organization.name}
+                triggerLabel="Delete organization"
+                description="This permanently removes every workspace in the organization with all of their accounts, automations, contacts and logs, plus the team and payment history."
+                endpoint={`/api/organizations/${organization.id}`}
+                failure="Couldn't delete the organization"
+              />
+            )}
           </Row>
         ) : null}
       </CardContent>

@@ -38,7 +38,6 @@ export async function register(): Promise<void> {
     cron: Boolean(process.env.CRON_SECRET),
     // Named without "Token": the logger redacts keys that look like secrets, and this is a boolean.
     webhookVerify: Boolean(process.env.META_WEBHOOK_VERIFY_TOKEN),
-    superAdmins: Boolean(process.env.SUPER_ADMIN_EMAILS),
   };
   const missingOptional = Object.entries(integrations)
     .filter(([, configured]) => !configured)

@@ -44,6 +44,7 @@ import {
 } from "@/lib/services/segments";
 import { recordAudit } from "@/lib/services/workspaces";
 import { ApiError } from "@/lib/workspace/api";
+import { customerReason } from "@/lib/errors/customer-messages";
 
 // ───────────────────────── Constants ─────────────────────────
 
@@ -236,7 +237,8 @@ export type BroadcastDeliveryEntry = {
   id: string;
   status: DeliveryStatus;
   createdAt: Date;
-  errorMessage: string | null;
+  /** Plain-language reason for a skip or failure; null when sent. */
+  reason: string | null;
   recipientUsername: string | null;
   contact: { id: string; username: string | null; name: string | null; avatarUrl: string | null } | null;
 };
@@ -348,7 +350,7 @@ async function assertPlanAllowsBroadcasts(workspaceId: string): Promise<void> {
 
 async function assertChannel(workspaceId: string, channelId: string): Promise<Pick<Channel, "id" | "status">> {
   const channel = await prisma.channel.findFirst({ where: { id: channelId, workspaceId }, select: { id: true, status: true } });
-  if (!channel) throw new ApiError(404, "Channel not found", "CHANNEL_NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "CHANNEL_NOT_FOUND");
   if (channel.status === ChannelStatus.DISCONNECTED) throw new ApiError(409, "That channel is disconnected", "CHANNEL_INACTIVE");
   return channel;
 }
@@ -390,7 +392,7 @@ export async function audienceForEstimate(workspaceId: string, input: { audience
 /** Count-only version used by the editor's live estimate. */
 export async function estimateAudience(workspaceId: string, channelId: string, audience: BroadcastAudience): Promise<AudienceEstimate> {
   const channel = await prisma.channel.findFirst({ where: { id: channelId, workspaceId }, select: { id: true, externalId: true } });
-  if (!channel) throw new ApiError(404, "Channel not found", "CHANNEL_NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "CHANNEL_NOT_FOUND");
   const now = new Date();
   const where = audienceWhere(workspaceId, channel, audience, now);
   const cutoff = windowCutoff(now.getTime());
@@ -516,7 +518,7 @@ export async function getBroadcast(workspaceId: string, id: string): Promise<Bro
       byStatus,
       pendingJobs,
     },
-    deliveries,
+    deliveries: deliveries.map(({ errorMessage, ...d }) => ({ ...d, reason: customerReason(d.status, errorMessage) })),
     deliveryTotal,
   };
 }
@@ -713,11 +715,11 @@ export async function sendBroadcast(workspaceId: string, id: string, actorId: st
   await assertPlanAllowsBroadcasts(workspaceId);
 
   const channel = await prisma.channel.findFirst({ where: { id: broadcast.channelId, workspaceId } });
-  if (!channel) throw new ApiError(409, "The channel for this broadcast no longer exists", "CHANNEL_NOT_FOUND");
+  if (!channel) throw new ApiError(409, "The account this broadcast sends from is no longer connected", "CHANNEL_NOT_FOUND");
   if (channel.status !== ChannelStatus.ACTIVE) throw new ApiError(409, "Reconnect the channel before sending", "CHANNEL_INACTIVE");
 
   const message = parseBroadcastMessage(broadcast.message);
-  if (!message) throw new ApiError(422, "The message is empty — add text or an image", "INVALID_MESSAGE");
+  if (!message) throw new ApiError(422, "The message is empty. Add text or an image.", "INVALID_MESSAGE");
 
   const audience = parseBroadcastAudience(broadcast.audience);
   const { eligible, outside } = await resolveAudience(workspaceId, channel, audience);

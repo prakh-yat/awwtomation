@@ -480,11 +480,11 @@ export async function setStatus(workspaceId: string, conversationId: string, sta
   logger.info("inbox.status_changed", { workspaceId, conversationId, status });
 }
 
-/** Assign to a workspace member, or `null` to unassign. Non-members are rejected so ids can't be probed. */
+/** Assign to someone in the workspace's organization, or `null` to unassign. Non-members are rejected so ids can't be probed. */
 export async function assign(workspaceId: string, conversationId: string, userId: string | null): Promise<void> {
   if (userId) {
-    const member = await prisma.workspaceMember.findUnique({
-      where: { workspaceId_userId: { workspaceId, userId } },
+    const member = await prisma.organizationMember.findFirst({
+      where: { userId, organization: { workspaces: { some: { id: workspaceId } } } },
       select: { id: true },
     });
     if (!member) throw new ApiError(422, "That person isn't a member of this workspace", "NOT_A_MEMBER");
@@ -498,9 +498,9 @@ function hasContent(message: OutboundMessage): boolean {
 }
 
 function describeClosedWindow(lastInboundAt: Date | null): string {
-  if (!lastInboundAt) return "Outside the 24-hour messaging window — this contact has never messaged you";
+  if (!lastInboundAt) return "You can reply once this person messages you.";
   const days = Math.floor((Date.now() - lastInboundAt.getTime()) / (24 * 3600 * 1000));
-  return `Outside the 24-hour messaging window — the contact's last message was ${days} day${days === 1 ? "" : "s"} ago`;
+  return `Their last message was ${days} day${days === 1 ? "" : "s"} ago, so the window to reply has closed.`;
 }
 
 /** Translate a non-SENT `sendToContact` outcome into the HTTP error the composer should show. */
@@ -509,7 +509,7 @@ function sendFailure(result: SendToContactResult): ApiError {
     case DeliveryStatus.SKIPPED_WINDOW:
       return new ApiError(409, "Outside the 24-hour messaging window", "WINDOW_CLOSED");
     case DeliveryStatus.SKIPPED_RATE_LIMIT:
-      return new ApiError(429, "Sending too quickly — try again in a moment", "RATE_LIMITED");
+      return new ApiError(429, "You're sending too quickly. Try again in a moment.", "RATE_LIMITED");
     case DeliveryStatus.SKIPPED_PLAN_LIMIT:
       return new ApiError(402, result.error ?? "Monthly DM limit reached", "PLAN_LIMIT");
     case DeliveryStatus.SKIPPED_OPTED_OUT:
@@ -557,7 +557,7 @@ export async function sendReply(
     );
   }
   if (conversation.channel.status !== ChannelStatus.ACTIVE) {
-    throw new ApiError(409, "This channel is disconnected or its token expired. Reconnect it from Channels.", "CHANNEL_INACTIVE");
+    throw new ApiError(409, "This account is disconnected. Reconnect it on the Channels page.", "CHANNEL_INACTIVE");
   }
 
   let result: SendToContactResult;
@@ -585,7 +585,7 @@ export async function sendReply(
   const created = await findSentMessage(conversationId, senderUserId, result.messageId ?? null);
   if (!created) {
     logger.error("inbox.sent_message_missing", { workspaceId, conversationId, messageId: result.messageId });
-    throw new ApiError(500, "The message was sent but couldn't be loaded — refresh the thread", "INTERNAL");
+    throw new ApiError(500, "The message was sent but couldn't be shown. Refresh the conversation.", "INTERNAL");
   }
   logger.info("inbox.reply_sent", { workspaceId, conversationId, senderUserId, humanAgent: Boolean(opts.humanAgent) });
   return created;
@@ -662,7 +662,7 @@ export async function syncConversationFromMeta(workspaceId: string, conversation
   if (!conversation) throw notFound();
   const { channel, contact } = conversation;
   if (channel.status !== ChannelStatus.ACTIVE) {
-    throw new ApiError(409, "This channel is disconnected or its token expired. Reconnect it from Channels.", "CHANNEL_INACTIVE");
+    throw new ApiError(409, "This account is disconnected. Reconnect it on the Channels page.", "CHANNEL_INACTIVE");
   }
 
   const token = getChannelToken(channel);
@@ -712,7 +712,7 @@ export async function syncConversationFromMeta(workspaceId: string, conversation
   } catch (err) {
     if (err instanceof MetaTokenError) {
       await markChannelTokenExpired(channel.id, err.message);
-      throw new ApiError(409, "The channel's access token has expired. Reconnect it from Channels.", "TOKEN_EXPIRED");
+      throw new ApiError(409, "Instagram signed this account out. Reconnect it on the Channels page.", "TOKEN_EXPIRED");
     }
     if (err instanceof MetaApiError) throw new ApiError(502, `Meta error: ${err.message}`, "META_ERROR");
     throw err;

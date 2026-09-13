@@ -2,18 +2,18 @@
 
 import { useActionState } from "react";
 
-import { createWorkspaceAction, type CreateWorkspaceState } from "./actions";
+import { createOrganizationAction, type CreateOrganizationState } from "./actions";
 
-const initialState: CreateWorkspaceState = {};
+const initialState: CreateOrganizationState = {};
 
 export function OnboardingForm({ defaultName }: { defaultName: string }) {
-  const [state, formAction, pending] = useActionState(createWorkspaceAction, initialState);
+  const [state, formAction, pending] = useActionState(createOrganizationAction, initialState);
 
   return (
     <form action={formAction} className="space-y-5" noValidate>
       <div className="space-y-2">
         <label htmlFor="workspace-name" className="text-sm font-medium">
-          Workspace name
+          Organization name
         </label>
         <input
           id="workspace-name"
@@ -27,7 +27,7 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
           aria-invalid={state.error ? true : undefined}
           aria-describedby={state.error ? "workspace-name-error" : "workspace-name-hint"}
           className="flex h-10 w-full rounded-md border border-input bg-white px-3 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-[invalid=true]:border-destructive"
-          placeholder="Acme Studio"
+          placeholder="Himalayan Threads"
         />
         {state.error ? (
           <p id="workspace-name-error" role="alert" className="text-xs text-destructive">
@@ -35,7 +35,7 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
           </p>
         ) : (
           <p id="workspace-name-hint" className="text-xs text-muted-foreground">
-            Usually your brand or agency name. You can rename it any time in Settings.
+            Usually your business or agency name. Its first workspace gets the same name, and you can rename both in Settings.
           </p>
         )}
       </div>
@@ -51,7 +51,7 @@ export function OnboardingForm({ defaultName }: { defaultName: string }) {
             className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground"
           />
         ) : null}
-        {pending ? "Creating workspace…" : "Create workspace"}
+        {pending ? "Creating…" : "Create organization"}
         {!pending ? (
           <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
             <path d="M3 8h10M9 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />

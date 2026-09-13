@@ -17,7 +17,15 @@ export function shortRelative(iso: string | null, now = Date.now()): string {
   return isThisYear(date) ? format(date, "MMM d") : format(date, "MMM d, yyyy");
 }
 
-/** "23h left", "45m left", "6d left" — what remains of a messaging window. */
+/** "12m ago", "3d ago", or just the date once it's more than a week old. */
+export function relativeAgo(iso: string | null, now = Date.now()): string {
+  const short = shortRelative(iso, now);
+  if (!short) return "";
+  if (short === "now") return "just now";
+  return /^\d+[mhd]$/.test(short) ? `${short} ago` : short;
+}
+
+/** "23h left", "45m left", "6d left": what remains of a messaging window. */
 export function timeLeft(expiresAtIso: string | null, now = Date.now()): string {
   if (!expiresAtIso) return "";
   const ms = new Date(expiresAtIso).getTime() - now;
@@ -42,15 +50,16 @@ export function sameDay(aIso: string, bIso: string): boolean {
 }
 
 export function formatTime(iso: string): string {
-  return format(new Date(iso), "h:mm a");
+  return format(new Date(iso), "HH:mm");
 }
 
 export function formatDateTime(iso: string): string {
-  return format(new Date(iso), "MMM d, yyyy 'at' h:mm a");
+  return format(new Date(iso), "MMM d, yyyy, HH:mm");
 }
 
-export function contactDisplayName(contact: Pick<InboxContact, "name" | "username" | "externalId">): string {
-  return contact.name?.trim() || (contact.username ? `@${contact.username.replace(/^@/, "")}` : `User ${contact.externalId.slice(-6)}`);
+/** Real name, else @username. Page-scoped ids mean nothing to a person, so they are never shown. */
+export function contactDisplayName(contact: Pick<InboxContact, "name" | "username">): string {
+  return contact.name?.trim() || (contact.username ? `@${contact.username.replace(/^@/, "")}` : "Unknown contact");
 }
 
 export function contactHandle(contact: Pick<InboxContact, "username">): string | null {

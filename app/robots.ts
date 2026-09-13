@@ -17,7 +17,6 @@ const PRIVATE_PATHS = [
   "/links",
   "/logs",
   "/settings",
-  "/admin",
   "/checkout",
   "/onboarding",
   "/api",

@@ -7,6 +7,6 @@ export const runtime = "nodejs";
 
 /** POST /api/billing/portal → { url } — Dodo customer portal (payment methods, invoices). Owner only. */
 export const POST = withWorkspace(
-  async (_req, ctx) => NextResponse.json({ url: await customerPortalUrl(ctx.workspace.id) }),
+  async (_req, ctx) => NextResponse.json({ url: await customerPortalUrl(ctx.organization.id) }),
   { minRole: "OWNER" },
 );

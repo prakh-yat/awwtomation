@@ -256,11 +256,11 @@ const STATUS_COPY: Record<Exclude<DeliveryStatus, "FAILED">, StatusCopy> = {
   SKIPPED_DUPLICATE: {
     label: "Already replied",
     title: "Already replied",
-    description: "Meta allows one private reply per comment, and one had already been sent — or this automation only messages each person once.",
+    description: "Meta allows one private reply per comment. Either this comment already had one, or this automation only messages each person once.",
     category: "unknown",
   },
   SKIPPED_RATE_LIMIT: {
-    label: "Sending limit",
+    label: "Hourly limit",
     title: "Sending limit reached",
     description: "Instagram caps private replies per hour. This one was retried for several hours and then set aside so newer comments could go out.",
     category: "meta_rate_limit",
@@ -278,13 +278,13 @@ const STATUS_COPY: Record<Exclude<DeliveryStatus, "FAILED">, StatusCopy> = {
     category: "unknown",
   },
   SKIPPED_WINDOW: {
-    label: "Outside 24h window",
+    label: "Outside 24 hours",
     title: "Outside messaging window",
     description: COPY.meta_window.description,
     category: "meta_window",
   },
   SKIPPED_PLAN_LIMIT: {
-    label: "Plan limit",
+    label: "Monthly limit",
     title: "Plan limit reached",
     description: COPY.plan_limit.description,
     category: "plan_limit",
@@ -310,6 +310,16 @@ export function deliveryReason(status: DeliveryStatus, errorMessage?: string | n
   }
   const copy = STATUS_COPY[status];
   return { category: copy.category, label: copy.label, title: copy.title, description: copy.description, adminHint: null };
+}
+
+/**
+ * The only form a delivery outcome may take once it leaves the server: a short
+ * plain-language reason, or null when it was sent. The raw text Meta returned
+ * stays in the database and the server logs — never in a page or API response.
+ */
+export function customerReason(status: DeliveryStatus, errorMessage: string | null | undefined): string | null {
+  if (status === "SENT") return null;
+  return deliveryReason(status, errorMessage).label;
 }
 
 // ───────────────────────── Client helpers ─────────────────────────

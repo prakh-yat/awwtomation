@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { AutomationStatus } from "@prisma/client";
+import type { AutomationStatus, TriggerType } from "@prisma/client";
 import { formatDistanceToNowStrict } from "date-fns";
-import { BarChart3, Copy, ListFilter, MoreHorizontal, Pencil, Plus, Search, Trash2, Workflow } from "lucide-react";
+import { BarChart3, Copy, MessageCircle, MessageSquare, MoreHorizontal, Pencil, Search, Sparkles, Trash2 } from "lucide-react";
 
-import { AutomationStatusBadge, TriggerBadge } from "@/components/automations/badges";
 import { apiFetch, errorMessage } from "@/components/automations/api";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { TriggerBadge } from "@/components/automations/badges";
+import { NewAutomationButton } from "@/components/automations/new-automation-button";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -19,74 +20,97 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AutomationDetail, AutomationListItem, ChannelOption } from "@/lib/services/automations";
 import type { TemplateSummary } from "@/lib/services/templates";
-import { cn, formatNumber, initials } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 export type AutomationsTableProps = {
   automations: AutomationListItem[];
   channels: ChannelOption[];
   templates: TemplateSummary[];
   filters: { q: string; channelId: string; status: string };
-  /** Whether the workspace has any automation at all (unfiltered). */
+  /** Per-status totals for the tabs (within the channel filter, ignoring search). */
+  statusCounts: Record<AutomationStatus, number>;
+  /** Whether the workspace has any automation at all, whatever the filters. */
   hasAny: boolean;
+  /** Account a blank automation starts on; null when none is connected. */
+  firstActiveChannelId: string | null;
 };
 
-const ALL_STATUSES = "ALL";
-const STATUS_TABS: Array<{ value: string; label: string }> = [
-  { value: ALL_STATUSES, label: "All" },
+const STATUS_TABS: Array<{ value: "" | AutomationStatus; label: string }> = [
+  { value: "", label: "All" },
   { value: "ACTIVE", label: "Active" },
   { value: "PAUSED", label: "Paused" },
-  { value: "DRAFT", label: "Draft" },
+  { value: "DRAFT", label: "Drafts" },
 ];
 
 const ALL_CHANNELS = "__all__";
 
-function ChannelCell({ channel }: { channel: ChannelOption }) {
-  const label = channel.username ? `@${channel.username}` : (channel.name ?? "Unnamed");
-  return (
-    <div className="flex items-center gap-2">
-      <Avatar className="h-6 w-6">
-        {channel.avatarUrl ? <AvatarImage src={channel.avatarUrl} alt="" /> : null}
-        <AvatarFallback className="text-[10px]">{initials(channel.username ?? channel.name)}</AvatarFallback>
-      </Avatar>
-      <span className="truncate text-[13px]">{label}</span>
-      <PlatformIcon platform={channel.platform} size={12} className="text-muted-foreground" />
-    </div>
-  );
+const TRIGGER_ICON: Record<TriggerType, typeof MessageSquare> = {
+  COMMENT: MessageSquare,
+  DM: MessageCircle,
+  STORY_REPLY: Sparkles,
+};
+
+function handle(channel: Pick<ChannelOption, "username" | "name" | "platform">): string {
+  if (channel.username) return `@${channel.username.replace(/^@/, "")}`;
+  return channel.name ?? (channel.platform === "INSTAGRAM" ? "Instagram account" : "Facebook Page");
 }
 
-function KeywordChips({ keywords, matchMode }: { keywords: string[]; matchMode: AutomationListItem["matchMode"] }) {
-  if (matchMode === "ANY") return <span className="text-[12px] text-muted-foreground">Any comment</span>;
-  if (keywords.length === 0) return <span className="text-[12px] text-muted-foreground">No keywords</span>;
+/** "Comment on any post", "Any DM", "Story reply" — what starts the automation, in words. */
+function triggerText(item: AutomationListItem): string {
+  const any = item.matchMode === "ANY";
+  const posts = item.postCount === 1 ? "1 post" : `${item.postCount} posts`;
+  switch (item.triggerType) {
+    case "COMMENT":
+      if (item.postCount > 0) return any ? `Any comment on ${posts}` : `Comment on ${posts}`;
+      return any ? "Any comment" : "Comment on any post";
+    case "DM":
+      return any ? "Any DM" : "DM";
+    case "STORY_REPLY":
+      return any ? "Any story reply" : "Story reply";
+  }
+}
+
+function TriggerLine({ item }: { item: AutomationListItem }) {
+  const Icon = TRIGGER_ICON[item.triggerType];
+  const keywords = item.matchMode === "ANY" ? [] : item.keywords;
   const shown = keywords.slice(0, 3);
-  const rest = keywords.length - shown.length;
+  const extra = keywords.length - shown.length;
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {shown.map((k) => (
-        <span key={k} className="rounded-md bg-secondary px-1.5 py-0.5 text-[11px] font-medium">
-          {k}
-        </span>
-      ))}
-      {rest > 0 ? <span className="text-[11px] text-muted-foreground">+{rest}</span> : null}
-    </div>
+    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <Icon className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden />
+      <span className="shrink-0">{triggerText(item)}</span>
+      {shown.length > 0 ? (
+        <>
+          <span aria-hidden>·</span>
+          <span className="truncate">
+            {shown.map((k, i) => (
+              <React.Fragment key={k}>
+                {i > 0 ? ", " : null}
+                <span className="text-foreground/80">{k}</span>
+              </React.Fragment>
+            ))}
+            {extra > 0 ? ` +${extra}` : null}
+          </span>
+        </>
+      ) : null}
+    </span>
   );
 }
 
-export function AutomationsTable({ automations, channels, templates, filters, hasAny }: AutomationsTableProps) {
+export function AutomationsTable({ automations, channels, templates, filters, statusCounts, hasAny, firstActiveChannelId }: AutomationsTableProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [, startTransition] = React.useTransition();
+  const [pending, startTransition] = React.useTransition();
 
   const [search, setSearch] = React.useState(filters.q);
   // Optimistic status per row so the switch flips instantly; cleared on refresh.
@@ -123,11 +147,11 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
     setBusyId(item.id);
     try {
       await apiFetch<{ automation: AutomationDetail }>(`/api/automations/${item.id}/status`, { method: "POST", json: { status: next } });
-      toast.success(next === "ACTIVE" ? `“${item.name}” is live` : `“${item.name}” paused`);
+      toast.success(next === "ACTIVE" ? `“${item.name}” is on` : `“${item.name}” is paused`);
       router.refresh();
     } catch (err) {
       setStatusOverride((s) => ({ ...s, [item.id]: item.status }));
-      toast.error(errorMessage(err, "Couldn't change status"));
+      toast.error(errorMessage(err, "Couldn't change the status"));
     } finally {
       setBusyId(null);
     }
@@ -141,7 +165,7 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
       });
       router.refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't duplicate"));
+      toast.error(errorMessage(err, "Couldn't duplicate it"));
     }
   }
 
@@ -151,119 +175,141 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
       toast.success(`Deleted “${item.name}”`);
       router.refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't delete"));
+      toast.error(errorMessage(err, "Couldn't delete it"));
       throw err;
     }
   }
 
+  const total = statusCounts.ACTIVE + statusCounts.PAUSED + statusCounts.DRAFT;
   const isFiltered = Boolean(filters.q || filters.channelId || filters.status);
+  const showAccount = channels.length > 1;
+  const activeTab = STATUS_TABS.some((t) => t.value === filters.status) ? filters.status : "";
 
   if (!hasAny) {
     return (
-      <div className="space-y-6">
-        <EmptyState
-          icon={Workflow}
-          title="Create your first automation"
-          description="Turn comments, DMs and story replies into instant conversations. Start from a template or build a flow from scratch."
-          action={
-            <Button asChild>
-              <Link href="/automations/new">
-                <Plus /> New automation
-              </Link>
-            </Button>
-          }
-        />
-        <div>
-          <p className="mb-3 text-sm font-medium">Start from a template</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {templates.map((t) => (
-              <Link
-                key={t.id}
-                href={`/automations/new?template=${encodeURIComponent(t.id)}`}
-                className="group rounded-lg border bg-card p-4 shadow-card transition-colors hover:border-foreground/40"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{t.name}</p>
-                  <TriggerBadge trigger={t.triggerType} />
-                </div>
-                <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">{t.description}</p>
-                <p className="mt-3 truncate text-[11px] text-muted-foreground">{t.steps.map((s) => s.label).join(" → ")}</p>
-              </Link>
-            ))}
-          </div>
+      <div className="space-y-8">
+        <div className="rounded-lg border bg-card px-6 py-10 text-center shadow-card">
+          <h2 className="text-base font-semibold tracking-tight">No automations yet</h2>
+          <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
+            An automation replies for you when someone comments a keyword, sends a DM or answers your story. Start from a template below or build one yourself.
+          </p>
+          <NewAutomationButton channelId={firstActiveChannelId} label="Start from scratch" className="mt-5" />
         </div>
+
+        {templates.length > 0 ? (
+          <section aria-labelledby="templates-heading">
+            <h2 id="templates-heading" className="mb-3 text-sm font-medium">
+              Templates
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {templates.map((t) => (
+                <Link
+                  key={t.id}
+                  href={`/automations/templates?template=${encodeURIComponent(t.id)}`}
+                  className="group flex flex-col rounded-lg border bg-card p-4 shadow-card outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium">{t.name}</p>
+                    <TriggerBadge trigger={t.triggerType} className="shrink-0" />
+                  </div>
+                  <p className="mt-1.5 line-clamp-3 text-[13px] text-muted-foreground">{t.description}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or keyword"
-            aria-label="Search automations"
-            className="pl-8"
-          />
+    <div className={cn("space-y-4 transition-opacity", pending && "opacity-70")} aria-busy={pending || undefined}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or keyword"
+              aria-label="Search automations"
+              className="pl-8"
+            />
+          </div>
+          {showAccount ? (
+            <Select value={filters.channelId || ALL_CHANNELS} onValueChange={(v) => setParam("channel", v === ALL_CHANNELS ? "" : v)}>
+              <SelectTrigger className="w-full sm:w-56" aria-label="Filter by account">
+                <SelectValue placeholder="All accounts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CHANNELS}>All accounts</SelectItem>
+                {channels.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="flex items-center gap-2">
+                      <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
+                      {handle(c)}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
         </div>
-        <Select value={filters.channelId || ALL_CHANNELS} onValueChange={(v) => setParam("channel", v === ALL_CHANNELS ? "" : v)}>
-          <SelectTrigger className="w-full sm:w-52" aria-label="Filter by channel">
-            <SelectValue placeholder="All channels" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_CHANNELS}>All channels</SelectItem>
-            {channels.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.username ? `@${c.username}` : (c.name ?? "Unnamed")}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Tabs value={filters.status || ALL_STATUSES} onValueChange={(v) => setParam("status", v === ALL_STATUSES ? "" : v)} className="sm:ml-auto">
-          <TabsList>
-            {STATUS_TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>
+
+        <div role="tablist" aria-label="Status" className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-1">
+          {STATUS_TABS.map((t) => {
+            const selected = activeTab === t.value;
+            const count = t.value === "" ? total : statusCounts[t.value];
+            return (
+              <button
+                key={t.label}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setParam("status", t.value)}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
                 {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+                <span className={cn("tabular-nums", selected ? "text-muted-foreground" : "text-muted-foreground/70")}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {automations.length === 0 ? (
-        <EmptyState
-          icon={ListFilter}
-          title="No automations match"
-          description="Try a different search, channel or status."
-          action={
-            isFiltered ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearch("");
-                  startTransition(() => router.replace(pathname, { scroll: false }));
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : undefined
-          }
-        />
+        <div className="rounded-lg border border-dashed px-6 py-12 text-center">
+          <p className="text-sm font-medium">No automations match</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">Try another search{showAccount ? ", account" : ""} or status.</p>
+          {isFiltered ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                setSearch("");
+                startTransition(() => router.replace(pathname, { scroll: false }));
+              }}
+            >
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card shadow-card">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="min-w-[220px]">Name</TableHead>
-                <TableHead className="min-w-[160px]">Channel</TableHead>
-                <TableHead className="min-w-[160px]">Keywords</TableHead>
-                <TableHead className="w-[110px]">Status</TableHead>
-                <TableHead className="w-[90px] text-right">Sent 7d</TableHead>
-                <TableHead className="w-[140px]">Last triggered</TableHead>
-                <TableHead className="w-[56px]">
+                <TableHead className="pl-5 md:min-w-[260px]">Automation</TableHead>
+                {showAccount ? <TableHead className="hidden min-w-[170px] lg:table-cell">Account</TableHead> : null}
+                <TableHead className="hidden w-[100px] text-right sm:table-cell">DMs sent</TableHead>
+                <TableHead className="hidden w-[100px] text-right md:table-cell">Link clicks</TableHead>
+                <TableHead className="hidden w-[150px] pl-6 lg:table-cell">Last run</TableHead>
+                <TableHead className="w-[90px]">Status</TableHead>
+                <TableHead className="w-[52px] pr-3">
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -271,55 +317,53 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
             <TableBody>
               {automations.map((item) => {
                 const status = statusOverride[item.id] ?? item.status;
-                const isDraft = status === "DRAFT";
                 return (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <Link href={`/automations/${item.id}`} className="truncate font-medium hover:underline underline-offset-2">
-                          {item.name}
-                        </Link>
-                        <div>
-                          <TriggerBadge trigger={item.triggerType} />
-                        </div>
-                      </div>
+                  <TableRow key={item.id} className="group">
+                    <TableCell className="max-w-[200px] py-3 pl-5 sm:max-w-[420px]">
+                      <Link href={`/automations/${item.id}`} className="block truncate font-medium underline-offset-4 hover:underline">
+                        {item.name}
+                      </Link>
+                      <TriggerLine item={item} />
                     </TableCell>
-                    <TableCell>
-                      <ChannelCell channel={item.channel} />
+                    {showAccount ? (
+                      <TableCell className="hidden lg:table-cell">
+                        <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                          <PlatformIcon platform={item.channel.platform} size={13} className="shrink-0" />
+                          <span className="truncate">{handle(item.channel)}</span>
+                        </span>
+                      </TableCell>
+                    ) : null}
+                    <TableCell className={cn("hidden text-right tabular-nums sm:table-cell", item.sent7d === 0 && "text-muted-foreground")}>{formatNumber(item.sent7d)}</TableCell>
+                    <TableCell className={cn("hidden text-right tabular-nums md:table-cell", item.clicks7d === 0 && "text-muted-foreground")}>
+                      {formatNumber(item.clicks7d)}
                     </TableCell>
-                    <TableCell>
-                      <KeywordChips keywords={item.keywords} matchMode={item.matchMode} />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {isDraft ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span tabIndex={0} className="inline-flex">
-                                <Switch checked={false} disabled aria-label="Draft automations are activated from the builder" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>Open the builder to finish and activate this draft</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Switch
-                            checked={status === "ACTIVE"}
-                            disabled={busyId === item.id}
-                            onCheckedChange={(on) => toggleStatus(item, on)}
-                            aria-label={status === "ACTIVE" ? "Pause automation" : "Activate automation"}
-                          />
-                        )}
-                        <AutomationStatusBadge status={status} />
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatNumber(item.sent7d)}</TableCell>
-                    <TableCell className={cn("text-[12px]", !item.lastTriggeredAt && "text-muted-foreground")}>
+                    <TableCell className="hidden pl-6 text-muted-foreground lg:table-cell">
                       {item.lastTriggeredAt ? formatDistanceToNowStrict(new Date(item.lastTriggeredAt), { addSuffix: true }) : "Never"}
                     </TableCell>
                     <TableCell>
+                      {status === "DRAFT" ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link href={`/automations/${item.id}`} className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <Badge variant="secondary">Draft</Badge>
+                            </Link>
+                          </TooltipTrigger>
+                          <TooltipContent>Finish it in the builder to turn it on</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Switch
+                          checked={status === "ACTIVE"}
+                          disabled={busyId === item.id}
+                          onCheckedChange={(on) => toggleStatus(item, on)}
+                          aria-label={status === "ACTIVE" ? `Pause ${item.name}` : `Turn on ${item.name}`}
+                          title={status === "ACTIVE" ? "On" : "Paused"}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell className="pr-3">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${item.name}`}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" aria-label={`Actions for ${item.name}`}>
                             <MoreHorizontal />
                           </Button>
                         </DropdownMenuTrigger>
@@ -349,6 +393,7 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
               })}
             </TableBody>
           </Table>
+          <p className="border-t bg-muted/30 px-5 py-2.5 text-xs text-muted-foreground">DMs sent and link clicks cover the last 7 days.</p>
         </div>
       )}
 
@@ -359,7 +404,7 @@ export function AutomationsTable({ automations, channels, templates, filters, ha
           if (!open) setDeleteTarget(null);
         }}
         title={deleteTarget ? `Delete “${deleteTarget.name}”?` : "Delete automation?"}
-        description="Active conversations started by this automation will stop. Delivery history is kept in Logs."
+        description="It stops replying straight away, including in conversations it already started. Its past messages stay in Logs."
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {

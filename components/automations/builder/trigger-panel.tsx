@@ -77,10 +77,10 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
 
   return (
     <div className="flex flex-col">
-      <Section title="Channel" description="The connected account this automation listens on.">
+      <Section title="Account" description="The Instagram account or Facebook Page this automation replies from.">
         <Select value={settings.channelId} onValueChange={(v) => set({ channelId: v })}>
-          <SelectTrigger aria-label="Channel">
-            <SelectValue placeholder="Pick a channel" />
+          <SelectTrigger aria-label="Account">
+            <SelectValue placeholder="Pick an account" />
           </SelectTrigger>
           <SelectContent>
             {channels.map((c) => (
@@ -95,21 +95,21 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
           </SelectContent>
         </Select>
         {channel && channel.status !== "ACTIVE" ? (
-          <p className="text-[12px] text-warning">This channel needs reconnecting before the automation can go live.</p>
+          <p className="text-[12px] text-warning">This account needs to be reconnected before the automation can go live.</p>
         ) : null}
       </Section>
 
-      <Section title="Trigger" description="What starts the flow.">
+      <Section title="Trigger" description="What makes it run.">
         <Segmented<TriggerType> value={settings.triggerType} onChange={(v) => set({ triggerType: v })} options={TRIGGER_OPTIONS} aria-label="Trigger type" />
 
         <Field label="Matching">
           <Segmented<MatchMode> value={settings.matchMode} onChange={(v) => set({ matchMode: v })} options={MATCH_OPTIONS} aria-label="Match mode" />
           <p className="text-[11px] text-muted-foreground">
             {settings.matchMode === "CONTAINS"
-              ? `Fires when the ${subject} contains a keyword anywhere (case-insensitive).`
+              ? `Runs when the ${subject} contains a keyword anywhere. Capital letters don't matter.`
               : settings.matchMode === "EXACT"
-                ? `Fires when a keyword appears as a whole word in the ${subject}.`
-                : `Fires on every ${subject}. Exclusions still apply.`}
+                ? `Runs when a keyword appears as a whole word in the ${subject}.`
+                : `Runs on every ${subject}. Excluded words still apply.`}
           </p>
         </Field>
 
@@ -167,7 +167,7 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
                 </div>
                 <p className="text-[11px] text-muted-foreground">
                   {settings.mediaIds.length === 0
-                    ? "No posts chosen yet — until you pick some, this behaves like “All posts”."
+                    ? "No posts chosen yet. Until you pick some, it runs on all posts."
                     : `${settings.mediaIds.length} post${settings.mediaIds.length === 1 ? "" : "s"} selected.`}
                 </p>
               </div>
@@ -191,7 +191,7 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
                   <Input
                     value={reply}
                     maxLength={500}
-                    placeholder="Sent you a DM 📩"
+                    placeholder="Sent you a DM"
                     aria-label={`Public reply ${i + 1}`}
                     onChange={(e) => set({ publicReplies: settings.publicReplies.map((r, j) => (j === i ? e.target.value : r)) })}
                   />
@@ -229,7 +229,9 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
             <Label htmlFor="once-per-contact" className="text-[13px] font-normal">
               Once per contact
             </Label>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">Only send to each person once, even if they comment again.</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Only send to each person once, even if they {isComment ? "comment again" : settings.triggerType === "DM" ? "message you again" : "reply to a story again"}.
+            </p>
           </div>
           <Switch id="once-per-contact" checked={settings.oncePerContact} onCheckedChange={(on) => set({ oncePerContact: on })} />
         </div>
@@ -238,12 +240,12 @@ export function TriggerPanel({ settings, channels, mediaById, dispatch }: Trigge
       <div className="px-5 py-5">
         <div className="rounded-lg border bg-secondary/50 p-3 text-[12px] leading-relaxed text-muted-foreground">
           <p className="mb-1 inline-flex items-center gap-1.5 font-medium text-foreground">
-            <Info className="h-3.5 w-3.5" /> How flows run
+            <Info className="h-3.5 w-3.5" /> How an automation runs
           </p>
           <ul className="list-disc space-y-1 pl-4">
-            <li>After every message the flow pauses. It continues only when the person taps a button or replies.</li>
-            <li>For comment triggers, the first message is sent as a private reply to the comment.</li>
-            <li>Postback buttons continue the flow along their own connection; link buttons just open the URL.</li>
+            <li>After each message it waits. It carries on when the person taps a button or replies.</li>
+            <li>For comments, the first message goes to their DMs, linked to the comment they left.</li>
+            <li>&ldquo;Next step&rdquo; buttons move to the step they&apos;re connected to. Link buttons open the link.</li>
           </ul>
         </div>
       </div>

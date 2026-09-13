@@ -87,6 +87,12 @@
     background: hsl(0 0% 80%);
     border-radius: 999px;
   }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
   .text-balance {
     text-wrap: balance;
   }

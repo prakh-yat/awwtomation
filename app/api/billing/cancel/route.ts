@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const POST = withWorkspace(
   async (req, ctx) => {
     const input = await parseBody(req, cancelSchema);
-    return NextResponse.json(await cancelSubscription(ctx.workspace.id, ctx.user.id, input));
+    return NextResponse.json(await cancelSubscription(ctx.organization.id, ctx.user.id, input));
   },
   { minRole: "OWNER" },
 );

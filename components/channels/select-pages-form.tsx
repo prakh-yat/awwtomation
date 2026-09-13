@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { toast } from "@/components/ui/sonner";
-import type { ChannelSummary, SelectablePage } from "@/lib/services/channels";
+import type { ChannelView, SelectablePage } from "@/lib/services/channels";
 import { cn, initials } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./api";
@@ -57,7 +57,7 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
     if (count === 0 || overLimit) return;
     setSubmitting(true);
     try {
-      const { channels } = await apiFetch<{ channels: ChannelSummary[] }>("/api/channels/facebook/select", {
+      const { channels } = await apiFetch<{ channels: ChannelView[] }>("/api/channels/facebook/select", {
         method: "POST",
         body: JSON.stringify({ pageIds: Array.from(selected) }),
       });
@@ -121,7 +121,7 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
       <div className="flex flex-col gap-3 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <p className={cn("text-[13px]", overLimit ? "text-destructive" : "text-muted-foreground")}>
           {overLimit
-            ? `Your plan allows ${planLimit} connected account${planLimit === 1 ? "" : "s"} — deselect ${newCount - remainingSlots} or upgrade.`
+            ? `Your plan allows ${planLimit} connected account${planLimit === 1 ? "" : "s"}. Deselect ${newCount - remainingSlots} or upgrade.`
             : `${newCount} new · ${remainingSlots - newCount} slot${remainingSlots - newCount === 1 ? "" : "s"} left on your plan`}
         </p>
         <Button type="submit" loading={submitting} disabled={count === 0 || overLimit}>

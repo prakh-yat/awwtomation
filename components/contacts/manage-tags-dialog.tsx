@@ -18,6 +18,9 @@ export interface ManageTagsDialogProps {
   tags: ContactTagCount[];
   /** Fired after a rename/delete so the list page can refresh rows and counts. */
   onChanged?: () => void;
+  /** Controlled open state, for opening from a menu. Without it the dialog renders its own button. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed: (to: string) => Promise<void>; onDeleted: () => Promise<void> }) {
@@ -109,8 +112,11 @@ function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed
  * Rename or delete tags across the whole workspace. Tags have no row of their
  * own — they only exist on contacts — so this is the one place to tidy them.
  */
-function ManageTagsDialog({ tags: initialTags, onChanged }: ManageTagsDialogProps) {
-  const [open, setOpen] = React.useState(false);
+function ManageTagsDialog({ tags: initialTags, onChanged, open: controlledOpen, onOpenChange }: ManageTagsDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => (controlled ? onOpenChange?.(next) : setUncontrolledOpen(next));
   const [tags, setTags] = React.useState(initialTags);
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -163,12 +169,14 @@ function ManageTagsDialog({ tags: initialTags, onChanged }: ManageTagsDialogProp
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Tags />
-          Manage tags
-        </Button>
-      </DialogTrigger>
+      {controlled ? null : (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Tags />
+            Manage tags
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage tags</DialogTitle>
@@ -182,7 +190,7 @@ function ManageTagsDialog({ tags: initialTags, onChanged }: ManageTagsDialogProp
             </div>
           ) : visible.length === 0 ? (
             <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">
-              {tags.length === 0 ? "No tags yet. Add one from a contact or a flow's Tag step." : "No matching tags."}
+              {tags.length === 0 ? "No tags yet. Add them on a contact, or let an automation add them." : "No matching tags."}
             </p>
           ) : (
             <ul className="divide-y">

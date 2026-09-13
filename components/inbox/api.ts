@@ -1,4 +1,5 @@
 /** Thin fetch wrapper for the inbox client: JSON in/out, errors surfaced as `InboxApiError`. */
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
 
 export class InboxApiError extends Error {
   constructor(
@@ -36,10 +37,9 @@ export async function apiFetch<T>(url: string, init: ApiInit = {}): Promise<T> {
   return data as T;
 }
 
+/** "" for aborted requests. API messages are already customer copy; transport failures get translated. */
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  if (err instanceof DOMException && err.name === "AbortError") return "";
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
+  return clientErrorMessage(err, fallback);
 }
 
 export function isAbort(err: unknown): boolean {

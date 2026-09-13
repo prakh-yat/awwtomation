@@ -30,13 +30,12 @@ import { isWithinWindow, MESSAGING_WINDOW_MS } from "@/lib/automation/send";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { listNotes, type ContactNoteSummary } from "@/lib/services/contact-notes";
-import { getStages, requireStage } from "@/lib/services/pipeline";
+import { AUDIT_PIPELINE_REMOVED, AUDIT_STAGE_CHANGED, type ContactPipelineRef, pipelinesForContact, setContactsStage, stageCountsFor } from "@/lib/services/pipelines";
 import {
   buildContactWhere,
   compactSegmentFilters,
   normalizeTags,
   SEGMENT_MAX_LAST_INTERACTION_DAYS,
-  SEGMENT_MAX_STAGE_LENGTH,
   SEGMENT_OWNER_UNASSIGNED,
   type SegmentFilters,
   type SegmentMatch,
@@ -45,16 +44,20 @@ import {
   tagSchema,
   type TagMatchMode,
 } from "@/lib/services/segments";
-import { recordAudit } from "@/lib/services/workspaces";
+import { recordAudit } from "@/lib/services/audit";
 import { ApiError } from "@/lib/workspace/api";
+import { customerReason } from "@/lib/errors/customer-messages";
 
 // Tag primitives live in segments.ts (the filter module both services share); re-exported so callers are unaffected.
 export { normalizeTags, tagMatchModeSchema, tagSchema, type TagMatchMode };
+export { AUDIT_STAGE_CHANGED, type ContactPipelineRef };
 
 // ───────────────────────── Limits ─────────────────────────
 
 export const CONTACT_LIST_DEFAULT_LIMIT = 50;
 export const CONTACT_LIST_MAX_LIMIT = 100;
+/** Page sizes the contacts table offers. */
+export const CONTACT_PAGE_SIZES = [25, 50, 100] as const;
 /** Bulk actions cap: keeps a single request (and its transaction) bounded. */
 export const CONTACT_BULK_MAX_IDS = 500;
 export const CONTACT_MAX_TAGS = 100;
@@ -69,8 +72,6 @@ export const CONTACT_MAX_USERNAME_LENGTH = 64;
 export const CONTACT_EXPORT_MAX_ROWS = 50_000;
 /** Timeline rows on the profile page after merging every source. */
 export const CONTACT_TIMELINE_MAX = 150;
-/** AuditLog action written whenever a contact's stage changes — the timeline reads it back. */
-export const AUDIT_STAGE_CHANGED = "contact.stage_changed";
 const EXPORT_PAGE_SIZE = 1000;
 const DETAIL_ACTIVITY_LIMIT = 40;
 const DETAIL_NOTES_LIMIT = 50;
@@ -104,7 +105,7 @@ export function normalizeUsername(raw: string | null | undefined): string | null
 // ───────────────────────── Validation ─────────────────────────
 
 /** `lastInteraction`/`createdAt` are the CRM-facing names of `recent`/`newest`; both spellings are accepted everywhere. */
-export const contactSortSchema = z.enum(["recent", "newest", "name", "lastInteraction", "stage", "createdAt"]);
+export const contactSortSchema = z.enum(["recent", "newest", "name", "lastInteraction", "createdAt"]);
 export type ContactSort = z.infer<typeof contactSortSchema>;
 
 const tagArraySchema = z.array(tagSchema).max(CONTACT_MAX_TAGS).transform(normalizeTags);
@@ -119,14 +120,14 @@ export const customFieldsSchema = z
 
 export type CustomFields = z.infer<typeof customFieldsSchema>;
 
-const stageFieldSchema = z.string().trim().min(1, "Pick a stage").max(SEGMENT_MAX_STAGE_LENGTH);
 /** Raw text: empty string clears the field; anything else must normalise to a valid value (checked in the service). */
 const emailFieldSchema = z.string().trim().max(CONTACT_MAX_EMAIL_LENGTH).nullable();
 const phoneFieldSchema = z.string().trim().max(CONTACT_MAX_PHONE_LENGTH).nullable();
 
 /**
  * PATCH /api/contacts/[id] body. The Inbox lane sends the tags/customFields/
- * optedOut/name subset; the CRM UI adds stage, owner, email and phone.
+ * optedOut/name subset; the CRM UI adds owner, email and phone. Pipeline stages
+ * move through /api/contacts/[id]/pipelines.
  */
 export const updateContactSchema = z
   .object({
@@ -134,7 +135,6 @@ export const updateContactSchema = z
     customFields: customFieldsSchema.optional(),
     optedOut: z.boolean().optional(),
     name: z.string().trim().max(CONTACT_MAX_NAME_LENGTH).nullable().optional(),
-    stage: stageFieldSchema.optional(),
     /** A workspace member's user id, or null to unassign. */
     ownerId: z.string().min(1).max(64).nullable().optional(),
     email: emailFieldSchema.optional(),
@@ -160,19 +160,32 @@ export const bulkTagsSchema = z
 
 export type BulkTagsInput = z.infer<typeof bulkTagsSchema>;
 
-/** POST /api/contacts/bulk — every key is optional but at least one action must be present. */
+/**
+ * POST /api/contacts/bulk — every key is optional but at least one action must be present.
+ * `pipelineId` + `stageId` put the contacts at that stage (adding them to the pipeline where needed);
+ * `removeFromPipelineId` takes them out of a pipeline.
+ */
 export const bulkUpdateSchema = z
   .object({
     ids: idListSchema,
-    stage: stageFieldSchema.optional(),
+    pipelineId: z.string().min(1).max(64).optional(),
+    stageId: z.string().min(1).max(64).optional(),
+    removeFromPipelineId: z.string().min(1).max(64).optional(),
     ownerId: z.string().min(1).max(64).nullable().optional(),
     addTags: tagArraySchema.optional(),
     removeTags: tagArraySchema.optional(),
   })
   .strict()
-  .refine((d) => d.stage !== undefined || d.ownerId !== undefined || (d.addTags?.length ?? 0) > 0 || (d.removeTags?.length ?? 0) > 0, {
-    message: "Nothing to apply",
-  });
+  .refine((d) => (d.pipelineId === undefined) === (d.stageId === undefined), { message: "Pick a pipeline and a stage" })
+  .refine(
+    (d) =>
+      d.stageId !== undefined ||
+      d.removeFromPipelineId !== undefined ||
+      d.ownerId !== undefined ||
+      (d.addTags?.length ?? 0) > 0 ||
+      (d.removeTags?.length ?? 0) > 0,
+    { message: "Nothing to apply" },
+  );
 
 export type BulkUpdateInput = z.infer<typeof bulkUpdateSchema>;
 
@@ -191,10 +204,13 @@ export const createManualContactSchema = z
     username: z.string().trim().max(CONTACT_MAX_USERNAME_LENGTH).optional(),
     email: z.string().trim().max(CONTACT_MAX_EMAIL_LENGTH).optional(),
     phone: z.string().trim().max(CONTACT_MAX_PHONE_LENGTH).optional(),
-    stage: stageFieldSchema.optional(),
+    /** Optional: add the new contact to a pipeline at this stage. */
+    pipelineId: z.string().min(1).max(64).optional(),
+    stageId: z.string().min(1).max(64).optional(),
     tags: tagArraySchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((d) => (d.pipelineId === undefined) === (d.stageId === undefined), { message: "Pick a pipeline and a stage" });
 
 export type CreateManualContactInput = z.infer<typeof createManualContactSchema>;
 
@@ -210,7 +226,7 @@ const tagListFromQuery = z
 
 /**
  * `?q=&channelId=&platform=&tags=a,b&tagMode=all&excludeTags=c&follower=true&lastInteractionDays=7&excludeOptedOut=true&optedOut=false
- *   &stage=&ownerId=me|<id>|unassigned&source=&hasEmail=&hasPhone=&messageable=&cursor=&limit=&sort=`
+ *   &pipelineId=&stageId=&ownerId=me|<id>|unassigned&source=&hasEmail=&hasPhone=&messageable=&page=&pageSize=&sort=`
  * Same vocabulary as `segmentFiltersSchema` plus the legacy tri-state `follower` param. `ownerId=me` is
  * resolved to the caller's id by the route handler (`resolveOwnerFilter`) — segments only ever store real ids.
  */
@@ -225,14 +241,15 @@ export const contactListQuerySchema = z.object({
   lastInteractionDays: z.coerce.number().int().min(1).max(SEGMENT_MAX_LAST_INTERACTION_DAYS).optional(),
   excludeOptedOut: boolFromQuery,
   optedOut: boolFromQuery,
-  stage: z.string().trim().min(1).max(SEGMENT_MAX_STAGE_LENGTH).optional(),
+  pipelineId: z.string().min(1).max(64).optional(),
+  stageId: z.string().min(1).max(64).optional(),
   ownerId: z.string().min(1).max(64).optional(),
   source: z.nativeEnum(ContactSource).optional(),
   hasEmail: boolFromQuery,
   hasPhone: boolFromQuery,
   messageable: boolFromQuery,
-  cursor: z.string().max(512).optional(),
-  limit: z.coerce.number().int().min(1).max(CONTACT_LIST_MAX_LIMIT).default(CONTACT_LIST_DEFAULT_LIMIT),
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(CONTACT_LIST_MAX_LIMIT).default(CONTACT_LIST_DEFAULT_LIMIT),
   sort: contactSortSchema.default("recent"),
 });
 
@@ -254,8 +271,9 @@ export type ContactListFilters = SegmentFilters & {
 };
 
 export type ListContactsOptions = ContactListFilters & {
-  cursor?: string;
-  limit?: number;
+  /** 1-based. */
+  page?: number;
+  pageSize?: number;
   sort?: ContactSort;
 };
 
@@ -273,7 +291,8 @@ export function toSegmentFilters(filters: ContactListFilters): SegmentFilters {
     lastInteractionDays: filters.lastInteractionDays,
     excludeOptedOut: filters.excludeOptedOut,
     optedOut: filters.optedOut,
-    stage: filters.stage,
+    pipelineId: filters.pipelineId,
+    stageId: filters.stageId,
     ownerId: filters.ownerId,
     source: filters.source,
     hasEmail: filters.hasEmail,
@@ -320,7 +339,8 @@ export type ContactListItem = {
   /** DeliveryLog rows with status SENT and a DM kind (private reply / message / broadcast). */
   dmsReceived: number;
   // ── CRM ──
-  stage: string;
+  /** Every pipeline the contact is in, first pipeline first. */
+  pipelines: ContactPipelineRef[];
   ownerId: string | null;
   owner: ContactOwnerRef | null;
   email: string | null;
@@ -332,7 +352,7 @@ export type ContactListItem = {
   notesCount: number;
 };
 
-export type ContactListResult = { items: ContactListItem[]; nextCursor: string | null };
+export type ContactListResult = { items: ContactListItem[]; total: number; page: number; pageSize: number; pageCount: number };
 
 export type ContactTagCount = { tag: string; count: number };
 
@@ -353,16 +373,14 @@ export type ContactConversationSummary = {
 export type ContactFlowSessionSummary = {
   id: string;
   status: FlowSessionStatus;
-  currentNodeId: string | null;
   createdAt: Date;
   updatedAt: Date;
   automation: { id: string; name: string };
 };
 
-export type ContactDeliveryLogSummary = Pick<
-  DeliveryLog,
-  "id" | "kind" | "status" | "messagePreview" | "errorMessage" | "commentExternalId" | "createdAt"
-> & {
+export type ContactDeliveryLogSummary = Pick<DeliveryLog, "id" | "kind" | "status" | "messagePreview" | "createdAt"> & {
+  /** Plain-language reason for a skip or failure; null when sent. The stored provider error never leaves the server. */
+  reason: string | null;
   automation: { id: string; name: string } | null;
   broadcast: { id: string; name: string } | null;
 };
@@ -387,10 +405,15 @@ export type ContactMessageSummary = {
 
 export type ContactStageChange = {
   id: string;
+  /** Pipeline name at the time; null on entries written before pipelines existed. */
+  pipeline: string | null;
   from: string | null;
-  to: string;
+  /** Null when the contact left the pipeline. */
+  to: string | null;
   createdAt: Date;
   actor: { id: string; name: string | null; email: string } | null;
+  /** True when an automation made the change. */
+  automated: boolean;
 };
 
 export type ContactTimelineKind = "note" | "message_in" | "message_out" | "dm" | "public_reply" | "automation" | "click" | "stage";
@@ -410,8 +433,33 @@ export type ContactTimelineEvent = {
   note?: ContactNoteSummary;
 };
 
+/** The contact as the profile page and API see it: CRM fields only, no provider ids. */
+export type ContactProfile = Pick<
+  Contact,
+  | "id"
+  | "platform"
+  | "username"
+  | "name"
+  | "avatarUrl"
+  | "isFollower"
+  | "tags"
+  | "customFields"
+  | "optedOut"
+  | "source"
+  | "messageable"
+  | "email"
+  | "phone"
+  | "ownerId"
+  | "lastContactedAt"
+  | "notesCount"
+  | "firstSeenAt"
+  | "lastInteractionAt"
+  | "createdAt"
+> & { channel: ContactChannelSummary; owner: ContactOwnerRef | null };
+
 export type ContactDetail = {
-  contact: Contact & { channel: ContactChannelSummary; owner: ContactOwnerRef | null };
+  contact: ContactProfile;
+  pipelines: ContactPipelineRef[];
   conversation: ContactConversationSummary | null;
   flowSessions: ContactFlowSessionSummary[];
   deliveryLogs: ContactDeliveryLogSummary[];
@@ -426,7 +474,7 @@ export type ContactDetail = {
 
 // ───────────────────────── Cursor (keyset) ─────────────────────────
 
-type SortField = "lastInteractionAt" | "firstSeenAt" | "username" | "stage";
+type SortField = "lastInteractionAt" | "firstSeenAt" | "username";
 type SortSpec = { field: SortField; dir: "asc" | "desc" };
 
 const SORTS: Record<ContactSort, SortSpec> = {
@@ -435,25 +483,9 @@ const SORTS: Record<ContactSort, SortSpec> = {
   newest: { field: "firstSeenAt", dir: "desc" },
   createdAt: { field: "firstSeenAt", dir: "desc" },
   name: { field: "username", dir: "asc" },
-  stage: { field: "stage", dir: "asc" },
 };
 
 type DecodedCursor = { v: string | null; id: string };
-
-const cursorPayloadSchema = z.object({ v: z.string().nullable(), id: z.string().min(1) });
-
-function encodeCursor(item: Pick<ContactListItem, "id" | "lastInteractionAt" | "firstSeenAt" | "username" | "stage">, sort: ContactSort): string {
-  const v = item[SORTS[sort].field];
-  return Buffer.from(JSON.stringify({ v, id: item.id }), "utf8").toString("base64url");
-}
-
-function decodeCursor(cursor: string): DecodedCursor {
-  try {
-    return cursorPayloadSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
-  } catch {
-    throw new ApiError(422, "Invalid cursor", "BAD_CURSOR");
-  }
-}
 
 /**
  * Keyset predicate: "rows after the cursor row" under the sort's ordering.
@@ -475,17 +507,13 @@ function cursorWhere(sort: ContactSort, cursor: DecodedCursor): Prisma.ContactWh
       if (cursor.v === null) return { username: null, id: { gt: cursor.id } };
       return { OR: [{ username: { gt: cursor.v } }, { username: cursor.v, id: { gt: cursor.id } }, { username: null }] };
     }
-    case "stage": {
-      const v = cursor.v ?? "";
-      return { OR: [{ stage: { gt: v } }, { stage: v, id: { gt: cursor.id } }] };
-    }
   }
 }
 
 function orderBy(sort: ContactSort): Prisma.ContactOrderByWithRelationInput[] {
   const { field, dir } = SORTS[sort];
-  // `nulls` is only valid on optional columns; firstSeenAt and stage are required.
-  if (field === "firstSeenAt" || field === "stage") return [{ [field]: dir }, { id: dir }];
+  // `nulls` is only valid on optional columns; firstSeenAt is required.
+  if (field === "firstSeenAt") return [{ [field]: dir }, { id: dir }];
   return [{ [field]: { sort: dir, nulls: "last" } } as Prisma.ContactOrderByWithRelationInput, { id: dir }];
 }
 
@@ -510,9 +538,16 @@ const listSelect = {
   optedOut: true,
   firstSeenAt: true,
   lastInteractionAt: true,
-  stage: true,
   ownerId: true,
   owner: { select: ownerSelect },
+  pipelineEntries: {
+    select: {
+      updatedAt: true,
+      pipeline: { select: { id: true, name: true, position: true } },
+      stage: { select: { id: true, name: true, color: true, position: true } },
+    },
+    orderBy: [{ pipeline: { position: "asc" } }, { createdAt: "asc" }],
+  },
   email: true,
   phone: true,
   source: true,
@@ -541,7 +576,15 @@ function toListItem(row: ListRow, dmsReceived: number): ContactListItem {
     channel: row.channel,
     conversationId: row.conversations[0]?.id ?? null,
     dmsReceived,
-    stage: row.stage,
+    pipelines: row.pipelineEntries.map((e) => ({
+      pipelineId: e.pipeline.id,
+      pipelineName: e.pipeline.name,
+      stageId: e.stage.id,
+      stageName: e.stage.name,
+      stageColor: e.stage.color,
+      stagePosition: e.stage.position,
+      updatedAt: e.updatedAt.toISOString(),
+    })),
     ownerId: row.ownerId,
     owner: row.owner,
     email: row.email,
@@ -573,21 +616,37 @@ async function queryPage(where: Prisma.ContactWhereInput, sort: ContactSort, lim
 
 // ───────────────────────── Queries ─────────────────────────
 
+/**
+ * One numbered page of contacts plus the total, for the paginated table. A
+ * page past the end is clamped to the last page so a stale URL still shows rows.
+ */
 export async function listContacts(workspaceId: string, options: ListContactsOptions = {}): Promise<ContactListResult> {
   const sort = options.sort ?? "recent";
-  const limit = Math.min(Math.max(options.limit ?? CONTACT_LIST_DEFAULT_LIMIT, 1), CONTACT_LIST_MAX_LIMIT);
+  const pageSize = Math.min(Math.max(options.pageSize ?? CONTACT_LIST_DEFAULT_LIMIT, 1), CONTACT_LIST_MAX_LIMIT);
+  const where = buildWhere(workspaceId, options);
 
-  const base = buildWhere(workspaceId, options);
-  const where: Prisma.ContactWhereInput = options.cursor ? { AND: [base, cursorWhere(sort, decodeCursor(options.cursor))] } : base;
+  const total = await prisma.contact.count({ where });
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(options.page ?? 1, 1), pageCount);
 
-  const { rows, hasMore } = await queryPage(where, sort, limit);
+  const rows = await prisma.contact.findMany({ where, select: listSelect, orderBy: orderBy(sort), skip: (page - 1) * pageSize, take: pageSize });
   const counts = await dmCounts(
     workspaceId,
     rows.map((r) => r.id),
   );
-  const items = rows.map((row) => toListItem(row, counts.get(row.id) ?? 0));
-  const last = items[items.length - 1];
-  return { items, nextCursor: hasMore && last ? encodeCursor(last, sort) : null };
+  return { items: rows.map((row) => toListItem(row, counts.get(row.id) ?? 0)), total, page, pageSize, pageCount };
+}
+
+/**
+ * Contacts at each stage of one pipeline among those matching the list filters,
+ * keyed by stage id. The pipeline and stage filters themselves are ignored so
+ * every stage gets its own number.
+ */
+export async function pipelineStageCounts(workspaceId: string, pipelineId: string, filters: ContactListFilters): Promise<Record<string, number>> {
+  const pipeline = await prisma.pipeline.findFirst({ where: { id: pipelineId, workspaceId }, select: { id: true } });
+  if (!pipeline) throw new ApiError(404, "Pipeline not found", "NOT_FOUND");
+  const counts = await stageCountsFor(workspaceId, pipelineId, buildWhere(workspaceId, { ...filters, pipelineId: undefined, stageId: undefined }));
+  return Object.fromEntries(counts);
 }
 
 export async function contactStats(workspaceId: string): Promise<ContactStats> {
@@ -630,32 +689,31 @@ export async function listContactChannels(workspaceId: string): Promise<ContactC
   });
 }
 
-/** Workspace members for owner pickers — owners first, then admins, then members (enum order). */
+/** People who can own contacts: the members of the workspace's organization, owners first (enum order). */
 export async function listOwners(workspaceId: string): Promise<ContactOwner[]> {
-  const rows = await prisma.workspaceMember.findMany({
-    where: { workspaceId },
+  const rows = await prisma.organizationMember.findMany({
+    where: { organization: { workspaces: { some: { id: workspaceId } } } },
     select: { role: true, user: { select: ownerSelect } },
     orderBy: [{ role: "asc" }, { createdAt: "asc" }],
   });
   return rows.map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email, avatarUrl: m.user.avatarUrl, role: m.role }));
 }
 
-/** Throws 422 unless `userId` is a member — owner ids from the client can't be used to probe other workspaces. */
+/** Throws 422 unless `userId` belongs to the workspace's organization — owner ids from the client can't probe elsewhere. */
 async function requireOwner(workspaceId: string, userId: string): Promise<void> {
-  const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } }, select: { id: true } });
+  const member = await prisma.organizationMember.findFirst({
+    where: { userId, organization: { workspaces: { some: { id: workspaceId } } } },
+    select: { id: true },
+  });
   if (!member) throw new ApiError(422, "That person isn't a member of this workspace", "NOT_A_MEMBER");
 }
 
 const KIND_LABEL: Record<DeliveryKind, string> = {
-  PRIVATE_REPLY: "Private reply",
-  MESSAGE: "Message",
-  PUBLIC_REPLY: "Public comment reply",
+  PRIVATE_REPLY: "DM",
+  MESSAGE: "DM",
+  PUBLIC_REPLY: "Comment reply",
   BROADCAST: "Broadcast",
 };
-
-function humanizeStatus(status: string): string {
-  return status.toLowerCase().replace(/^skipped_/, "skipped — ").replace(/_/g, " ");
-}
 
 /**
  * Merges every activity source into one reverse-chronological feed.
@@ -676,8 +734,8 @@ function buildTimeline(input: Pick<ContactDetail, "deliveryLogs" | "flowSessions
       id: `delivery:${log.id}`,
       at: log.createdAt.toISOString(),
       kind: log.kind === DeliveryKind.PUBLIC_REPLY ? "public_reply" : "dm",
-      title: `${label} ${sent ? "sent" : failed ? "failed" : humanizeStatus(log.status)}${via}`,
-      detail: sent ? log.messagePreview : (log.errorMessage ?? log.messagePreview),
+      title: `${label} ${sent ? "sent" : failed ? "failed" : "not sent"}${via}`,
+      detail: sent ? log.messagePreview : (log.reason ?? log.messagePreview),
       tone: sent ? "ok" : failed ? "error" : "warn",
       href: log.automation ? `/automations/${log.automation.id}` : log.broadcast ? `/broadcasts/${log.broadcast.id}` : undefined,
     });
@@ -694,8 +752,8 @@ function buildTimeline(input: Pick<ContactDetail, "deliveryLogs" | "flowSessions
       id: `session:${session.id}`,
       at: session.createdAt.toISOString(),
       kind: "automation",
-      title: `Entered flow “${session.automation.name}”`,
-      detail: session.currentNodeId && session.status === "ACTIVE" ? `Waiting at step ${session.currentNodeId}` : null,
+      title: `Started “${session.automation.name}”`,
+      detail: session.status === "ACTIVE" ? "Waiting for them to reply or tap a button" : null,
       tone: "neutral",
       badge,
       href: `/automations/${session.automation.id}`,
@@ -707,7 +765,7 @@ function buildTimeline(input: Pick<ContactDetail, "deliveryLogs" | "flowSessions
       id: `click:${click.id}`,
       at: click.createdAt.toISOString(),
       kind: "click",
-      title: `Clicked link ${click.link.label ?? `/l/${click.link.slug}`}`,
+      title: click.link.label ? `Clicked “${click.link.label}”` : "Clicked a link",
       detail: click.link.destinationUrl,
       tone: "ok",
       href: "/links",
@@ -729,15 +787,13 @@ function buildTimeline(input: Pick<ContactDetail, "deliveryLogs" | "flowSessions
   }
 
   for (const change of input.stageChanges) {
-    const by = change.actor ? ` by ${change.actor.name?.trim() || change.actor.email}` : "";
-    events.push({
-      id: `stage:${change.id}`,
-      at: change.createdAt.toISOString(),
-      kind: "stage",
-      title: change.from ? `Stage changed ${change.from} → ${change.to}${by}` : `Stage set to ${change.to}${by}`,
-      detail: null,
-      tone: "neutral",
-    });
+    const by = change.actor ? ` by ${change.actor.name?.trim() || change.actor.email}` : change.automated ? " by an automation" : "";
+    const where = change.pipeline ? ` in ${change.pipeline}` : "";
+    let title: string;
+    if (change.to === null) title = `Removed from ${change.pipeline ?? "a pipeline"}${by}`;
+    else if (change.from) title = `Moved from ${change.from} to ${change.to}${where}${by}`;
+    else title = change.pipeline ? `Added to ${change.pipeline} at ${change.to}${by}` : `Stage set to ${change.to}${by}`;
+    events.push({ id: `stage:${change.id}`, at: change.createdAt.toISOString(), kind: "stage", title, detail: null, tone: "neutral" });
   }
 
   return events.sort((a, b) => (a.at === b.at ? a.id.localeCompare(b.id) : a.at < b.at ? 1 : -1)).slice(0, CONTACT_TIMELINE_MAX);
@@ -747,10 +803,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readStageChange(row: { id: string; createdAt: Date; metadata: Prisma.JsonValue | null; user: { id: string; name: string | null; email: string } | null }): ContactStageChange | null {
+function readStageChange(row: {
+  id: string;
+  action: string;
+  createdAt: Date;
+  metadata: Prisma.JsonValue | null;
+  user: { id: string; name: string | null; email: string } | null;
+}): ContactStageChange | null {
   const meta = isRecord(row.metadata) ? row.metadata : {};
-  if (typeof meta.to !== "string") return null;
-  return { id: row.id, from: typeof meta.from === "string" ? meta.from : null, to: meta.to, createdAt: row.createdAt, actor: row.user };
+  const removed = row.action === AUDIT_PIPELINE_REMOVED;
+  if (!removed && typeof meta.to !== "string") return null;
+  return {
+    id: row.id,
+    pipeline: typeof meta.pipeline === "string" ? meta.pipeline : null,
+    from: typeof meta.from === "string" ? meta.from : null,
+    to: removed ? null : (meta.to as string),
+    createdAt: row.createdAt,
+    actor: row.user,
+    automated: typeof meta.automationId === "string",
+  };
 }
 
 export async function getContact(workspaceId: string, id: string): Promise<ContactDetail | null> {
@@ -763,14 +834,14 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
   });
   if (!contact) return null;
 
-  const [conversation, flowSessions, deliveryLogs, linkClicks, dmsReceived, linkClickCount, sessionCount, notes, stageRows, segments] = await Promise.all([
+  const [conversation, flowSessions, deliveryLogs, linkClicks, dmsReceived, linkClickCount, sessionCount, notes, stageRows, segments, pipelines] = await Promise.all([
     prisma.conversation.findFirst({
       where: { workspaceId, contactId: contact.id },
       select: { id: true, status: true, lastInboundAt: true, lastMessageAt: true, lastMessagePreview: true, unreadCount: true },
     }),
     prisma.flowSession.findMany({
       where: { workspaceId, contactId: contact.id },
-      select: { id: true, status: true, currentNodeId: true, createdAt: true, updatedAt: true, automation: { select: { id: true, name: true } } },
+      select: { id: true, status: true, createdAt: true, updatedAt: true, automation: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
       take: DETAIL_ACTIVITY_LIMIT,
     }),
@@ -782,7 +853,6 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
         status: true,
         messagePreview: true,
         errorMessage: true,
-        commentExternalId: true,
         createdAt: true,
         automation: { select: { id: true, name: true } },
         broadcast: { select: { id: true, name: true } },
@@ -802,12 +872,13 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
     prisma.flowSession.count({ where: { workspaceId, contactId: contact.id } }),
     listNotes(workspaceId, contact.id, { limit: DETAIL_NOTES_LIMIT }),
     prisma.auditLog.findMany({
-      where: { workspaceId, action: AUDIT_STAGE_CHANGED, targetType: "contact", targetId: contact.id },
-      select: { id: true, createdAt: true, metadata: true, user: { select: { id: true, name: true, email: true } } },
+      where: { workspaceId, action: { in: [AUDIT_STAGE_CHANGED, AUDIT_PIPELINE_REMOVED] }, targetType: "contact", targetId: contact.id },
+      select: { id: true, action: true, createdAt: true, metadata: true, user: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: "desc" },
       take: DETAIL_STAGE_CHANGES_LIMIT,
     }),
     segmentsForContact(workspaceId, contact.id),
+    pipelinesForContact(workspaceId, contact.id),
   ]);
 
   const messages = conversation
@@ -828,6 +899,11 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
       })
     : [];
 
+  const deliveries: ContactDeliveryLogSummary[] = deliveryLogs.map(({ errorMessage, ...log }) => ({
+    ...log,
+    reason: customerReason(log.status, errorMessage),
+  }));
+
   const messageSummaries: ContactMessageSummary[] = messages.map((m) => ({
     id: m.id,
     direction: m.direction,
@@ -840,8 +916,33 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
   }));
   const stageChanges = stageRows.map(readStageChange).filter((c): c is ContactStageChange => c !== null);
 
+  const profile: ContactProfile = {
+    id: contact.id,
+    platform: contact.platform,
+    username: contact.username,
+    name: contact.name,
+    avatarUrl: contact.avatarUrl,
+    isFollower: contact.isFollower,
+    tags: contact.tags,
+    customFields: contact.customFields,
+    optedOut: contact.optedOut,
+    source: contact.source,
+    messageable: contact.messageable,
+    email: contact.email,
+    phone: contact.phone,
+    ownerId: contact.ownerId,
+    lastContactedAt: contact.lastContactedAt,
+    notesCount: contact.notesCount,
+    firstSeenAt: contact.firstSeenAt,
+    lastInteractionAt: contact.lastInteractionAt,
+    createdAt: contact.createdAt,
+    channel: contact.channel,
+    owner: contact.owner,
+  };
+
   return {
-    contact,
+    contact: profile,
+    pipelines,
     conversation: conversation
       ? {
           ...conversation,
@@ -850,13 +951,13 @@ export async function getContact(workspaceId: string, id: string): Promise<Conta
         }
       : null,
     flowSessions,
-    deliveryLogs,
+    deliveryLogs: deliveries,
     linkClicks,
     messages: messageSummaries,
     notes,
     stageChanges,
     segments,
-    timeline: buildTimeline({ deliveryLogs, flowSessions, linkClicks, messages: messageSummaries, notes, stageChanges, platform: contact.platform }),
+    timeline: buildTimeline({ deliveryLogs: deliveries, flowSessions, linkClicks, messages: messageSummaries, notes, stageChanges, platform: contact.platform }),
     stats: { dmsReceived, linkClicks: linkClickCount, flowSessions: sessionCount, notes: contact.notesCount },
   };
 }
@@ -891,15 +992,9 @@ function phoneForUpdate(raw: string | null): string | null {
   return phone;
 }
 
-function stageChangeAudit(workspaceId: string, actorId: string | null | undefined, contactId: string, from: string, to: string): Prisma.AuditLogCreateManyInput {
-  return { workspaceId, userId: actorId ?? null, action: AUDIT_STAGE_CHANGED, targetType: "contact", targetId: contactId, metadata: { from, to } };
-}
-
 /**
- * Partial update. Stage is validated against the workspace pipeline and the
- * owner against the member list so client-supplied ids can't smuggle values
- * across workspaces. A stage change also writes the audit row the timeline
- * shows as "Stage changed A → B".
+ * Partial update. The owner is validated against the member list so
+ * client-supplied ids can't smuggle values across workspaces.
  */
 export async function updateContact(workspaceId: string, id: string, input: UpdateContactInput, actorId?: string | null): Promise<Contact> {
   const data = updateContactSchema.parse(input);
@@ -916,38 +1011,9 @@ export async function updateContact(workspaceId: string, id: string, input: Upda
     if (data.ownerId !== null) await requireOwner(workspaceId, data.ownerId);
     update.ownerId = data.ownerId;
   }
-  let stageChanged: string | null = null;
-  if (data.stage !== undefined) {
-    const stage = await requireStage(workspaceId, data.stage);
-    if (stage !== existing.stage) {
-      update.stage = stage;
-      stageChanged = stage;
-    }
-  }
-
-  const contact = await prisma.contact.update({ where: { id }, data: update });
-  if (stageChanged) {
-    await prisma.auditLog.create({ data: stageChangeAudit(workspaceId, actorId, id, existing.stage, stageChanged) });
-  }
-  logger.info("contact.updated", { workspaceId, contactId: id, fields: Object.keys(data) });
+  const contact = await prisma.contact.update({ where: { id: existing.id }, data: update });
+  logger.info("contact.updated", { workspaceId, contactId: id, fields: Object.keys(data), actorId: actorId ?? null });
   return contact;
-}
-
-/** Bulk stage move. One audit row per contact that actually changed so each profile's timeline stays accurate. */
-export async function setStage(workspaceId: string, ids: string[], stage: string, actorId?: string | null): Promise<{ updated: number }> {
-  const scoped = ids.slice(0, CONTACT_BULK_MAX_IDS);
-  if (scoped.length === 0) return { updated: 0 };
-  const clean = await requireStage(workspaceId, stage);
-
-  const targets = await prisma.contact.findMany({ where: { workspaceId, id: { in: scoped }, stage: { not: clean } }, select: { id: true, stage: true } });
-  if (targets.length === 0) return { updated: 0 };
-
-  const [res] = await prisma.$transaction([
-    prisma.contact.updateMany({ where: { workspaceId, id: { in: targets.map((t) => t.id) } }, data: { stage: clean } }),
-    prisma.auditLog.createMany({ data: targets.map((t) => stageChangeAudit(workspaceId, actorId, t.id, t.stage, clean)) }),
-  ]);
-  logger.info("contact.bulk_stage", { workspaceId, stage: clean, count: res.count });
-  return { updated: res.count };
 }
 
 /** Bulk assign (or unassign with null). */
@@ -1058,12 +1124,11 @@ export async function deleteContacts(workspaceId: string, ids: string[]): Promis
 export async function createManualContact(workspaceId: string, input: CreateManualContactInput, actorId?: string | null): Promise<Contact> {
   const data = createManualContactSchema.parse(input);
   const channel = await prisma.channel.findFirst({ where: { id: data.channelId, workspaceId }, select: { id: true, platform: true } });
-  if (!channel) throw new ApiError(404, "Channel not found", "NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "NOT_FOUND");
 
   const username = normalizeUsername(data.username);
   const email = data.email ? emailForUpdate(data.email) : null;
   const phone = data.phone ? phoneForUpdate(data.phone) : null;
-  const stage = data.stage ? await requireStage(workspaceId, data.stage) : (await getStages(workspaceId))[0] ?? "New";
 
   if (username) {
     const clash = await prisma.contact.findFirst({
@@ -1089,7 +1154,6 @@ export async function createManualContact(workspaceId: string, input: CreateManu
         name: data.name,
         email,
         phone,
-        stage,
         tags: data.tags ?? [],
         source: ContactSource.MANUAL,
         messageable: false,
@@ -1098,6 +1162,9 @@ export async function createManualContact(workspaceId: string, input: CreateManu
     return tx.contact.update({ where: { id: created.id }, data: { externalId: `manual:${created.id}` } });
   });
 
+  if (data.pipelineId && data.stageId) {
+    await setContactsStage(workspaceId, [contact.id], data.pipelineId, data.stageId, { actorId });
+  }
   await recordAudit({ workspaceId, userId: actorId, action: "contact.create", targetType: "contact", targetId: contact.id, metadata: { source: "MANUAL" } });
   logger.info("contact.manual_created", { workspaceId, contactId: contact.id });
   return contact;
@@ -1113,7 +1180,7 @@ function unionTags(a: string[], b: string[]): string[] {
  * contact already carries, the CRM fields move onto the webhook contact and
  * the placeholder is deleted:
  * - email / phone / name / owner: webhook value if present, else the CRM value;
- * - stage: the CRM record's stage (the webhook row was just created at the default);
+ * - pipelines: the CRM record's places move over, except where the webhook contact is already in that pipeline;
  * - tags: union (webhook order first); customFields: CRM as base, webhook keys win;
  * - notes are re-pointed and `notesCount` summed; `lastContactedAt` keeps the later date.
  * Never throws — a failed merge must not break webhook processing. Returns
@@ -1142,6 +1209,11 @@ export async function adoptManualContact(channelId: string, username: string, we
       const later = [target.lastContactedAt, twin.lastContactedAt].filter((d): d is Date => d !== null).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
       await tx.contactNote.updateMany({ where: { contactId: twin.id, workspaceId: twin.workspaceId }, data: { contactId: target.id } });
+      const targetPipelines = await tx.pipelineEntry.findMany({ where: { contactId: target.id }, select: { pipelineId: true } });
+      await tx.pipelineEntry.updateMany({
+        where: { contactId: twin.id, pipelineId: { notIn: targetPipelines.map((e) => e.pipelineId) } },
+        data: { contactId: target.id },
+      });
       const updated = await tx.contact.update({
         where: { id: target.id },
         data: {
@@ -1149,7 +1221,6 @@ export async function adoptManualContact(channelId: string, username: string, we
           phone: target.phone ?? twin.phone,
           name: target.name ?? twin.name,
           ownerId: target.ownerId ?? twin.ownerId,
-          stage: twin.stage,
           tags: { set: unionTags(target.tags, twin.tags) },
           customFields: { ...twinFields, ...targetFields } as Prisma.InputJsonObject,
           lastContactedAt: later,
@@ -1195,7 +1266,7 @@ const EXPORT_HEADERS = [
   "name",
   "email",
   "phone",
-  "stage",
+  "pipelines",
   "owner",
   "platform",
   "channel",
@@ -1228,7 +1299,7 @@ export async function exportContactsCsv(workspaceId: string, filters: ContactLis
           row.name,
           row.email,
           row.phone,
-          row.stage,
+          row.pipelineEntries.map((e) => `${e.pipeline.name}: ${e.stage.name}`).join("; "),
           row.owner ? (row.owner.name?.trim() || row.owner.email) : "",
           row.platform === ChannelPlatform.INSTAGRAM ? "instagram" : "facebook",
           row.channel.username ?? row.channel.name ?? "",

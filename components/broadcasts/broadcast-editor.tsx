@@ -24,7 +24,7 @@ import type { OutboundMessage } from "@/lib/meta/types";
 import { cn } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./api";
-import { audienceFromSegment, channelLabel, formatCount, formatDateTime, statusMeta, summarizeAudience, timeZoneAbbreviation } from "./format";
+import { audienceFromSegment, channelLabel, formatCount, formatDateTime, statusMeta, timeZoneAbbreviation, timeZoneLabel } from "./format";
 import { MessagePreview } from "./message-preview";
 import { SendConfirmDialog } from "./send-confirm-dialog";
 import { TagPicker } from "./tag-picker";
@@ -33,10 +33,8 @@ import {
   BUTTON_TITLE_MAX_CHARS,
   MAX_BUTTONS,
   NAME_MAX_CHARS,
-  TEXT_MAX_BYTES,
-  TEXT_WITH_BUTTONS_MAX_CHARS,
   charLength,
-  utf8ByteLength,
+  messageLengthUsage,
   type AudienceEstimate,
   type BroadcastAudience,
   type BroadcastRow,
@@ -145,9 +143,8 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
 
   const channel = channels.find((c) => c.id === channelId) ?? null;
   const outbound = React.useMemo(() => toOutbound(draft), [draft]);
-  const textBytes = utf8ByteLength(draft.text);
-  const textChars = charLength(draft.text);
   const hasButtons = draft.buttons.some((b) => b.title.trim() || b.url.trim());
+  const textUsage = messageLengthUsage(draft.text, hasButtons);
 
   // Tags and segments come from the contacts lane; an empty/failed response just means free-text entry.
   React.useEffect(() => {
@@ -226,18 +223,17 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
   function validate(opts: { schedule: boolean }): Errors {
     const next: Errors = {};
     if (!name.trim()) next.name = "Give the broadcast a name";
-    if (!channelId) next.channelId = "Choose a channel";
-    else if (channel && channel.status !== "ACTIVE") next.channelId = "Reconnect this channel before sending";
+    if (!channelId) next.channelId = "Choose an account";
+    else if (channel && channel.status !== "ACTIVE") next.channelId = "Reconnect this account before sending";
     const text = draft.text.trim();
     if (!text && !draft.imageUrl.trim()) next.text = "Add some text or an image";
-    if (textBytes > TEXT_MAX_BYTES) next.text = `Text is ${formatCount(textBytes)} bytes — the limit is ${formatCount(TEXT_MAX_BYTES)}`;
-    if (hasButtons && textChars > TEXT_WITH_BUTTONS_MAX_CHARS) next.text = `Text must be ${TEXT_WITH_BUTTONS_MAX_CHARS} characters or fewer when the message has buttons`;
-    if (draft.imageUrl.trim() && !isHttpUrl(draft.imageUrl.trim())) next.imageUrl = "Image must be an http(s) URL";
+    if (textUsage.value > textUsage.max) next.text = hasButtons ? "The message is too long to send with buttons. Shorten it a little." : "The message is too long for Instagram. Shorten it a little.";
+    if (draft.imageUrl.trim() && !isHttpUrl(draft.imageUrl.trim())) next.imageUrl = "Use a full image link, starting with https://";
     for (const b of draft.buttons) {
       if (!b.title.trim() && !b.url.trim()) continue;
       if (!b.title.trim()) next.buttons = "Every button needs a label";
       else if (charLength(b.title.trim()) > BUTTON_TITLE_MAX_CHARS) next.buttons = `Button labels are at most ${BUTTON_TITLE_MAX_CHARS} characters`;
-      else if (!isHttpUrl(b.url.trim())) next.buttons = "Every button needs an http(s) link";
+      else if (!isHttpUrl(b.url.trim())) next.buttons = "Every button needs a full link, starting with https://";
     }
     if (opts.schedule) {
       const when = fromDatetimeLocal(scheduledLocal, timeZone);
@@ -307,7 +303,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
       setStatus("DRAFT");
       setScheduledAtSaved(null);
       setScheduleMode("now");
-      toast.success("Schedule removed — it's a draft again");
+      toast.success("Schedule removed. It's a draft again.");
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't remove the schedule"));
@@ -328,7 +324,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
       id = await persist(null);
       const result = await apiFetch<{ eligible: number; skippedWindow: number }>(`/api/broadcasts/${id}/send`, { method: "POST" });
       toast.success(`Sending to ${formatCount(result.eligible)} contact${result.eligible === 1 ? "" : "s"}`, {
-        description: result.skippedWindow > 0 ? `${formatCount(result.skippedWindow)} skipped — outside the 24h window` : undefined,
+        description: result.skippedWindow > 0 ? `${formatCount(result.skippedWindow)} not sent because they haven't messaged you in the last 24 hours` : undefined,
       });
       router.push(`/broadcasts/${id}`);
     } catch (err) {
@@ -344,11 +340,11 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
   if (channels.length === 0) {
     return (
       <>
-        <PageHeader backHref="/broadcasts" backLabel="Broadcasts" title="New broadcast" description="Send one message to an audience inside the 24-hour window." />
+        <PageHeader backHref="/broadcasts" backLabel="Broadcasts" title="New broadcast" description="Write a message and choose who gets it." />
         <EmptyState
           icon={Plug}
-          title="Connect a channel first"
-          description="Broadcasts are sent from a connected Instagram or Facebook account. Connect one, then come back here."
+          title="Connect an account first"
+          description="Broadcasts go out from a connected Instagram or Facebook account. Connect one first."
           action={
             <Button asChild>
               <Link href="/channels">Go to Channels</Link>
@@ -370,7 +366,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
         backHref="/broadcasts"
         backLabel="Broadcasts"
         title={isEdit ? name.trim() || "Edit broadcast" : "New broadcast"}
-        description="Send one message to an audience inside the 24-hour window."
+        description="Write a message and choose who gets it."
         actions={
           <>
             {isEdit ? <Badge variant={meta.variant}>{meta.label}</Badge> : null}
@@ -395,12 +391,12 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
 
       <WindowCallout className="mb-6" />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Details</CardTitle>
-              <CardDescription>Internal name and the account it goes out from.</CardDescription>
+              <CardDescription>A name only your team sees, and the account it&apos;s sent from.</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -409,7 +405,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                   id="bc-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="September launch"
+                  placeholder="Winter collection preview"
                   maxLength={NAME_MAX_CHARS}
                   aria-invalid={errors.name ? true : undefined}
                   autoComplete="off"
@@ -417,10 +413,10 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                 {errors.name ? <p className="text-xs text-destructive">{errors.name}</p> : null}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="bc-channel">Channel</Label>
+                <Label htmlFor="bc-channel">Account</Label>
                 <Select value={channelId} onValueChange={setChannelId}>
                   <SelectTrigger id="bc-channel" aria-invalid={errors.channelId ? true : undefined}>
-                    <SelectValue placeholder="Choose a channel" />
+                    <SelectValue placeholder="Choose an account" />
                   </SelectTrigger>
                   <SelectContent>
                     {channels.map((c) => (
@@ -465,17 +461,17 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                 <Users className="h-4 w-4" strokeWidth={1.75} />
                 Audience
               </CardTitle>
-              <CardDescription>Start from a saved segment or filter by tags. Leave everything empty to target everyone who has messaged this account.</CardDescription>
+              <CardDescription>Use a saved segment or filter by tags. Leave it empty to include everyone who has messaged this account.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="bc-segment">Use a saved segment</Label>
                 <Select value={audience.segmentId ?? NO_SEGMENT} onValueChange={applySegment}>
                   <SelectTrigger id="bc-segment">
-                    <SelectValue placeholder="Custom audience" />
+                    <SelectValue placeholder="No segment" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NO_SEGMENT}>Custom audience</SelectItem>
+                    <SelectItem value={NO_SEGMENT}>No segment, use the filters below</SelectItem>
                     {segmentOptions.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="flex items-center gap-2">
@@ -486,7 +482,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                       </SelectItem>
                     ))}
                     {segmentOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[12px] text-muted-foreground">No saved segments yet — save one from the Contacts page.</div>
+                      <div className="px-2 py-2 text-[12px] text-muted-foreground">No saved segments yet. Save one from the Contacts page.</div>
                     ) : null}
                   </SelectContent>
                 </Select>
@@ -497,7 +493,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                     audience; later changes to the segment won&apos;t affect this broadcast.
                   </p>
                 ) : audience.segmentId && segmentsLoaded ? (
-                  <p className="text-xs text-muted-foreground">The segment this audience was copied from no longer exists — the filters below still apply.</p>
+                  <p className="text-xs text-muted-foreground">The segment this audience came from was deleted. The filters below still apply.</p>
                 ) : null}
               </div>
 
@@ -522,7 +518,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                     ))}
                   </div>
                 </div>
-                <TagPicker id="bc-tags" value={audience.tags} onChange={(tags) => updateAudience({ tags })} options={tagOptions} emptyLabel="Everyone on the channel" />
+                <TagPicker id="bc-tags" value={audience.tags} onChange={(tags) => updateAudience({ tags })} options={tagOptions} emptyLabel="Everyone on this account" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bc-exclude">Exclude contacts with any of these tags</Label>
@@ -530,7 +526,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="bc-last-interaction">Last interaction</Label>
+                  <Label htmlFor="bc-last-interaction">Last activity</Label>
                   <Select
                     value={audience.lastInteractionDays ? String(audience.lastInteractionDays) : ANY_TIME}
                     onValueChange={(v) => updateAudience({ lastInteractionDays: v === ANY_TIME ? null : Number(v) })}
@@ -564,28 +560,27 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                   <Label htmlFor="bc-followers" className="cursor-pointer">
                     Only followers
                   </Label>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Based on the follow status we last saw for each contact.</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Uses the follow status from the last time we checked each person.</p>
                 </div>
                 <Switch id="bc-followers" checked={audience.onlyFollowers} onCheckedChange={(onlyFollowers) => updateAudience({ onlyFollowers })} />
               </div>
 
               <div className="rounded-lg border bg-muted/40 p-4" aria-live="polite">
                 {!channelId ? (
-                  <p className="text-sm text-muted-foreground">Choose a channel to estimate the audience.</p>
+                  <p className="text-sm text-muted-foreground">Choose an account to see who it reaches.</p>
                 ) : estimateError ? (
                   <p className="text-sm text-destructive">{estimateError}</p>
                 ) : estimate ? (
                   <div className={cn("space-y-1 transition-opacity", estimating && "opacity-60")}>
                     <p className="text-xl font-semibold tabular-nums tracking-tight">
-                      {formatCount(estimate.eligible)} <span className="text-sm font-normal text-muted-foreground">eligible now</span>
+                      {formatCount(estimate.eligible)} <span className="text-sm font-normal text-muted-foreground">can receive it now</span>
                       <span className="mx-2 text-sm font-normal text-muted-foreground">·</span>
                       <span className="text-sm font-normal text-muted-foreground">
-                        {formatCount(estimate.skippedWindow)} will be skipped (outside 24h window)
+                        {formatCount(estimate.skippedWindow)} haven&apos;t messaged in 24 hours
                       </span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatCount(estimate.total)} contact{estimate.total === 1 ? "" : "s"} match this audience ({summarizeAudience(audience).toLowerCase()}) — the same count the
-                      Contacts page shows for these filters on this channel. Eligibility is re-checked at send time.
+                      {formatCount(estimate.total)} contact{estimate.total === 1 ? "" : "s"} match this audience. Who can receive it is checked again when it sends.
                     </p>
                   </div>
                 ) : (
@@ -601,27 +596,22 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
             <CardHeader>
               <CardTitle>Message</CardTitle>
               <CardDescription>
-                Personalise with <code className="rounded bg-muted px-1 font-mono text-[12px]">{"{{first_name}}"}</code>,{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[12px]">{"{{name}}"}</code> or{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[12px]">{"{{username}}"}</code>.
+                Add <code className="rounded bg-muted px-1 font-mono text-[12px]">{"{{first_name}}"}</code> and each person sees their own name.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="bc-text">Text</Label>
-                  <span className={cn("text-[11px] tabular-nums text-muted-foreground", textBytes > TEXT_MAX_BYTES && "text-destructive")}>
-                    {formatCount(textBytes)} / {formatCount(TEXT_MAX_BYTES)} bytes
-                    {hasButtons ? (
-                      <span className={cn(textChars > TEXT_WITH_BUTTONS_MAX_CHARS && "text-destructive")}> · {textChars} / {TEXT_WITH_BUTTONS_MAX_CHARS} chars with buttons</span>
-                    ) : null}
+                  <span className={cn("text-[11px] tabular-nums text-muted-foreground", textUsage.value > textUsage.max && "text-destructive")}>
+                    {formatCount(textUsage.value)} / {formatCount(textUsage.max)}
                   </span>
                 </div>
                 <Textarea
                   id="bc-text"
                   value={draft.text}
                   onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
-                  placeholder="Hey {{first_name}}, early access opens today — grab your spot below 👇"
+                  placeholder="Hi {{first_name}}, the winter collection is live. Tap below to see it."
                   rows={5}
                   aria-invalid={errors.text ? true : undefined}
                 />
@@ -632,7 +622,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                 <div className="flex items-center justify-between">
                   <Label>Buttons</Label>
                   <span className="text-[11px] text-muted-foreground">
-                    {draft.buttons.length} / {MAX_BUTTONS} · links only
+                    {draft.buttons.length} / {MAX_BUTTONS}
                   </span>
                 </div>
                 {draft.buttons.length === 0 ? <p className="text-[13px] text-muted-foreground">No buttons. Add up to {MAX_BUTTONS} link buttons under the text.</p> : null}
@@ -670,20 +660,20 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="bc-image">Image URL (optional)</Label>
+                <Label htmlFor="bc-image">Image link (optional)</Label>
                 <div className="relative">
                   <ImageIcon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="bc-image"
                     value={draft.imageUrl}
                     onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))}
-                    placeholder="https://cdn.example.com/launch.jpg"
+                    placeholder="https://yourshop.com/images/winter.jpg"
                     className="pl-8"
                     inputMode="url"
                     aria-invalid={errors.imageUrl ? true : undefined}
                   />
                 </div>
-                {errors.imageUrl ? <p className="text-xs text-destructive">{errors.imageUrl}</p> : <p className="text-xs text-muted-foreground">Sent as a separate image message before the text. Must be a public https link.</p>}
+                {errors.imageUrl ? <p className="text-xs text-destructive">{errors.imageUrl}</p> : <p className="text-xs text-muted-foreground">Sent just before the text. Use a public link that starts with https://</p>}
               </div>
             </CardContent>
           </Card>
@@ -691,7 +681,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
           <Card>
             <CardHeader>
               <CardTitle>Schedule</CardTitle>
-              <CardDescription>Eligibility is always evaluated at the moment of sending, not when you schedule.</CardDescription>
+              <CardDescription>Who can receive it is worked out when it sends, not when you schedule it.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Tabs value={scheduleMode} onValueChange={(v) => setScheduleMode(v === "later" ? "later" : "now")}>
@@ -721,13 +711,13 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
                     <p className="text-xs text-destructive">{errors.schedule}</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Times are in {timeZone} ({timeZoneAbbreviation(timeZone)}), your workspace timezone.
+                      Times are in {timeZoneLabel(timeZone)}, your workspace time zone.
                       {scheduledDate && scheduledDate.getTime() > Date.now() ? ` That's ${formatDistanceToNow(scheduledDate, { addSuffix: true })}.` : ""}
                     </p>
                   )}
                 </div>
               ) : (
-                <p className="text-[13px] text-muted-foreground">Goes out as soon as you confirm. You&apos;ll see the eligible count before anything is sent.</p>
+                <p className="text-[13px] text-muted-foreground">Goes out when you confirm. You&apos;ll see how many people it reaches first.</p>
               )}
             </CardContent>
           </Card>

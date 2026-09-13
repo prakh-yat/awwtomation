@@ -19,7 +19,7 @@ export default function BroadcastLoading() {
           <Skeleton key={i} className="h-24 w-full rounded-lg" />
         ))}
       </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Skeleton className="h-96 w-full rounded-lg" />
         <Skeleton className="mx-auto h-[580px] w-[300px] rounded-[2.25rem]" />
       </div>

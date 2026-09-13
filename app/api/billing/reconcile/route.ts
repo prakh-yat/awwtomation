@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const POST = withWorkspace(
   async (req, ctx) => {
     const ids = await parseBody(req, reconcileSchema);
-    return NextResponse.json(await reconcileCheckoutSession(ctx.workspace.id, ids));
+    return NextResponse.json(await reconcileCheckoutSession(ctx.organization.id, ids));
   },
   { minRole: "ADMIN" },
 );

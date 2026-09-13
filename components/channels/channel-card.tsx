@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { AlertCircle, Check, Images, MoreHorizontal, RefreshCw, Trash2, Unplug, X } from "lucide-react";
+import { Images, MoreHorizontal, RefreshCw, Trash2, Unplug } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { toast } from "@/components/ui/sonner";
-import type { ChannelSummary } from "@/lib/services/channels";
+import type { ChannelView } from "@/lib/services/channels";
 import { cn, formatNumber, initials } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./api";
@@ -36,7 +36,7 @@ import { channelDisplayName, channelStatusView, connectHref, PLATFORM_LABEL } fr
 import { MediaDialog } from "./media-dialog";
 
 export interface ChannelCardProps {
-  channel: ChannelSummary;
+  channel: ChannelView;
   /** ADMIN+; gates disconnect/reconnect. Refresh and viewing posts are open to every member. */
   canManage: boolean;
   /** OWNER only; gates the irreversible "Delete channel & data" action. */
@@ -53,17 +53,15 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
   const status = channelStatusView(channel);
   const name = channelDisplayName(channel);
   const disconnected = channel.status === "DISCONNECTED";
-  const tokenDays = channel.health.tokenDaysLeft;
-  const tokenOk = !status.needsReconnect && (tokenDays === null || tokenDays > 0);
 
   async function refresh() {
     setRefreshing(true);
     try {
       await apiFetch(`/api/channels/${channel.id}/refresh`, { method: "POST" });
-      toast.success(`Refreshed ${name}`, { description: "Profile, webhook subscription and posts are up to date." });
+      toast.success(`Refreshed ${name}`, { description: "Profile details and posts are up to date." });
       router.refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't refresh this channel"));
+      toast.error(errorMessage(err, "Couldn't refresh this account"));
     } finally {
       setRefreshing(false);
     }
@@ -72,10 +70,10 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
   async function disconnect() {
     try {
       await apiFetch(`/api/channels/${channel.id}`, { method: "DELETE" });
-      toast.success(`Disconnected ${name}`, { description: "Automations on this account are paused until you reconnect." });
+      toast.success(`Disconnected ${name}`, { description: "Automations on this account are off until you reconnect it." });
       router.refresh();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't disconnect this channel"));
+      toast.error(errorMessage(err, "Couldn't disconnect this account"));
       throw err; // keeps the confirm dialog open
     }
   }
@@ -122,7 +120,7 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
             {canManage ? (
               <>
                 <DropdownMenuSeparator />
-                {status.needsReconnect || status.variant === "warning" ? (
+                {status.needsReconnect || channel.health.state === "expiring" ? (
                   <DropdownMenuItem asChild>
                     <a href={connectHref(channel.platform)}>
                       <PlatformIcon platform={channel.platform} />
@@ -139,7 +137,7 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
                 {canPurge ? (
                   <DropdownMenuItem destructive onSelect={() => setPurgeOpen(true)}>
                     <Trash2 />
-                    Delete channel &amp; data
+                    Delete account and data
                   </DropdownMenuItem>
                 ) : null}
               </>
@@ -151,24 +149,23 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
       <dl className="grid grid-cols-3 divide-x border-y">
         <Stat label="Automations" value={channel.counts.automations} />
         <Stat label="Contacts" value={channel.counts.contacts} />
-        <Stat label="DMs · 7d" value={channel.counts.dms7d} />
+        <Stat label="DMs this week" value={channel.counts.dms7d} />
       </dl>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3 text-xs">
-        <HealthItem ok={channel.webhookSubscribed && !disconnected} label="Webhook" />
-        {/* Facebook Page tokens have no expiry, so only Instagram shows a countdown. */}
-        <HealthItem ok={tokenOk} label={tokenDays !== null && tokenOk ? `Token · ${tokenDays}d` : "Token"} />
-        <span className="ml-auto text-muted-foreground" suppressHydrationWarning>
-          {channel.lastSyncedAt ? `Synced ${formatDistanceToNow(new Date(channel.lastSyncedAt), { addSuffix: true })}` : "Not synced yet"}
-        </span>
+      <div className="flex-1 px-5 py-3 text-xs">
+        {status.detail ? (
+          <p className={cn("leading-5", status.variant === "destructive" ? "text-destructive" : "text-foreground")}>{status.detail}</p>
+        ) : (
+          <p
+            className="flex items-center gap-1.5 text-muted-foreground"
+            title={channel.lastSyncedAt ? `Profile updated ${formatDistanceToNow(new Date(channel.lastSyncedAt), { addSuffix: true })}` : undefined}
+            suppressHydrationWarning
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
+            Receiving comments and messages
+          </p>
+        )}
       </div>
-
-      {channel.lastError ? (
-        <p className="flex items-start gap-1.5 border-t px-5 py-2.5 text-xs text-destructive">
-          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 break-words">{channel.lastError}</span>
-        </p>
-      ) : null}
 
       {status.needsReconnect && canManage ? (
         <div className="border-t px-5 py-3">
@@ -189,7 +186,7 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
           open={confirmOpen}
           onOpenChange={setConfirmOpen}
           title={`Disconnect ${name}?`}
-          description="The access token is destroyed and automations on this account stop firing. Contacts, conversations and automations are kept, so reconnecting later restores everything."
+          description="Automations on this account stop replying. Contacts, conversations and automations are kept, so reconnecting later picks up where you left off."
           confirmLabel="Disconnect"
           destructive
           onConfirm={disconnect}
@@ -202,7 +199,7 @@ export function ChannelCard({ channel, canManage, canPurge = false }: ChannelCar
           open={purgeOpen}
           onOpenChange={setPurgeOpen}
           onPurged={() => {
-            toast.success(`Deleted ${name}`, { description: "The channel and every record tied to it are gone." });
+            toast.success(`Deleted ${name}`, { description: "The account and everything tied to it are gone." });
             router.refresh();
           }}
         />
@@ -222,15 +219,15 @@ function PurgeChannelDialog({
   onOpenChange,
   onPurged,
 }: {
-  channel: ChannelSummary;
+  channel: ChannelView;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPurged: () => void;
 }) {
   const [typed, setTyped] = React.useState("");
   const [pending, setPending] = React.useState(false);
-  // Facebook Pages have no @handle, so fall back to the Page name; the id is the last resort.
-  const expected = channel.username ?? channel.name ?? channel.externalId;
+  // Facebook Pages have no @handle, so fall back to the Page name.
+  const expected = channel.username ?? channel.name ?? "DELETE";
   const matches = typed.trim() === expected;
 
   function handleOpenChange(next: boolean) {
@@ -249,7 +246,7 @@ function PurgeChannelDialog({
       onOpenChange(false);
       onPurged();
     } catch (err) {
-      toast.error(errorMessage(err, "Couldn't delete this channel"));
+      toast.error(errorMessage(err, "Couldn't delete this account"));
       setPending(false);
     }
   }
@@ -269,10 +266,10 @@ function PurgeChannelDialog({
           <DialogHeader>
             <DialogTitle>Delete {channelDisplayName(channel)} and its data?</DialogTitle>
             <DialogDescription>
-              This permanently removes the channel together with its {formatNumber(channel.counts.contacts)} contact
+              This permanently removes the account with its {formatNumber(channel.counts.contacts)} contact
               {channel.counts.contacts === 1 ? "" : "s"}, conversations, {formatNumber(channel.counts.automations)} automation
-              {channel.counts.automations === 1 ? "" : "s"}, broadcasts, cached posts and delivery logs. Unlike Disconnect,
-              nothing can be restored by reconnecting.
+              {channel.counts.automations === 1 ? "" : "s"}, broadcasts, posts and message history. Unlike Disconnect, reconnecting
+              won&apos;t bring any of it back.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -294,7 +291,7 @@ function PurgeChannelDialog({
               Cancel
             </Button>
             <Button type="submit" variant="destructive" loading={pending} disabled={!matches}>
-              Delete channel &amp; data
+              Delete account and data
             </Button>
           </DialogFooter>
         </form>
@@ -305,28 +302,9 @@ function PurgeChannelDialog({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="px-5 py-3">
-      <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</dt>
+    <div className="px-4 py-3">
+      <dt className="whitespace-nowrap text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight">{formatNumber(value)}</dd>
     </div>
-  );
-}
-
-function HealthItem({ ok, label }: { ok: boolean; label: string }) {
-  const Icon = ok ? Check : X;
-  return (
-    <span className={cn("inline-flex items-center gap-1", ok ? "text-foreground" : "text-muted-foreground")}>
-      <span
-        className={cn(
-          "flex h-4 w-4 items-center justify-center rounded-full border",
-          ok ? "border-success/30 bg-success/10 text-success" : "border-border bg-muted text-muted-foreground",
-        )}
-        aria-hidden
-      >
-        <Icon className="h-2.5 w-2.5" strokeWidth={3} />
-      </span>
-      <span>{label}</span>
-      <span className="sr-only">{ok ? "OK" : "not OK"}</span>
-    </span>
   );
 }

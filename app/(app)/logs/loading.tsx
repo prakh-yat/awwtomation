@@ -43,7 +43,6 @@ export default function LogsLoading() {
               <Skeleton className="h-3.5 w-28" />
               <Skeleton className="h-3.5 w-32" />
               <Skeleton className="h-3.5 flex-1" />
-              <Skeleton className="h-3.5 w-24" />
             </div>
           ))}
         </div>

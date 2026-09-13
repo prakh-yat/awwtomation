@@ -3,10 +3,10 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { logger } from "@/lib/logger";
-import { ensureDefaultWorkspace } from "@/lib/services/workspaces";
+import { ensureDefaultOrganization } from "@/lib/services/organizations";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sanitizeNextPath } from "@/lib/utils";
-import { readActiveWorkspaceCookie, setActiveWorkspaceCookie } from "@/lib/workspace/cookie";
+import { readActiveWorkspaceCookie, setActiveOrganizationCookies } from "@/lib/workspace/cookie";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,19 +67,19 @@ export async function GET(request: NextRequest) {
   if (!user) return loginRedirect(origin, "no_user");
 
   // Someone arriving through an invite link is joining an existing team — don't
-  // saddle them with a personal workspace they never asked for.
+  // saddle them with a personal organization they never asked for.
   const joiningViaInvite = next.startsWith("/invite/");
   if (!joiningViaInvite) {
     try {
-      const { workspace, created } = await ensureDefaultWorkspace(user);
-      if (!(await readActiveWorkspaceCookie())) await setActiveWorkspaceCookie(workspace.id);
+      const { organization, workspace, created } = await ensureDefaultOrganization(user);
+      if (!(await readActiveWorkspaceCookie())) await setActiveOrganizationCookies(organization.id, workspace.id);
       if (created && next === "/dashboard") {
         // Fresh account: go straight to connecting a channel.
         return NextResponse.redirect(new URL("/channels?onboarding=1", origin));
       }
     } catch (err) {
-      logger.error("auth.callback.ensure_workspace_failed", { userId: user.id, error: err });
-      // The user is signed in; /onboarding will offer to create a workspace manually.
+      logger.error("auth.callback.ensure_organization_failed", { userId: user.id, error: err });
+      // The user is signed in; /onboarding will offer to create an organization manually.
       return NextResponse.redirect(new URL("/onboarding", origin));
     }
   }

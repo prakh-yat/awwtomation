@@ -38,10 +38,10 @@ export function todayKey(timeZone: string): string {
   }
 }
 
-/** "@handle" from whichever identifier we have; falls back to the display name or the raw id. */
-export function recipientHandle(username: string | null | undefined, name?: string | null, externalId?: string | null): string {
+/** "@handle" when we have one, otherwise the display name. Never an internal id. */
+export function recipientHandle(username: string | null | undefined, name?: string | null): string {
   const clean = username?.trim().replace(/^@/, "");
   if (clean) return `@${clean}`;
   if (name?.trim()) return name.trim();
-  return externalId ? `id ${externalId}` : "Unknown recipient";
+  return "Unknown recipient";
 }

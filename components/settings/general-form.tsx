@@ -67,14 +67,14 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
 
   return (
     <Card>
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} noValidate className="flex h-full flex-col">
         <CardHeader>
           <CardTitle>Workspace</CardTitle>
           <CardDescription>
-            The name appears in the sidebar and invitations. The timezone is used for reports and scheduled sends.
+            The name shows in the sidebar and in invitations. Reports and scheduled broadcasts use the time zone.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-5 sm:grid-cols-2">
+        <CardContent className="grid flex-1 content-start gap-5 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="workspace-name">Name</Label>
             <Input
@@ -87,7 +87,7 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
               disabled={!canEdit || pending}
               aria-invalid={error?.field === "name" ? true : undefined}
               aria-describedby={error?.field === "name" ? "workspace-name-error" : undefined}
-              placeholder="Acme Studio"
+              placeholder="Himalayan Threads"
             />
             {error?.field === "name" ? (
               <p id="workspace-name-error" role="alert" className="text-xs text-destructive">
@@ -97,14 +97,14 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="workspace-timezone">Timezone</Label>
+            <Label htmlFor="workspace-timezone">Time zone</Label>
             <Select value={timezone} onValueChange={setTimezone} disabled={!canEdit || pending}>
               <SelectTrigger
                 id="workspace-timezone"
                 aria-invalid={error?.field === "timezone" ? true : undefined}
                 className="aria-[invalid=true]:border-destructive"
               >
-                <SelectValue placeholder="Choose a timezone" />
+                <SelectValue placeholder="Choose a time zone" />
               </SelectTrigger>
               <SelectContent>
                 {groups.map((group) => (
@@ -130,9 +130,7 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
               <p role="alert" className="text-xs text-destructive">
                 {error.message}
               </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">{timezone}</p>
-            )}
+            ) : null}
           </div>
         </CardContent>
         <CardFooter className="justify-between gap-3 border-t pt-4">

@@ -19,15 +19,15 @@ const OPTIONS: Option[] = [
   {
     platform: "INSTAGRAM",
     title: "Instagram professional account",
-    description: "Business or Creator account. Signs in with Instagram directly — no Facebook Page required.",
-    points: ["Comment → DM on posts and reels", "DM and story-reply keyword triggers", "Follow-to-unlock gates"],
+    description: "Business or Creator account. You sign in with Instagram, no Facebook Page needed.",
+    points: ["Reply to comments on posts and reels with a DM", "Answer keyword DMs and story replies", "Send links only to followers"],
     cta: "Connect Instagram",
   },
   {
     platform: "FACEBOOK",
     title: "Facebook Page",
     description: "Any Page you manage. Pick one or several after signing in with Facebook.",
-    points: ["Comment → Messenger reply on Page posts", "Messenger keyword triggers", "Public replies under comments"],
+    points: ["Reply to comments on Page posts in Messenger", "Answer keyword messages", "Reply publicly under comments"],
     cta: "Connect Facebook Page",
   },
 ];
@@ -36,13 +36,12 @@ const OPTIONS: Option[] = [
 export function OnboardingBanner({ configured }: { configured: MetaConfigured }) {
   return (
     <section aria-labelledby="onboarding-title" className="mb-6 rounded-lg border bg-card p-6 shadow-card">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step 2 of 2</p>
+      <p className="text-xs text-muted-foreground">Step 2 of 2</p>
       <h2 id="onboarding-title" className="mt-1 text-base font-semibold tracking-tight">
-        Connect your first account to start automating
+        Connect your first account
       </h2>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-        You&apos;ll be sent to Meta to approve access, then land back here. Tokens are encrypted at rest and you can
-        disconnect at any time.
+        You&apos;ll approve access on Instagram or Facebook and come straight back here. You can disconnect at any time.
       </p>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -75,7 +74,7 @@ export function OnboardingBanner({ configured }: { configured: MetaConfigured })
                   </Button>
                 ) : (
                   <Button className="w-full" variant="outline" disabled>
-                    {option.cta} · not configured
+                    {option.cta} (unavailable)
                   </Button>
                 )}
               </div>

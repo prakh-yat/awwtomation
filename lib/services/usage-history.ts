@@ -1,7 +1,8 @@
 /**
- * DM usage over time for Settings → Usage and the dashboard projection.
+ * DM usage over time for the Usage page and the dashboard projection. Usage
+ * belongs to the organization, so every count spans all of its workspaces.
  *
- * The live counter (`Workspace.dmsSentThisPeriod`, reserved atomically by
+ * The live counter (`Organization.dmsSentThisPeriod`, reserved atomically by
  * lib/billing/usage.ts) is the number the plan limit is enforced against, so
  * the current period always reports it. Past months are rebuilt from
  * DeliveryLog rows with status SENT — the same events that reserve quota —
@@ -11,7 +12,7 @@
  */
 import { type PlanTier, Prisma } from "@prisma/client";
 
-import { currentPeriodStart, getUsage } from "@/lib/billing/usage";
+import { currentPeriodStart, getOrganizationUsage } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 
 export const USAGE_HISTORY_DEFAULT_MONTHS = 6;
@@ -29,6 +30,8 @@ export type UsageMonth = {
   /** SENT private replies + messages + broadcasts (what the plan meters). */
   dmsSent: number;
   privateReplies: number;
+  /** DMs sent in reply to a keyword DM or story reply, plus Inbox replies. */
+  messages: number;
   broadcasts: number;
   publicReplies: number;
   /** The current plan's monthly limit; historical plan changes are not tracked. */
@@ -59,16 +62,21 @@ export type UsageWarning = { level: "warning" | "critical"; message: string };
 
 export type UsageChannelRow = {
   channel: { id: string; platform: "INSTAGRAM" | "FACEBOOK"; username: string | null; name: string | null };
+  workspace: { id: string; name: string };
   used: number;
 };
 
-export type UsageAutomationRow = { id: string; name: string; used: number };
+export type UsageAutomationRow = { id: string; name: string; workspace: { id: string; name: string }; used: number };
+
+export type UsageWorkspaceRow = { id: string; name: string; used: number };
 
 export type UsageCurrentPeriod = UsageProjection & {
   plan: PlanTier;
   planLabel: string;
   perChannel: UsageChannelRow[];
   perAutomation: UsageAutomationRow[];
+  /** Every workspace in the organization, busiest first (zero rows included). */
+  perWorkspace: UsageWorkspaceRow[];
   /** DMs this period that came from broadcasts (not attributed to an automation). */
   broadcasts: number;
 };
@@ -164,38 +172,41 @@ function utcBound(date: Date): Prisma.Sql {
 const SENT = Prisma.sql`'SENT'::"DeliveryStatus"`;
 const DM_KINDS = Prisma.sql`'PRIVATE_REPLY'::"DeliveryKind", 'MESSAGE'::"DeliveryKind", 'BROADCAST'::"DeliveryKind"`;
 
-type MonthRow = { month: string; dms_sent: number; private_replies: number; broadcasts: number; public_replies: number };
+type MonthRow = { month: string; dms_sent: number; private_replies: number; messages: number; broadcasts: number; public_replies: number };
 type ChannelRow = { channelId: string; count: number };
 type AutomationRow = { automationId: string | null; count: number };
 
-export async function getUsageHistory(workspaceId: string, months = USAGE_HISTORY_DEFAULT_MONTHS): Promise<UsageHistory> {
+export async function getUsageHistory(organizationId: string, months = USAGE_HISTORY_DEFAULT_MONTHS): Promise<UsageHistory> {
   const span = Math.min(Math.max(Math.trunc(months), 1), USAGE_HISTORY_MAX_MONTHS);
   const now = new Date();
   const periodStart = currentPeriodStart(now);
   const firstMonth = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() - (span - 1), 1));
+  const inOrganization = Prisma.sql`"workspaceId" IN (SELECT "id" FROM "Workspace" WHERE "organizationId" = ${organizationId})`;
 
-  const [usage, monthRows, channelRows, automationRows] = await Promise.all([
-    getUsage(workspaceId),
+  const [usage, workspaces, monthRows, channelRows, automationRows] = await Promise.all([
+    getOrganizationUsage(organizationId),
+    prisma.workspace.findMany({ where: { organizationId }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }),
     prisma.$queryRaw<MonthRow[]>(Prisma.sql`
       SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
         (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" IN (${DM_KINDS})))::int AS dms_sent,
         (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" = 'PRIVATE_REPLY'::"DeliveryKind"))::int AS private_replies,
+        (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" = 'MESSAGE'::"DeliveryKind"))::int AS messages,
         (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" = 'BROADCAST'::"DeliveryKind"))::int AS broadcasts,
         (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" = 'PUBLIC_REPLY'::"DeliveryKind"))::int AS public_replies
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "createdAt" >= ${utcBound(firstMonth)}
+      WHERE ${inOrganization} AND "createdAt" >= ${utcBound(firstMonth)}
       GROUP BY 1
     `),
     prisma.$queryRaw<ChannelRow[]>(Prisma.sql`
       SELECT "channelId", COUNT(*)::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "status" = ${SENT} AND "kind" IN (${DM_KINDS}) AND "createdAt" >= ${utcBound(periodStart)}
+      WHERE ${inOrganization} AND "status" = ${SENT} AND "kind" IN (${DM_KINDS}) AND "createdAt" >= ${utcBound(periodStart)}
       GROUP BY 1
     `),
     prisma.$queryRaw<AutomationRow[]>(Prisma.sql`
       SELECT "automationId", COUNT(*)::int AS count
       FROM "DeliveryLog"
-      WHERE "workspaceId" = ${workspaceId} AND "status" = ${SENT} AND "kind" IN (${DM_KINDS}) AND "createdAt" >= ${utcBound(periodStart)}
+      WHERE ${inOrganization} AND "status" = ${SENT} AND "kind" IN (${DM_KINDS}) AND "createdAt" >= ${utcBound(periodStart)}
       GROUP BY 1
     `),
   ]);
@@ -216,6 +227,7 @@ export async function getUsageHistory(workspaceId: string, months = USAGE_HISTOR
       label: monthLabel(key),
       dmsSent,
       privateReplies: row?.private_replies ?? 0,
+      messages: row?.messages ?? 0,
       broadcasts: row?.broadcasts ?? 0,
       publicReplies: row?.public_replies ?? 0,
       limit,
@@ -228,10 +240,16 @@ export async function getUsageHistory(workspaceId: string, months = USAGE_HISTOR
   const automationIds = automationRows.map((r) => r.automationId).filter((id): id is string => id !== null);
   const [channels, automations] = await Promise.all([
     channelIds.length > 0
-      ? prisma.channel.findMany({ where: { workspaceId, id: { in: channelIds } }, select: { id: true, platform: true, username: true, name: true } })
+      ? prisma.channel.findMany({
+          where: { workspace: { organizationId }, id: { in: channelIds } },
+          select: { id: true, platform: true, username: true, name: true, workspace: { select: { id: true, name: true } } },
+        })
       : Promise.resolve([]),
     automationIds.length > 0
-      ? prisma.automation.findMany({ where: { workspaceId, id: { in: automationIds } }, select: { id: true, name: true } })
+      ? prisma.automation.findMany({
+          where: { workspace: { organizationId }, id: { in: automationIds } },
+          select: { id: true, name: true, workspace: { select: { id: true, name: true } } },
+        })
       : Promise.resolve([]),
   ]);
   const channelById = new Map(channels.map((c) => [c.id, c]));
@@ -239,23 +257,28 @@ export async function getUsageHistory(workspaceId: string, months = USAGE_HISTOR
 
   const perChannel: UsageChannelRow[] = channelRows
     .flatMap((r) => {
-      const channel = channelById.get(r.channelId);
-      return channel ? [{ channel, used: r.count }] : [];
+      const found = channelById.get(r.channelId);
+      if (!found) return [];
+      const { workspace, ...channel } = found;
+      return [{ channel, workspace, used: r.count }];
     })
     .sort((a, b) => b.used - a.used);
   const perAutomation: UsageAutomationRow[] = automationRows
     .flatMap((r) => {
       const automation = r.automationId ? automationById.get(r.automationId) : undefined;
-      return automation ? [{ id: automation.id, name: automation.name, used: r.count }] : [];
+      return automation ? [{ id: automation.id, name: automation.name, workspace: automation.workspace, used: r.count }] : [];
     })
     .sort((a, b) => b.used - a.used)
     .slice(0, TOP_AUTOMATIONS);
   const broadcasts = monthRows.find((r) => r.month === currentKey)?.broadcasts ?? 0;
+  const byWorkspace = new Map<string, number>();
+  for (const row of perChannel) byWorkspace.set(row.workspace.id, (byWorkspace.get(row.workspace.id) ?? 0) + row.used);
+  const perWorkspace: UsageWorkspaceRow[] = workspaces.map((w) => ({ id: w.id, name: w.name, used: byWorkspace.get(w.id) ?? 0 })).sort((a, b) => b.used - a.used);
 
   const projection = projectUsage({ used: usage.dms.used, limit, periodStart: usage.periodStart, periodEnd: usage.periodEnd, now });
 
   return {
-    currentPeriod: { ...projection, plan: usage.plan, planLabel: usage.limits.label, perChannel, perAutomation, broadcasts },
+    currentPeriod: { ...projection, plan: usage.plan, planLabel: usage.limits.label, perChannel, perAutomation, perWorkspace, broadcasts },
     months: monthList,
     warnings: usageWarnings(projection),
   };

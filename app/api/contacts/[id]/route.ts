@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 type Params = { id: string };
 
-/** GET /api/contacts/[id] → { contact, conversation, flowSessions, deliveryLogs, linkClicks, messages, stats } */
+/** GET /api/contacts/[id] → { contact, conversation, flowSessions, deliveryLogs, linkClicks, messages, notes, stageChanges, timeline, stats } */
 export const GET = withWorkspace<Params>(async (_req, ctx, { params }) => {
   const { id } = await params;
   const detail = await getContact(ctx.workspace.id, id);
@@ -16,14 +16,14 @@ export const GET = withWorkspace<Params>(async (_req, ctx, { params }) => {
 });
 
 /**
- * PATCH /api/contacts/[id] { tags?, customFields?, optedOut?, name? } → { contact }
- * This payload is the contract the Inbox lane uses to edit a contact in-thread.
+ * PATCH /api/contacts/[id] { tags?, customFields?, optedOut?, name?, stage?, ownerId?, email?, phone? } → { ok: true }
+ * The Inbox edits a contact in-thread with the first four; the CRM profile uses the rest.
  */
 export const PATCH = withWorkspace<Params>(async (req, ctx, { params }) => {
   const { id } = await params;
   const data = await parseBody(req, updateContactSchema);
-  const contact = await updateContact(ctx.workspace.id, id, data);
-  return NextResponse.json({ contact });
+  await updateContact(ctx.workspace.id, id, data, ctx.user.id);
+  return NextResponse.json({ ok: true });
 });
 
 /** DELETE /api/contacts/[id] → { ok: true } */

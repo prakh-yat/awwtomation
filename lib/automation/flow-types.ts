@@ -4,7 +4,17 @@ import { MAX_BUTTONS, MAX_BUTTON_TITLE_CHARS, MAX_QUICK_REPLIES, MAX_QUICK_REPLY
 
 // ───────────────────────── Types ─────────────────────────
 
-export type FlowNodeType = "trigger" | "send_message" | "ask_question" | "condition_follow" | "delay" | "add_tag" | "remove_tag";
+export type FlowNodeType =
+  | "trigger"
+  | "send_message"
+  | "ask_question"
+  | "condition_follow"
+  | "delay"
+  | "add_tag"
+  | "remove_tag"
+  | "add_to_pipeline"
+  | "move_stage"
+  | "remove_from_pipeline";
 
 /** How an "Ask a question" answer is checked before it is saved. */
 export type AnswerValidation = "none" | "email" | "phone" | "number";
@@ -24,7 +34,12 @@ export type FlowNodeData =
   | { type: "condition_follow"; retryPrompt?: string }
   | { type: "delay"; seconds: number }
   | { type: "add_tag"; tag: string }
-  | { type: "remove_tag"; tag: string };
+  | { type: "remove_tag"; tag: string }
+  /** Adds the contact to the pipeline at `stageId`. A contact already in it keeps their stage. */
+  | { type: "add_to_pipeline"; pipelineId: string; stageId: string }
+  /** Moves the contact to `stageId`, adding them to the pipeline first if they aren't in it. */
+  | { type: "move_stage"; pipelineId: string; stageId: string }
+  | { type: "remove_from_pipeline"; pipelineId: string };
 
 export type FlowNode = { id: string; type: FlowNodeType; position: { x: number; y: number }; data: FlowNodeData };
 
@@ -43,7 +58,7 @@ export const MAX_FLOW_NODES = 100;
 export const SAVE_TO_KEY_RE = /^[a-z0-9_]{1,32}$/;
 export const MAX_ASK_RETRIES = 5;
 export const DEFAULT_ASK_RETRIES = 2;
-export const DEFAULT_ASK_RETRY_PROMPT = "Sorry, that doesn't look right — please try again.";
+export const DEFAULT_ASK_RETRY_PROMPT = "Sorry, that doesn't look right. Please try again.";
 /** Mirrors the contacts service's per-field value cap so engine writes never exceed what the UI accepts. */
 export const MAX_ANSWER_LENGTH = 1000;
 
@@ -104,7 +119,18 @@ export const outboundMessageSchema: z.ZodType<OutboundMessage> = z.object({
   quickReplies: z.array(z.object({ title: z.string().min(1).max(80), payload: z.string().max(1000) })).max(20).optional(),
 });
 
-const flowNodeTypeSchema = z.enum(["trigger", "send_message", "ask_question", "condition_follow", "delay", "add_tag", "remove_tag"]);
+const flowNodeTypeSchema = z.enum([
+  "trigger",
+  "send_message",
+  "ask_question",
+  "condition_follow",
+  "delay",
+  "add_tag",
+  "remove_tag",
+  "add_to_pipeline",
+  "move_stage",
+  "remove_from_pipeline",
+]);
 
 const answerValidationSchema = z.enum(["none", "email", "phone", "number"]);
 
@@ -124,6 +150,10 @@ const flowNodeDataSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delay"), seconds: z.number().int().min(1).max(MAX_DELAY_SECONDS) }),
   z.object({ type: z.literal("add_tag"), tag: z.string().min(1).max(MAX_TAG_LENGTH) }),
   z.object({ type: z.literal("remove_tag"), tag: z.string().min(1).max(MAX_TAG_LENGTH) }),
+  // Ids may be empty in a draft; validateFlow requires them and the service checks they still exist before activation.
+  z.object({ type: z.literal("add_to_pipeline"), pipelineId: z.string().max(64), stageId: z.string().max(64) }),
+  z.object({ type: z.literal("move_stage"), pipelineId: z.string().max(64), stageId: z.string().max(64) }),
+  z.object({ type: z.literal("remove_from_pipeline"), pipelineId: z.string().max(64) }),
 ]);
 
 const flowNodeSchema = z
@@ -149,6 +179,11 @@ export const flowGraphSchema: z.ZodType<FlowGraph> = z.object({
 
 // ───────────────────────── Defaults ─────────────────────────
 
+/** Just the trigger: what "New automation" opens on, so the canvas starts empty. */
+export function emptyFlow(): FlowGraph {
+  return { nodes: [{ id: "trigger", type: "trigger", position: { x: 0, y: 0 }, data: { type: "trigger" } }], edges: [] };
+}
+
 /** Trigger → one message with a link button. The first line discloses automation (Meta policy). */
 export function defaultFlow(): FlowGraph {
   return {
@@ -161,7 +196,7 @@ export function defaultFlow(): FlowGraph {
         data: {
           type: "send_message",
           message: {
-            text: "Thanks for commenting! Here's your link 👇",
+            text: "Thanks for your comment. Here's the link.",
             buttons: [{ type: "web_url", title: "Open link", url: "https://example.com" }],
           },
         },
@@ -222,43 +257,47 @@ const HANDLES_BY_TYPE: Record<FlowNodeType, (node: FlowNode) => string[]> = {
   delay: () => ["next"],
   add_tag: () => ["next"],
   remove_tag: () => ["next"],
+  add_to_pipeline: () => ["next"],
+  move_stage: () => ["next"],
+  remove_from_pipeline: () => ["next"],
 };
 
 /**
  * Business rules the editor must satisfy before an automation can go ACTIVE:
- * one trigger, every node reachable, no dangling edges/handles, Meta content limits.
+ * one trigger, every step reachable, no dangling connections, Meta content limits.
+ *
+ * Messages refer to a step as `"<node id>"` so the editor can pin each error to
+ * its step. Nothing shows them raw: `describeFlowErrors` swaps the ids for step
+ * names ("Message 2") first.
  */
 export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   const ids = new Map<string, FlowNode>();
   for (const node of flow.nodes) {
-    if (ids.has(node.id)) errors.push(`Duplicate node id "${node.id}"`);
+    if (ids.has(node.id)) errors.push(`"${node.id}" appears twice. Delete one copy.`);
     ids.set(node.id, node);
   }
 
   const triggers = flow.nodes.filter((n) => n.data.type === "trigger");
-  if (triggers.length !== 1) errors.push(`Flow must have exactly one trigger (found ${triggers.length})`);
+  if (triggers.length !== 1) errors.push(triggers.length === 0 ? "The flow needs a trigger." : "The flow can only have one trigger.");
 
+  let brokenConnection = false;
   for (const edge of flow.edges) {
     const source = ids.get(edge.source);
-    if (!source) {
-      errors.push(`Edge "${edge.id}" starts at unknown node "${edge.source}"`);
-      continue;
-    }
-    if (!ids.has(edge.target)) {
-      errors.push(`Edge "${edge.id}" points to unknown node "${edge.target}"`);
+    if (!source || !ids.has(edge.target)) {
+      brokenConnection = true;
       continue;
     }
     const allowed = HANDLES_BY_TYPE[source.type](source);
-    const handle = normalizeHandle(edge.sourceHandle);
-    if (!allowed.includes(handle)) errors.push(`Edge "${edge.id}" uses handle "${handle}" which does not exist on node "${source.id}"`);
+    if (!allowed.includes(normalizeHandle(edge.sourceHandle))) errors.push(`A connection from "${source.id}" starts at an option that no longer exists. Reconnect it.`);
   }
+  if (brokenConnection) errors.push("A connection points to a step that was deleted. Remove it and connect the steps again.");
 
   // Two edges from the same handle would make execution ambiguous.
   const seenHandles = new Set<string>();
   for (const edge of flow.edges) {
     const key = `${edge.source}::${normalizeHandle(edge.sourceHandle)}`;
-    if (seenHandles.has(key)) errors.push(`Node "${edge.source}" has more than one edge on handle "${normalizeHandle(edge.sourceHandle)}"`);
+    if (seenHandles.has(key)) errors.push(`"${edge.source}" has two connections leaving the same point. Remove one.`);
     seenHandles.add(key);
   }
 
@@ -268,37 +307,42 @@ export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; error
       const m = data.message;
       const text = m.text ?? "";
       const buttons = m.buttons ?? [];
-      if (!text.trim() && !m.imageUrl) errors.push(`Message "${node.id}" needs text or an image`);
-      if (utf8Bytes(text) > MAX_TEXT_BYTES) errors.push(`Message "${node.id}" text exceeds ${MAX_TEXT_BYTES} bytes`);
-      if (buttons.length > MAX_BUTTONS) errors.push(`Message "${node.id}" has more than ${MAX_BUTTONS} buttons`);
-      if (buttons.length > 0 && Array.from(text).length > 640) errors.push(`Message "${node.id}" text must be ≤ 640 characters when it has buttons`);
+      if (!text.trim() && !m.imageUrl) errors.push(`"${node.id}" needs text or an image.`);
+      if (utf8Bytes(text) > MAX_TEXT_BYTES) errors.push(`"${node.id}" is too long. Instagram allows about 1,000 characters.`);
+      if (buttons.length > MAX_BUTTONS) errors.push(`"${node.id}" can have up to ${MAX_BUTTONS} buttons.`);
+      if (buttons.length > 0 && Array.from(text).length > 640) errors.push(`"${node.id}" can be up to 640 characters when it has buttons.`);
       buttons.forEach((b, i) => {
-        if (Array.from(b.title).length > MAX_BUTTON_TITLE_CHARS) errors.push(`Button ${i + 1} on "${node.id}" title exceeds ${MAX_BUTTON_TITLE_CHARS} characters`);
-        if (b.type === "web_url" && !/^https?:\/\//i.test(b.url)) errors.push(`Button ${i + 1} on "${node.id}" must link to an http(s) URL`);
+        if (Array.from(b.title).length > MAX_BUTTON_TITLE_CHARS) errors.push(`Button ${i + 1} in "${node.id}" can be up to ${MAX_BUTTON_TITLE_CHARS} characters.`);
+        if (b.type === "web_url" && !/^https?:\/\//i.test(b.url)) errors.push(`Button ${i + 1} in "${node.id}" needs a link that starts with https://`);
       });
-      if ((m.quickReplies ?? []).length > MAX_QUICK_REPLIES) errors.push(`Message "${node.id}" has more than ${MAX_QUICK_REPLIES} quick replies`);
+      if ((m.quickReplies ?? []).length > MAX_QUICK_REPLIES) errors.push(`"${node.id}" can have up to ${MAX_QUICK_REPLIES} quick replies.`);
     } else if (data.type === "ask_question") {
       const text = data.prompt.text ?? "";
       const quick = data.prompt.quickReplies ?? [];
-      if (!text.trim()) errors.push(`Question "${node.id}" needs prompt text`);
-      if (utf8Bytes(text) > MAX_TEXT_BYTES) errors.push(`Question "${node.id}" prompt exceeds ${MAX_TEXT_BYTES} bytes`);
-      if ((data.prompt.buttons ?? []).length > 0) errors.push(`Question "${node.id}" can't have buttons — use quick replies for suggested answers`);
-      if (quick.length > MAX_QUICK_REPLIES) errors.push(`Question "${node.id}" has more than ${MAX_QUICK_REPLIES} quick replies`);
+      if (!text.trim()) errors.push(`"${node.id}" needs a question to ask.`);
+      if (utf8Bytes(text) > MAX_TEXT_BYTES) errors.push(`The question in "${node.id}" is too long.`);
+      if ((data.prompt.buttons ?? []).length > 0) errors.push(`"${node.id}" can't have link buttons. Use quick replies for suggested answers.`);
+      if (quick.length > MAX_QUICK_REPLIES) errors.push(`"${node.id}" can have up to ${MAX_QUICK_REPLIES} quick replies.`);
       quick.forEach((q, i) => {
-        if (!q.title.trim()) errors.push(`Quick reply ${i + 1} on "${node.id}" needs a title`);
-        else if (Array.from(q.title).length > MAX_QUICK_REPLY_TITLE_CHARS) errors.push(`Quick reply ${i + 1} on "${node.id}" title exceeds ${MAX_QUICK_REPLY_TITLE_CHARS} characters`);
+        if (!q.title.trim()) errors.push(`Quick reply ${i + 1} in "${node.id}" needs a label.`);
+        else if (Array.from(q.title).length > MAX_QUICK_REPLY_TITLE_CHARS) errors.push(`Quick reply ${i + 1} in "${node.id}" can be up to ${MAX_QUICK_REPLY_TITLE_CHARS} characters.`);
       });
-      if (!data.saveTo.trim()) errors.push(`Question "${node.id}" needs a field to save the answer to`);
-      else if (!SAVE_TO_KEY_RE.test(data.saveTo)) errors.push(`Question "${node.id}" field key must be 1–32 lowercase letters, digits or underscores`);
-      if (data.retryPrompt && utf8Bytes(data.retryPrompt) > MAX_TEXT_BYTES) errors.push(`Question "${node.id}" retry prompt exceeds ${MAX_TEXT_BYTES} bytes`);
+      if (!data.saveTo.trim()) errors.push(`"${node.id}" needs a field name to save the answer in.`);
+      else if (!SAVE_TO_KEY_RE.test(data.saveTo)) errors.push(`The field name in "${node.id}" can only use lowercase letters, numbers and underscores (up to 32).`);
+      if (data.retryPrompt && utf8Bytes(data.retryPrompt) > MAX_TEXT_BYTES) errors.push(`The retry message in "${node.id}" is too long.`);
     } else if (data.type === "delay") {
       if (!Number.isInteger(data.seconds) || data.seconds < 1 || data.seconds > MAX_DELAY_SECONDS) {
-        errors.push(`Delay "${node.id}" must be between 1 second and 7 days`);
+        errors.push(`"${node.id}" must wait between 1 second and 7 days.`);
       }
     } else if (data.type === "add_tag" || data.type === "remove_tag") {
-      if (!data.tag.trim()) errors.push(`Tag node "${node.id}" needs a tag name`);
+      if (!data.tag.trim()) errors.push(`"${node.id}" needs a tag name.`);
+    } else if (data.type === "add_to_pipeline" || data.type === "move_stage") {
+      if (!data.pipelineId) errors.push(`"${node.id}" needs a pipeline.`);
+      else if (!data.stageId) errors.push(`"${node.id}" needs a stage.`);
+    } else if (data.type === "remove_from_pipeline") {
+      if (!data.pipelineId) errors.push(`"${node.id}" needs a pipeline.`);
     } else if (data.type === "condition_follow") {
-      if (data.retryPrompt && utf8Bytes(data.retryPrompt) > MAX_TEXT_BYTES) errors.push(`Follow check "${node.id}" retry prompt exceeds ${MAX_TEXT_BYTES} bytes`);
+      if (data.retryPrompt && utf8Bytes(data.retryPrompt) > MAX_TEXT_BYTES) errors.push(`The reminder in "${node.id}" is too long.`);
     }
   }
 
@@ -317,12 +361,46 @@ export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; error
       }
     }
     for (const node of flow.nodes) {
-      if (!reachable.has(node.id)) errors.push(`Node "${node.id}" is not connected to the trigger`);
+      if (!reachable.has(node.id)) errors.push(`"${node.id}" isn't connected to the rest of the flow.`);
     }
-    if (!nextNodeId(flow, trigger.id, "next")) errors.push("The trigger must connect to a first step");
+    if (!nextNodeId(flow, trigger.id, "next")) errors.push("Connect the trigger to a first step.");
   }
 
   return errors.length ? { ok: false, errors } : { ok: true };
+}
+
+const STEP_NAMES: Record<FlowNodeType, string> = {
+  trigger: "Trigger",
+  send_message: "Message",
+  ask_question: "Question",
+  condition_follow: "Follow check",
+  delay: "Delay",
+  add_tag: "Add tag",
+  remove_tag: "Remove tag",
+  add_to_pipeline: "Add to pipeline",
+  move_stage: "Move stage",
+  remove_from_pipeline: "Remove from pipeline",
+};
+
+/** "Message", or "Message 2" when the flow has more than one of that kind, numbered in canvas order. */
+export function stepNames(flow: Pick<FlowGraph, "nodes">): Map<string, string> {
+  const totals = new Map<FlowNodeType, number>();
+  for (const node of flow.nodes) totals.set(node.data.type, (totals.get(node.data.type) ?? 0) + 1);
+  const seen = new Map<FlowNodeType, number>();
+  const names = new Map<string, string>();
+  for (const node of flow.nodes) {
+    const type = node.data.type;
+    const n = (seen.get(type) ?? 0) + 1;
+    seen.set(type, n);
+    names.set(node.id, (totals.get(type) ?? 0) > 1 ? `${STEP_NAMES[type]} ${n}` : STEP_NAMES[type]);
+  }
+  return names;
+}
+
+/** Validation errors with step ids replaced by step names, ready to show a customer. */
+export function describeFlowErrors(errors: string[], flow: Pick<FlowGraph, "nodes">): string[] {
+  const names = stepNames(flow);
+  return errors.map((error) => error.replace(/"([^"]+)"/g, (match, id: string) => names.get(id) ?? "A step"));
 }
 
 // ───────────────────────── Templates ─────────────────────────

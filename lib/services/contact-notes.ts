@@ -108,9 +108,9 @@ export async function addNote(workspaceId: string, contactId: string, authorId: 
   return toSummary(row);
 }
 
-/** The author may edit their own note; ADMIN+ may edit anyone's. */
-async function requireEditableNote(workspaceId: string, noteId: string, actor: NoteActor): Promise<NoteRow> {
-  const row = await prisma.contactNote.findFirst({ where: { id: noteId, workspaceId }, select: noteSelect });
+/** The author may edit their own note; ADMIN+ may edit anyone's. `contactId`, when given, must match the note's contact. */
+async function requireEditableNote(workspaceId: string, noteId: string, actor: NoteActor, contactId?: string): Promise<NoteRow> {
+  const row = await prisma.contactNote.findFirst({ where: { id: noteId, workspaceId, ...(contactId ? { contactId } : {}) }, select: noteSelect });
   if (!row) throw notFound();
   const isAuthor = row.author?.id === actor.id;
   if (!isAuthor && !roleAtLeast(actor.role, "ADMIN")) {
@@ -119,16 +119,16 @@ async function requireEditableNote(workspaceId: string, noteId: string, actor: N
   return row;
 }
 
-export async function updateNote(workspaceId: string, noteId: string, actor: NoteActor, body: string): Promise<ContactNoteSummary> {
+export async function updateNote(workspaceId: string, noteId: string, actor: NoteActor, body: string, contactId?: string): Promise<ContactNoteSummary> {
   const clean = noteBodySchema.parse(body);
-  await requireEditableNote(workspaceId, noteId, actor);
+  await requireEditableNote(workspaceId, noteId, actor, contactId);
   const row = await prisma.contactNote.update({ where: { id: noteId }, data: { body: clean }, select: noteSelect });
   logger.info("contact.note_updated", { workspaceId, noteId, actorId: actor.id });
   return toSummary(row);
 }
 
-export async function deleteNote(workspaceId: string, noteId: string, actor: NoteActor): Promise<void> {
-  const row = await requireEditableNote(workspaceId, noteId, actor);
+export async function deleteNote(workspaceId: string, noteId: string, actor: NoteActor, contactId?: string): Promise<void> {
+  const row = await requireEditableNote(workspaceId, noteId, actor, contactId);
   await prisma.$transaction([
     prisma.contactNote.delete({ where: { id: noteId } }),
     prisma.contact.updateMany({ where: { id: row.contactId, workspaceId, notesCount: { gt: 0 } }, data: { notesCount: { decrement: 1 } } }),

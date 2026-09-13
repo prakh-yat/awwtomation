@@ -2,27 +2,31 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { format, formatDistanceToNowStrict } from "date-fns";
-import { Activity, MousePointerClick, Percent, Send, XCircle } from "lucide-react";
+import { format, formatDistanceToNowStrict, parseISO } from "date-fns";
+import { Pencil } from "lucide-react";
 
-import { AnalyticsChart } from "@/components/automations/analytics-chart";
-import { AutomationStatusBadge, TriggerBadge } from "@/components/automations/badges";
-import { Badge } from "@/components/ui/badge";
+import { AnalyticsFrame } from "@/components/analytics/analytics-filters";
+import { DATE_KEY, formatRate, minusDays, todayIn } from "@/components/analytics/range";
+import { AutomationStatusBadge } from "@/components/automations/badges";
+import { BarList } from "@/components/charts/bar-list";
+import { FunnelChart } from "@/components/charts/funnel";
+import { Heatmap } from "@/components/charts/heatmap";
+import { MetricTabs, type MetricTab } from "@/components/charts/metric-tabs";
+import { withPrevious } from "@/components/charts/series";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatCard } from "@/components/ui/stat-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { brand } from "@/lib/brand";
-import { deliveryStatusLabel, getAutomation, getAutomationAnalytics, type RecentDelivery } from "@/lib/services/automations";
-import { cn, formatNumber, formatPercent } from "@/lib/utils";
+import { deliveryReason } from "@/lib/errors/customer-messages";
+import { getAnalytics } from "@/lib/services/analytics";
+import { getAutomation, listRecentDeliveries, type RecentDelivery } from "@/lib/services/automations";
+import { cn, formatNumber } from "@/lib/utils";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
 type Params = Promise<{ id: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const RANGES = [7, 30, 90] as const;
+const PRESET_DAYS = new Set(["7", "30", "90"]);
 
 // generateMetadata and the page both need the automation; cache dedupes the query per request.
 const loadAutomation = cache((workspaceId: string, id: string) => getAutomation(workspaceId, id));
@@ -31,192 +35,222 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const ctx = await requireWorkspaceContext();
   const { id } = await params;
   const automation = await loadAutomation(ctx.workspace.id, id);
-  return { title: `${automation?.name ?? "Automation"} analytics · ${brand.name}` };
+  return { title: automation ? `${automation.name} report` : "Automation report" };
 }
 
-function statusVariant(status: RecentDelivery["status"]): "success" | "destructive" | "warning" | "secondary" {
-  if (status === "SENT") return "success";
-  if (status === "FAILED") return "destructive";
-  if (status === "SKIPPED_RATE_LIMIT" || status === "SKIPPED_PLAN_LIMIT") return "warning";
-  return "secondary";
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-const KIND_LABELS: Record<RecentDelivery["kind"], string> = {
-  PRIVATE_REPLY: "Private reply",
-  MESSAGE: "Message",
-  PUBLIC_REPLY: "Public reply",
+const KIND_LABEL: Record<RecentDelivery["kind"], string> = {
+  PRIVATE_REPLY: "DM",
+  MESSAGE: "DM",
+  PUBLIC_REPLY: "Comment reply",
   BROADCAST: "Broadcast",
 };
 
-export default async function AutomationAnalyticsPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
+function Outcome({ delivery }: { delivery: RecentDelivery }) {
+  const sent = delivery.status === "SENT";
+  const failed = delivery.status === "FAILED";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className={cn("h-1.5 w-1.5 rounded-full", sent ? "bg-success" : failed ? "bg-destructive" : "bg-muted-foreground/50")} aria-hidden />
+      {sent ? "Sent" : failed ? "Failed" : "Not sent"}
+    </span>
+  );
+}
+
+export default async function AutomationReportPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const ctx = await requireWorkspaceContext();
   const { id } = await params;
   const sp = await searchParams;
-  const daysRaw = Number(Array.isArray(sp.days) ? sp.days[0] : sp.days);
-  const days = RANGES.includes(daysRaw as (typeof RANGES)[number]) ? daysRaw : 30;
 
   const automation = await loadAutomation(ctx.workspace.id, id);
   if (!automation) notFound();
-  const analytics = await getAutomationAnalytics(ctx.workspace.id, id, days);
-  const { totals } = analytics;
-  const hasData = totals.triggered + totals.sent + totals.failed + totals.clicks > 0;
+
+  const timezone = ctx.workspace.timezone;
+  const today = todayIn(timezone);
+  const fromParam = one(sp.from);
+  const toParam = one(sp.to);
+  const daysParam = one(sp.days);
+  const custom = Boolean(fromParam && toParam && DATE_KEY.test(fromParam) && DATE_KEY.test(toParam));
+  const days = daysParam && PRESET_DAYS.has(daysParam) ? Number(daysParam) : 30;
+
+  const [report, recent] = await Promise.all([
+    getAnalytics(ctx.workspace.id, {
+      from: custom ? fromParam : minusDays(today, days - 1),
+      to: custom ? toParam : today,
+      automationId: automation.id,
+      timezone,
+    }),
+    listRecentDeliveries(ctx.workspace.id, automation.id, 20),
+  ]);
+
+  const { totals, deltas, series, previousSeries } = report;
+  const metrics: MetricTab[] = [
+    { key: "runs", label: "Runs", value: formatNumber(totals.comments), delta: deltas.comments, data: withPrevious(series, previousSeries, (p) => p.comments) },
+    { key: "sent", label: "DMs sent", value: formatNumber(totals.dmsSent), delta: deltas.dmsSent, data: withPrevious(series, previousSeries, (p) => p.dmsSent) },
+    { key: "clicks", label: "Link clicks", value: formatNumber(totals.clicks), delta: deltas.clicks, data: withPrevious(series, previousSeries, (p) => p.clicks) },
+    {
+      key: "ctr",
+      label: "Click rate",
+      value: formatRate(totals.ctr),
+      delta: deltas.ctr,
+      kind: "percent",
+      data: withPrevious(series, previousSeries, (p) => (p.dmsSent > 0 ? p.clicks / p.dmsSent : 0)),
+    },
+    { key: "leads", label: "New leads", value: formatNumber(totals.leads), delta: deltas.leads, data: withPrevious(series, previousSeries, (p) => p.leads) },
+  ];
+
+  const skipItems = report.skipReasons
+    .filter((s) => s.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .map((s) => ({ key: s.status, label: deliveryReason(s.status).label, value: s.count }));
+  const keywordItems = report.topKeywords.slice(0, 8).map((k) => ({ key: k.keyword, label: k.keyword, value: k.count }));
+
+  const account = automation.channel.username ? `@${automation.channel.username}` : (automation.channel.name ?? "Your account");
+  const trigger =
+    automation.triggerType === "COMMENT" ? "Comments" : automation.triggerType === "DM" ? "DMs" : "Story replies";
+  const matching = automation.matchMode === "ANY" ? "every message" : automation.keywords.length ? automation.keywords.join(", ") : "no keywords yet";
+  const rangeLabel = `${format(parseISO(report.range.from), "MMM d")} – ${format(parseISO(report.range.to), "MMM d")}`;
+  const compareLabel = `vs ${format(parseISO(report.range.previousFrom), "MMM d")} – ${format(parseISO(report.range.previousTo), "MMM d")}`;
 
   return (
     <>
       <PageHeader
-        title={automation.name}
-        description={`On ${automation.channel.username ? `@${automation.channel.username}` : automation.channel.name} · last ${days} days · ${analytics.timezone}`}
         backHref="/automations"
         backLabel="Automations"
+        title={
+          <span className="flex flex-wrap items-center gap-2.5">
+            {automation.name}
+            <AutomationStatusBadge status={automation.status} />
+          </span>
+        }
+        description={`${account} · ${trigger} matching ${matching}`}
         actions={
-          <>
-            <div className="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground">
-              {RANGES.map((r) => (
-                <Link
-                  key={r}
-                  href={`/automations/${automation.id}/analytics?days=${r}`}
-                  className={cn(
-                    "inline-flex h-full items-center rounded-md px-3 text-[13px] font-medium transition-all",
-                    r === days ? "bg-background text-foreground shadow-sm" : "hover:text-foreground",
-                  )}
-                >
-                  {r}d
-                </Link>
-              ))}
-            </div>
-            <Button asChild variant="outline">
-              <Link href={`/automations/${automation.id}`}>Open builder</Link>
-            </Button>
-          </>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/automations/${automation.id}`}>
+              <Pencil />
+              Edit automation
+            </Link>
+          </Button>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <AutomationStatusBadge status={automation.status} />
-        <TriggerBadge trigger={automation.triggerType} />
-        {automation.matchMode === "ANY" ? (
-          <span className="text-[12px] text-muted-foreground">Fires on every comment</span>
-        ) : automation.keywords.length > 0 ? (
-          <span className="text-[12px] text-muted-foreground">Keywords: {automation.keywords.join(", ")}</span>
-        ) : null}
-      </div>
+      <AnalyticsFrame rangeLabel={rangeLabel} compareLabel={compareLabel} today={today}>
+        <div className="space-y-6">
+          <Card className="overflow-hidden">
+            <MetricTabs metrics={metrics} initialKey="sent" height={260} />
+          </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Triggered" value={formatNumber(totals.triggered)} icon={Activity} hint="Flows started" />
-        <StatCard label="DMs sent" value={formatNumber(totals.sent)} icon={Send} hint={`${formatNumber(totals.publicReplies)} public replies`} />
-        <StatCard label="Failed / skipped" value={formatNumber(totals.failed)} icon={XCircle} hint="See reasons below" />
-        <StatCard label="Link clicks" value={formatNumber(totals.clicks)} icon={MousePointerClick} hint="Tracked links only" />
-        <StatCard label="CTR" value={totals.ctr === null ? "—" : formatPercent(totals.ctr)} icon={Percent} hint="Clicks ÷ DMs sent" />
-      </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.35fr_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle>From trigger to lead</CardTitle>
+                <CardDescription>People at each step, as a share of the step before.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FunnelChart steps={report.funnel.steps} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Why DMs weren&apos;t sent</CardTitle>
+                <CardDescription>Held back by Instagram rules or your own settings, or refused by Instagram.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <BarList items={skipItems} valueLabel="messages" emptyLabel="Every DM in this range went out" />
+              </CardContent>
+            </Card>
+          </div>
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Daily activity</CardTitle>
-          <CardDescription>Triggers, DMs, clicks and skips per day in the workspace timezone.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {hasData ? (
-            <AnalyticsChart series={analytics.series} />
-          ) : (
-            <EmptyState
-              icon={Activity}
-              title="No activity yet"
-              description={
-                automation.status === "ACTIVE"
-                  ? "Numbers show up here as soon as someone triggers the automation."
-                  : "Activate the automation to start collecting data."
-              }
-              className="py-10"
-            />
-          )}
-        </CardContent>
-      </Card>
+          <div className={cn("grid grid-cols-1 gap-6", keywordItems.length > 0 && "lg:grid-cols-[1.6fr_1fr]")}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Busiest times</CardTitle>
+                <CardDescription>When this automation runs, by day and hour.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Heatmap grid={report.heatmap} unit="run" timezone={timezone} />
+              </CardContent>
+            </Card>
+            {keywordItems.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Keywords</CardTitle>
+                  <CardDescription>Which words started the most runs.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <BarList items={keywordItems} valueLabel="runs" />
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Skip reasons</CardTitle>
-            <CardDescription>Why a DM wasn&apos;t sent, last {days} days.</CardDescription>
-          </CardHeader>
-          <CardContent className="px-0">
-            {analytics.skipReasons.length === 0 ? (
-              <p className="px-5 py-6 text-center text-[13px] text-muted-foreground">Nothing skipped. Nice.</p>
+          <Card className="overflow-hidden">
+            <CardHeader className="flex-row items-start justify-between space-y-0">
+              <div className="space-y-1">
+                <CardTitle>Latest messages</CardTitle>
+                <CardDescription>The 20 most recent, newest first.</CardDescription>
+              </div>
+              <Link
+                href={`/logs?automationId=${encodeURIComponent(automation.id)}`}
+                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                See all in Logs
+              </Link>
+            </CardHeader>
+            {recent.length === 0 ? (
+              <p className="border-t px-5 py-8 text-[13px] text-muted-foreground">Nothing sent yet. Messages show up here the first time the automation runs.</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5">Reason</TableHead>
-                    <TableHead className="pr-5 text-right">Count</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {analytics.skipReasons.map((r) => (
-                    <TableRow key={r.status}>
-                      <TableCell className="pl-5">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={statusVariant(r.status)}>{r.label}</Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell className="pr-5 text-right tabular-nums">{formatNumber(r.count)}</TableCell>
+              <div className="overflow-x-auto border-t">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-5">Contact</TableHead>
+                      <TableHead>Outcome</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="min-w-[260px]">Message</TableHead>
+                      <TableHead className="pr-5 text-right">When</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {recent.map((d) => {
+                      const who = d.contactUsername ? `@${d.contactUsername}` : (d.contactName ?? "Unknown contact");
+                      const text = d.status === "SENT" ? d.messagePreview : (d.reason ?? d.messagePreview);
+                      return (
+                        <TableRow key={d.id}>
+                          <TableCell className="whitespace-nowrap pl-5">
+                            {d.contactId ? (
+                              <Link href={`/contacts/${d.contactId}`} className="font-medium underline-offset-4 hover:underline">
+                                {who}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">{who}</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Outcome delivery={d} />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">{KIND_LABEL[d.kind]}</TableCell>
+                          <TableCell>
+                            <p className={cn("max-w-[420px] truncate", d.status !== "SENT" && "text-muted-foreground")} title={text ?? undefined}>
+                              {text ?? "—"}
+                            </p>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap pr-5 text-right text-muted-foreground" title={format(new Date(d.createdAt), "PPpp")}>
+                            {formatDistanceToNowStrict(new Date(d.createdAt), { addSuffix: true })}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent deliveries</CardTitle>
-            <CardDescription>The last 20 attempts, newest first.</CardDescription>
-          </CardHeader>
-          <CardContent className="px-0">
-            {analytics.recentDeliveries.length === 0 ? (
-              <p className="px-5 py-6 text-center text-[13px] text-muted-foreground">No deliveries yet.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-5">Contact</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Kind</TableHead>
-                    <TableHead className="min-w-[200px]">Message</TableHead>
-                    <TableHead className="pr-5 text-right">When</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {analytics.recentDeliveries.map((d) => (
-                    <TableRow key={d.id}>
-                      <TableCell className="pl-5">
-                        {d.contactId ? (
-                          <Link href={`/contacts/${d.contactId}`} className="font-medium hover:underline underline-offset-2">
-                            {d.contactUsername ? `@${d.contactUsername}` : (d.contactName ?? "Unknown")}
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">{d.contactUsername ? `@${d.contactUsername}` : "Unknown"}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariant(d.status)}>{deliveryStatusLabel(d.status)}</Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{KIND_LABELS[d.kind]}</TableCell>
-                      <TableCell>
-                        <p className="max-w-[320px] truncate" title={d.errorMessage ?? d.messagePreview ?? undefined}>
-                          {d.status === "SENT" ? d.messagePreview : (d.errorMessage ?? d.messagePreview ?? "—")}
-                        </p>
-                      </TableCell>
-                      <TableCell className="pr-5 text-right text-[12px] text-muted-foreground" title={format(new Date(d.createdAt), "PPpp")}>
-                        {formatDistanceToNowStrict(new Date(d.createdAt), { addSuffix: true })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          </Card>
+        </div>
+      </AnalyticsFrame>
     </>
   );
 }

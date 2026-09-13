@@ -24,12 +24,12 @@ export function statusMeta(status: BroadcastStatus): { label: string; variant: B
 const DELIVERY_META: Record<DeliveryStatus, { label: string; variant: BadgeVariant }> = {
   SENT: { label: "Sent", variant: "success" },
   FAILED: { label: "Failed", variant: "destructive" },
-  SKIPPED_WINDOW: { label: "Outside 24h window", variant: "outline" },
+  SKIPPED_WINDOW: { label: "Outside 24 hours", variant: "outline" },
   SKIPPED_OPTED_OUT: { label: "Opted out", variant: "outline" },
-  SKIPPED_PLAN_LIMIT: { label: "Plan limit", variant: "warning" },
-  SKIPPED_RATE_LIMIT: { label: "Rate limited", variant: "warning" },
+  SKIPPED_PLAN_LIMIT: { label: "Monthly limit", variant: "warning" },
+  SKIPPED_RATE_LIMIT: { label: "Hourly limit", variant: "warning" },
   SKIPPED_SELF: { label: "Own account", variant: "outline" },
-  SKIPPED_DUPLICATE: { label: "Duplicate", variant: "outline" },
+  SKIPPED_DUPLICATE: { label: "Already replied", variant: "outline" },
   SKIPPED_NOT_FOLLOWING: { label: "Not following", variant: "outline" },
 };
 
@@ -39,10 +39,10 @@ export function deliveryMeta(status: DeliveryStatus): { label: string; variant: 
 
 export function channelLabel(channel: { username: string | null; name: string | null }): string {
   if (channel.username) return `@${channel.username.replace(/^@/, "")}`;
-  return channel.name ?? "Unnamed channel";
+  return channel.name ?? "Unnamed account";
 }
 
-/** "Tagged vip, lead · not churned · followers only · last 7 days" — or "Everyone on the channel". */
+/** "Tagged vip, lead · not churned · followers only · last 7 days", or "Everyone on this account". */
 export function summarizeAudience(audience: BroadcastAudience): string {
   const parts: string[] = [];
   if (audience.q) parts.push(`“${audience.q}”`);
@@ -50,7 +50,9 @@ export function summarizeAudience(audience: BroadcastAudience): string {
   if (audience.excludeTags.length) parts.push(`not ${audience.excludeTags.join(", ")}`);
   if (audience.onlyFollowers) parts.push("followers only");
   if (audience.lastInteractionDays) parts.push(audience.lastInteractionDays === 1 ? "last 24 hours" : `last ${audience.lastInteractionDays} days`);
-  return parts.length ? parts.join(" · ") : "Everyone on the channel";
+  if (!parts.length) return "Everyone on this account";
+  const summary = parts.join(" · ");
+  return summary.charAt(0).toUpperCase() + summary.slice(1);
 }
 
 /** "Segment: Warm leads" when the audience came from a saved segment that still exists, else the filter summary. */
@@ -100,12 +102,12 @@ function safeTimeZone(timeZone: string): string {
   }
 }
 
-/** "6 Sep 2026, 14:05" in the workspace timezone. */
+/** "Sep 6, 2026, 14:05" in the workspace timezone, the same shape Logs and Contacts use. */
 export function formatDateTime(value: string | Date | null | undefined, timeZone: string): string {
   if (!value) return "—";
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone: safeTimeZone(timeZone),
     day: "numeric",
     month: "short",
@@ -116,8 +118,17 @@ export function formatDateTime(value: string | Date | null | undefined, timeZone
   }).format(date);
 }
 
-/** Short IANA zone label, e.g. "GMT+5:45" — helps explain the datetime picker. */
+/** Short zone label, e.g. "GMT+5:45": helps explain the datetime picker. */
 export function timeZoneAbbreviation(timeZone: string, at = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: safeTimeZone(timeZone), timeZoneName: "short" }).formatToParts(at);
   return parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
+}
+
+/** "Nepal Time (GMT+5:45)", or just the offset when the runtime has no plain name for the zone. */
+export function timeZoneLabel(timeZone: string, at = new Date()): string {
+  const offset = timeZoneAbbreviation(timeZone, at);
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: safeTimeZone(timeZone), timeZoneName: "long" })
+    .formatToParts(at)
+    .find((p) => p.type === "timeZoneName")?.value;
+  return name && !name.startsWith("GMT") ? `${name} (${offset})` : offset;
 }

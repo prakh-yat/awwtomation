@@ -18,8 +18,8 @@ const DAY_MS = 24 * 3600 * 1000;
 export type NormalizedSubscription = {
   externalSubscriptionId: string;
   externalCustomerId: string;
-  /** From `metadata.workspace_id` — treat as a hint until the caller has verified it. */
-  workspaceId: string | null;
+  /** From `metadata.organization_id` (or the older `workspace_id`): a hint until the caller has verified it. */
+  organizationId: string | null;
   /** Null when the product id isn't one of ours (e.g. created by hand in the dashboard). */
   tier: PlanTier | null;
   interval: BillingIntervalId | null;
@@ -79,7 +79,7 @@ export function normalizeSubscription(sub: DodoPayments.Subscription, now = new 
   return {
     externalSubscriptionId: sub.subscription_id,
     externalCustomerId: sub.customer.customer_id,
-    workspaceId: metadataString(sub.metadata, "workspace_id"),
+    organizationId: metadataString(sub.metadata, "organization_id") ?? metadataString(sub.metadata, "workspace_id"),
     tier: resolved?.tier ?? null,
     interval: resolved?.interval ?? null,
     status,
@@ -97,8 +97,8 @@ export function normalizeSubscription(sub: DodoPayments.Subscription, now = new 
 export type NormalizedPayment = {
   externalId: string;
   subscriptionId: string | null;
-  /** Hint from `metadata.workspace_id`; the caller verifies it. */
-  workspaceId: string | null;
+  /** Hint from `metadata.organization_id` (or the older `workspace_id`); the caller verifies it. */
+  organizationId: string | null;
   amountCents: number;
   currency: string;
   status: PaymentStatus;
@@ -149,7 +149,7 @@ export function normalizePayment(
   return {
     externalId: payment.payment_id,
     subscriptionId: payment.subscription_id ?? null,
-    workspaceId: metadataString(payment.metadata, "workspace_id"),
+    organizationId: metadataString(payment.metadata, "organization_id") ?? metadataString(payment.metadata, "workspace_id"),
     amountCents: payment.total_amount,
     currency: payment.currency,
     status,

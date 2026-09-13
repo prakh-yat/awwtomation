@@ -29,8 +29,10 @@ export function truncate(s: string, max = 80): string {
 
 export function initials(name?: string | null, fallback = "?"): string {
   if (!name) return fallback;
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || fallback;
+  const clean = name.trim().replace(/^@+/, "");
+  // "Sita Rai" → SR; a handle like "kabita.chaudhary" → KC rather than "@" or "K".
+  const parts = (/\s/.test(clean) ? clean.split(/\s+/) : clean.split(/[._-]+/)).filter(Boolean).slice(0, 2);
+  return parts.map((p) => p.match(/[\p{L}\p{N}]/u)?.[0]?.toUpperCase() ?? "").join("") || fallback;
 }
 
 /** Guard against open redirects: only allow same-origin absolute paths. */

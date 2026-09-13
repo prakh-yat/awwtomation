@@ -21,10 +21,12 @@ const badgeVariants = cva(
   },
 );
 
-export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
-}
+/** Inline by nature, so a span: it sits inside headings, paragraphs and table text without breaking HTML nesting. */
+const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(({ className, variant, ...props }, ref) => (
+  <span ref={ref} className={cn(badgeVariants({ variant }), className)} {...props} />
+));
+Badge.displayName = "Badge";
 
 export { Badge, badgeVariants };

@@ -1,25 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createWorkspace, listWorkspacesForUser, workspaceNameSchema } from "@/lib/services/workspaces";
-import { parseBody, withUser } from "@/lib/workspace/api";
-import { readActiveWorkspaceCookie, setActiveWorkspaceCookie } from "@/lib/workspace/cookie";
+import { createWorkspace, listWorkspaces, workspaceNameSchema } from "@/lib/services/workspaces";
+import { parseBody, withWorkspace } from "@/lib/workspace/api";
+import { ACTIVE_WORKSPACE_COOKIE, activeWorkspaceCookieOptions } from "@/lib/workspace/cookie";
 
 export const runtime = "nodejs";
 
-/** Workspaces the signed-in user belongs to (works even with zero memberships). */
-export const GET = withUser(async (_req, user) => {
-  const [workspaces, activeId] = await Promise.all([listWorkspacesForUser(user.id), readActiveWorkspaceCookie()]);
-  const active = workspaces.find((w) => w.workspace.id === activeId) ?? workspaces[0] ?? null;
-  return NextResponse.json({ workspaces, activeWorkspaceId: active?.workspace.id ?? null });
+/** Workspaces in the active organization. */
+export const GET = withWorkspace(async (_req, ctx) => {
+  const workspaces = await listWorkspaces(ctx.organization.id);
+  return NextResponse.json({ workspaces, activeWorkspaceId: ctx.workspace.id });
 });
 
 const createSchema = z.object({ name: workspaceNameSchema });
 
-/** Creates a workspace owned by the caller and makes it the active one. */
-export const POST = withUser(async (req, user) => {
-  const { name } = await parseBody(req, createSchema);
-  const workspace = await createWorkspace(user.id, name);
-  await setActiveWorkspaceCookie(workspace.id);
-  return NextResponse.json({ workspace, role: "OWNER" }, { status: 201 });
-});
+/** Adds a workspace to the active organization (admins and owners) and opens it. */
+export const POST = withWorkspace(
+  async (req, ctx) => {
+    const { name } = await parseBody(req, createSchema);
+    const workspace = await createWorkspace(ctx.organization.id, ctx.user.id, name);
+    const res = NextResponse.json({ workspace }, { status: 201 });
+    res.cookies.set(ACTIVE_WORKSPACE_COOKIE, workspace.id, activeWorkspaceCookieOptions());
+    return res;
+  },
+  { minRole: "ADMIN" },
+);

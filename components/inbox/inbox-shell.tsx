@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { MessageSquare, Plug } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -461,12 +462,21 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
   if (!selectedId) {
     center = (
       <div className="flex h-full items-center justify-center p-6">
-        <EmptyState
-          icon={MessageSquare}
-          title={channels.length === 0 ? "Nothing to show yet" : "Select a conversation"}
-          description={channels.length === 0 ? "Connect a channel to start receiving messages." : "Pick a thread on the left to read and reply."}
-          className="w-full max-w-sm border-0"
-        />
+        {channels.length === 0 ? (
+          <EmptyState
+            icon={Plug}
+            title="Connect an account"
+            description="Connect an Instagram account or Facebook Page and every DM it receives lands here, next to your automations' replies."
+            action={
+              <Button asChild size="sm">
+                <Link href="/channels">Connect an account</Link>
+              </Button>
+            }
+            className="w-full max-w-sm border-0"
+          />
+        ) : (
+          <EmptyState icon={MessageSquare} title="Select a conversation" description="Pick a thread on the left to read and reply." className="w-full max-w-sm border-0" />
+        )}
       </div>
     );
   } else if (detail) {

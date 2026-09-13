@@ -12,7 +12,7 @@ export const GET = withWorkspace(async (_req, ctx) => {
   const broadcasts = await listBroadcasts(ctx.workspace.id);
   return NextResponse.json({
     broadcasts: broadcasts.map(toBroadcastRow),
-    plan: { broadcasts: limitsFor(effectivePlan(ctx.workspace)).broadcasts },
+    plan: { broadcasts: limitsFor(effectivePlan(ctx.organization)).broadcasts },
   });
 });
 

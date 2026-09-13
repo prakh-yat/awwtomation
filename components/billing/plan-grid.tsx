@@ -29,7 +29,7 @@ import type { BillingOverview } from "@/lib/services/billing";
 import { cn } from "@/lib/utils";
 
 export interface PlanGridProps {
-  /** Plan whose limits apply today (drives the "Current plan" marker for free/override workspaces). */
+  /** Plan whose limits apply today (drives the "Current plan" marker for free/override organizations). */
   effectivePlan: PlanTier;
   subscribedPlan: PlanTier | null;
   currentInterval: BillingIntervalId | null;
@@ -38,14 +38,14 @@ export interface PlanGridProps {
   /** OWNER only; admins see the grid read-only. */
   canManage: boolean;
   configured: boolean;
-  /** Env var names of products that can't be bought yet, e.g. "DODO_PRODUCT_PRO_ANNUAL". */
-  missingProducts: readonly string[];
+  /** Plan/interval pairs that can't be bought right now, e.g. "PRO_ANNUAL". */
+  unavailablePlans: readonly string[];
 }
 
 type Pending = { tier: PlanTier; interval: BillingIntervalId } | null;
 
 /**
- * Four plans × monthly/annual. Free workspaces link straight to /checkout;
+ * Four plans × monthly/annual. Free organizations link straight to /checkout;
  * subscribers switch in place through /api/billing/change-plan (prorated).
  * Driven entirely by PLANS so the pricing page and this grid never disagree.
  */
@@ -57,7 +57,7 @@ export function PlanGrid({
   hasSubscription,
   canManage,
   configured,
-  missingProducts,
+  unavailablePlans,
 }: PlanGridProps) {
   const router = useRouter();
   const [interval, setInterval] = React.useState<BillingIntervalId>(currentInterval ?? "MONTHLY");
@@ -84,13 +84,13 @@ export function PlanGrid({
 
   function renderAction(tier: PlanTier) {
     const isCurrent = tier === currentTier && (!hasSubscription || tier === "FREE" || interval === currentInterval);
-    const productMissing = isPurchasablePlan(tier) && missingProducts.includes(`DODO_PRODUCT_${tier}_${interval}`);
+    const productMissing = isPurchasablePlan(tier) && unavailablePlans.includes(`${tier}_${interval}`);
     const disabledReason = !canManage
-      ? "Only the workspace owner can change billing"
+      ? "Only an owner of the organization can change billing"
       : !configured
-        ? "Billing isn't configured yet"
+        ? "Plan changes are unavailable right now"
         : productMissing
-          ? "This plan isn't available for purchase yet"
+          ? "This plan is unavailable right now"
           : null;
 
     if (isCurrent) {
@@ -105,7 +105,7 @@ export function PlanGrid({
       // Downgrading to Free is a cancellation, handled from the plan card so the copy explains the period end.
       return (
         <Button variant="outline" className="w-full" disabled title="Cancel your plan from the card above to move to Free">
-          {hasSubscription ? "Cancel plan to downgrade" : "Included"}
+          {hasSubscription ? "Cancel to switch" : "Included"}
         </Button>
       );
     }
@@ -212,7 +212,7 @@ export function PlanGrid({
           pending
             ? pendingUpgrade
               ? `You'll be charged the prorated difference for the rest of the current period today, and ${formatUsd(planPriceCents(pending.tier, pending.interval))}${intervalSuffix(pending.interval)} from the next renewal. New limits apply immediately.`
-              : `The change applies immediately. Unused time on your current plan is credited to your billing balance and used against future invoices. Lower limits apply straight away — anything over the new limits stays but can't be added to.`
+              : `The change applies immediately. Unused time on your current plan is credited to your billing balance and used against future invoices. Lower limits apply straight away. Anything over the new limits stays, but you can't add more.`
             : undefined
         }
         confirmLabel={pendingUpgrade ? "Confirm and pay" : "Confirm downgrade"}

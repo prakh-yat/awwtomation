@@ -1,24 +1,31 @@
-import type { User, Workspace, WorkspaceRole } from "@prisma/client";
+import type { Organization, User, Workspace, WorkspaceRole } from "@prisma/client";
 import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { ACTIVE_WORKSPACE_COOKIE, readActiveWorkspaceCookie } from "@/lib/workspace/cookie";
+import { ACTIVE_ORGANIZATION_COOKIE, ACTIVE_WORKSPACE_COOKIE, readActiveOrganizationCookie, readActiveWorkspaceCookie } from "@/lib/workspace/cookie";
 import { roleRank } from "@/lib/workspace/permissions";
 import { ONBOARDING_PATH, PATHNAME_HEADER } from "@/lib/workspace/request";
 
-export { ACTIVE_WORKSPACE_COOKIE, ONBOARDING_PATH };
+export { ACTIVE_ORGANIZATION_COOKIE, ACTIVE_WORKSPACE_COOKIE, ONBOARDING_PATH };
 
-export type WorkspaceSummary = Pick<Workspace, "id" | "name" | "slug" | "plan">;
+export type OrganizationSummary = Pick<Organization, "id" | "name" | "slug" | "plan">;
+
+export type WorkspaceSummary = Pick<Workspace, "id" | "name" | "slug">;
 
 export type WorkspaceContext = {
   user: User;
+  /** The billable account the active workspace belongs to. */
+  organization: Organization;
   workspace: Workspace;
+  /** The user's role in `organization`; it applies to every workspace in it. */
   role: WorkspaceRole;
-  memberships: Array<{ workspace: WorkspaceSummary; role: WorkspaceRole }>;
-  isSuperAdmin: boolean;
+  /** Workspaces in the active organization, oldest first. */
+  workspaces: WorkspaceSummary[];
+  /** Every organization the user belongs to, oldest membership first. */
+  organizations: Array<{ organization: OrganizationSummary; role: WorkspaceRole }>;
 };
 
 /** Thrown by `requireRole` — `handleApiError` maps it to a 403 JSON response. */
@@ -31,17 +38,19 @@ export class ForbiddenError extends Error {
   }
 }
 
-function summarize(workspace: Workspace): WorkspaceSummary {
-  return { id: workspace.id, name: workspace.name, slug: workspace.slug, plan: workspace.plan };
+function summarizeOrganization(org: Organization): OrganizationSummary {
+  return { id: org.id, name: org.name, slug: org.slug, plan: org.plan };
 }
 
 /**
- * Resolves the signed-in user's active workspace.
+ * Resolves the signed-in user's active organization and workspace.
  *
- * The `or_workspace` cookie is only a *preference*: it is honoured solely when
- * the user is still a member of that workspace, otherwise we fall back to the
- * oldest membership. This keeps a stale cookie (removed from a team, deleted
- * workspace) from ever granting access or producing a broken page.
+ * Both cookies are only preferences. The organization cookie is honoured when
+ * the user is still a member of it; failing that, the organization of the
+ * workspace cookie; failing that, the oldest membership that has a workspace.
+ * The workspace cookie is honoured only inside the resolved organization. A
+ * stale cookie (removed from a team, deleted workspace) therefore never grants
+ * access or produces a broken page.
  *
  * Memoized per request so layouts, pages and nested components can all call it.
  */
@@ -49,22 +58,30 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const memberships = await prisma.workspaceMember.findMany({
+  const memberships = await prisma.organizationMember.findMany({
     where: { userId: user.id },
-    include: { workspace: true },
+    include: { organization: { include: { workspaces: { orderBy: { createdAt: "asc" } } } } },
     orderBy: { createdAt: "asc" },
   });
-  if (memberships.length === 0) return null;
+  const usable = memberships.filter((m) => m.organization.workspaces.length > 0);
+  if (usable.length === 0) return null;
 
-  const preferredId = await readActiveWorkspaceCookie();
-  const active = memberships.find((m) => m.workspaceId === preferredId) ?? memberships[0];
+  const [preferredOrgId, preferredWorkspaceId] = await Promise.all([readActiveOrganizationCookie(), readActiveWorkspaceCookie()]);
+  const active =
+    usable.find((m) => m.organizationId === preferredOrgId) ??
+    usable.find((m) => m.organization.workspaces.some((w) => w.id === preferredWorkspaceId)) ??
+    usable[0];
+
+  const { workspaces, ...organization } = active.organization;
+  const workspace = workspaces.find((w) => w.id === preferredWorkspaceId) ?? workspaces[0];
 
   return {
     user,
-    workspace: active.workspace,
+    organization,
+    workspace,
     role: active.role,
-    memberships: memberships.map((m) => ({ workspace: summarize(m.workspace), role: m.role })),
-    isSuperAdmin: user.isSuperAdmin,
+    workspaces: workspaces.map((w) => ({ id: w.id, name: w.name, slug: w.slug })),
+    organizations: memberships.map((m) => ({ organization: summarizeOrganization(m.organization), role: m.role })),
   };
 });
 
@@ -100,15 +117,4 @@ export function requireRole(ctx: WorkspaceContext, min: WorkspaceRole): void {
   if (roleRank(ctx.role) < roleRank(min)) {
     throw new ForbiddenError(`This action requires the ${min.toLowerCase()} role`);
   }
-}
-
-/**
- * Super-admin guard for `/admin/*`. Non-admins get a 404 rather than a 403 so
- * the existence of the panel isn't advertised to regular users.
- */
-export async function requireSuperAdmin(): Promise<User> {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?next=%2Fadmin");
-  if (!user.isSuperAdmin) notFound();
-  return user;
 }

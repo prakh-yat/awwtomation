@@ -20,9 +20,10 @@ import {
   type DeliveryStatus as DeliveryStatusType,
 } from "@prisma/client";
 
-import { getUsage, type WorkspaceUsage } from "@/lib/billing/usage";
+import { getUsage, type OrganizationUsage } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/workspace/api";
+import { customerReason } from "@/lib/errors/customer-messages";
 
 // ───────────────────────── Types ─────────────────────────
 
@@ -92,7 +93,8 @@ export type ActivityItem = {
   createdAt: Date;
   recipientUsername: string | null;
   messagePreview: string | null;
-  errorMessage: string | null;
+  /** Plain-language reason for a skip or failure; null when sent. */
+  reason: string | null;
   automation: { id: string; name: string } | null;
   broadcast: { id: string; name: string } | null;
   contact: { id: string; username: string | null; name: string | null } | null;
@@ -113,10 +115,12 @@ export type Overview = {
   previous: Omit<OverviewTotals, "activeAutomations" | "channels">;
   deltas: OverviewDeltas;
   series: SeriesPoint[];
+  /** The equal-length window before `series`, day for day. */
+  previousSeries: SeriesPoint[];
   topAutomations: TopAutomation[];
   skipReasons: SkipReason[];
   recentActivity: ActivityItem[];
-  usage: WorkspaceUsage;
+  usage: OrganizationUsage;
   setup: SetupProgress;
 };
 
@@ -313,7 +317,7 @@ function rate(numerator: number, denominator: number): number {
   return denominator === 0 ? 0 : numerator / denominator;
 }
 
-type SeriesBuild = { series: SeriesPoint[]; current: PeriodSums; previous: PeriodSums };
+type SeriesBuild = { series: SeriesPoint[]; previousSeries: SeriesPoint[]; current: PeriodSums; previous: PeriodSums };
 
 /** Fills every day of both periods with zeros, then folds the grouped rows in — O(rows + days). */
 function buildSeries(
@@ -364,22 +368,24 @@ function buildSeries(
   current.ctr = rate(current.linkClicks, current.dmsSent);
   previous.ctr = rate(previous.linkClicks, previous.dmsSent);
 
-  const series = points.slice(range.currentStartIndex).map(({ date, sent, triggered, failed, clicks, newContacts }) => ({
+  const toPoint = ({ date, sent, triggered, failed, clicks, newContacts }: SeriesPoint & { publicReplies: number }): SeriesPoint => ({
     date,
     sent,
     triggered,
     failed,
     clicks,
     newContacts,
-  }));
-  return { series, current, previous };
+  });
+  const series = points.slice(range.currentStartIndex).map(toPoint);
+  const previousSeries = points.slice(0, range.currentStartIndex).map(toPoint);
+  return { series, previousSeries, current, previous };
 }
 
 const channelRefSelect = { id: true, platform: true, username: true, name: true } as const;
 
 async function assertChannelInWorkspace(workspaceId: string, channelId: string): Promise<void> {
   const channel = await prisma.channel.findFirst({ where: { id: channelId, workspaceId }, select: { id: true } });
-  if (!channel) throw new ApiError(404, "Channel not found", "NOT_FOUND");
+  if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "NOT_FOUND");
 }
 
 async function loadTopAutomations(workspaceId: string, since: Date, channelId?: string): Promise<TopAutomation[]> {
@@ -439,8 +445,8 @@ async function loadSkipReasons(workspaceId: string, since: Date, channelId?: str
   return grouped.map((g) => ({ status: g.status, count: g._count._all })).sort((a, b) => b.count - a.count);
 }
 
-function loadRecentActivity(workspaceId: string, channelId?: string): Promise<ActivityItem[]> {
-  return prisma.deliveryLog.findMany({
+async function loadRecentActivity(workspaceId: string, channelId?: string): Promise<ActivityItem[]> {
+  const rows = await prisma.deliveryLog.findMany({
     where: { workspaceId, ...(channelId ? { channelId } : {}) },
     orderBy: { createdAt: "desc" },
     take: 15,
@@ -458,6 +464,7 @@ function loadRecentActivity(workspaceId: string, channelId?: string): Promise<Ac
       channel: { select: channelRefSelect },
     },
   });
+  return rows.map(({ errorMessage, ...row }) => ({ ...row, reason: customerReason(row.status, errorMessage) }));
 }
 
 // ───────────────────────── Public API ─────────────────────────
@@ -490,7 +497,7 @@ export async function getOverview(workspaceId: string, input: OverviewInput): Pr
       }),
     ]);
 
-  const { series, current, previous } = buildSeries(range, { delivery, triggers, contacts, clicks });
+  const { series, previousSeries, current, previous } = buildSeries(range, { delivery, triggers, contacts, clicks });
 
   return {
     period: { days, start: range.currentStart, previousStart: range.previousStart, timezone: range.timezone },
@@ -507,6 +514,7 @@ export async function getOverview(workspaceId: string, input: OverviewInput): Pr
       ctr: ratio(current.ctr, previous.ctr),
     },
     series,
+    previousSeries,
     topAutomations,
     skipReasons,
     recentActivity,
@@ -589,9 +597,12 @@ const TOP_KEYWORDS_LIMIT = 15;
 const TOP_AUTOMATIONS_LIMIT = 10;
 /** Median first-response time is computed over at most this many inbound threads. */
 const RESPONSE_SAMPLE_LIMIT = 20_000;
-/** Contacts in these stages count as leads (alongside anyone with an email or phone). */
-const LEAD_STAGES = ["Lead", "Customer"] as const;
-const DEFAULT_PIPELINE_STAGES = ["New", "Engaged", "Lead", "Customer", "Lost"] as const;
+/**
+ * Stage names that meant "lead" before pipelines existed. Audit rows written
+ * since then carry the stage position instead: anything past a pipeline's
+ * first stage counts.
+ */
+const LEGACY_LEAD_STAGES = ["Lead", "Customer"] as const;
 const DAYS_OF_WEEK = 7;
 const HOURS_OF_DAY = 24;
 
@@ -628,7 +639,7 @@ export type AnalyticsTotals = Omit<AnalyticsSeriesPoint, "date"> & {
 
 export type AnalyticsDeltas = Record<keyof AnalyticsTotals, number | null>;
 
-export type FunnelStepKey = "comments" | "dmsSent" | "delivered" | "clicked" | "leads";
+export type FunnelStepKey = "triggered" | "reached" | "responded" | "leads";
 
 export type FunnelStep = {
   key: FunnelStepKey;
@@ -638,16 +649,19 @@ export type FunnelStep = {
   conversion: number | null;
 };
 
+/**
+ * People, not events, and every step is a subset of the one before it, so a
+ * conversion can never exceed 100%. Broadcasts are excluded: nobody asked for
+ * those, so they don't belong in a funnel that starts with a comment.
+ */
 export type AnalyticsFunnel = {
-  /** Trigger matches. */
-  comments: number;
-  /** DM deliveries attempted (every status, public replies excluded). */
-  dmsSent: number;
-  /** DM deliveries with status SENT. */
-  delivered: number;
-  /** Distinct contacts with at least one tracked-link click. */
-  clicked: number;
-  /** Distinct contacts reached by a SENT DM who have an email, a phone or a Lead/Customer stage. */
+  /** People who triggered an automation (a keyword comment, DM or story reply). */
+  triggered: number;
+  /** …who were sent a DM by that automation. */
+  reached: number;
+  /** …who then clicked an automation's link or replied in the DM. */
+  responded: number;
+  /** …who have an email, a phone number or a Lead/Customer stage. */
   leads: number;
   steps: FunnelStep[];
 };
@@ -688,7 +702,10 @@ export type InboxPerformance = {
   answeredThreads: number;
 };
 
-export type StageCount = { stage: string; count: number };
+export type StageCount = { stageId: string; stage: string; color: string; count: number };
+
+/** Where contacts sit today in one pipeline (stock, not range-bound). */
+export type PipelineBreakdown = { pipelineId: string; name: string; total: number; stages: StageCount[] };
 
 export type AnalyticsReport = {
   range: {
@@ -707,6 +724,8 @@ export type AnalyticsReport = {
   previous: AnalyticsTotals;
   deltas: AnalyticsDeltas;
   series: AnalyticsSeriesPoint[];
+  /** The equal-length window before `series`, day for day, for comparison lines. */
+  previousSeries: AnalyticsSeriesPoint[];
   funnel: AnalyticsFunnel;
   byChannel: ChannelAnalyticsRow[];
   byAutomation: AutomationAnalyticsRow[];
@@ -715,7 +734,8 @@ export type AnalyticsReport = {
   /** 7 rows (Sunday first) × 24 hours of trigger counts in the workspace timezone. */
   heatmap: number[][];
   inbox: InboxPerformance;
-  contactsByStage: StageCount[];
+  /** One entry per pipeline, in pipeline order. */
+  pipelines: PipelineBreakdown[];
   /** "audit" when stage changes came from AuditLog `contact.stage_changed`; "contacts" for the updatedAt approximation. */
   leadsSource: "audit" | "contacts";
   /** False until the workspace has ever triggered an automation or logged a delivery — drives the empty state. */
@@ -866,8 +886,12 @@ const PUBLIC_REPLY = Prisma.sql`'PUBLIC_REPLY'::"DeliveryKind"`;
 const INBOUND = Prisma.sql`'INBOUND'::"MessageDirection"`;
 const OUTBOUND = Prisma.sql`'OUTBOUND'::"MessageDirection"`;
 
+/** A lead: shared an email or phone number, or sits past the first stage of any pipeline. */
 function leadSignal(alias: Prisma.Sql): Prisma.Sql {
-  return Prisma.sql`(${alias}."email" IS NOT NULL OR ${alias}."phone" IS NOT NULL OR ${alias}."stage" IN (${Prisma.join([...LEAD_STAGES])}))`;
+  return Prisma.sql`(${alias}."email" IS NOT NULL OR ${alias}."phone" IS NOT NULL OR EXISTS (
+    SELECT 1 FROM "PipelineEntry" pe JOIN "PipelineStage" ps ON ps."id" = pe."stageId"
+    WHERE pe."contactId" = ${alias}."id" AND ps."position" > 0
+  ))`;
 }
 
 // ───────────────────────── Daily queries (both windows) ─────────────────────────
@@ -924,62 +948,91 @@ function reportInboundByDay(scope: Scope, range: AnalyticsRange): Promise<CountD
 
 /**
  * Stage changes recorded by the CRM (`contact.stage_changed`, targetId = contact
- * id, metadata.to = new stage). Only rows that landed outside "New" count.
+ * id). Only moves past a pipeline's first stage count: `metadata.toPosition` on
+ * current rows, the old Lead/Customer stage names on rows from before pipelines.
  */
 function reportLeadsFromAuditByDay(scope: Scope, range: AnalyticsRange): Promise<CountDayRow[]> {
   return prisma.$queryRaw<CountDayRow[]>(Prisma.sql`
-    SELECT ${localDay(Prisma.sql`l."createdAt"`, range.timezone)} AS day, COUNT(*)::int AS count
-    FROM "AuditLog" l JOIN "Contact" c ON c."id" = l."targetId"
-    WHERE l."workspaceId" = ${scope.workspaceId} AND l."action" = 'contact.stage_changed'
-      AND COALESCE(l."metadata"->>'to', l."metadata"->>'stage', '') <> 'New'
-      AND ${contactScope(scope)} AND ${between(Prisma.sql`l."createdAt"`, range)}
+    SELECT ${localDay(Prisma.sql`first_lead`, range.timezone)} AS day, COUNT(*)::int AS count
+    FROM (
+      -- The first time each contact entered a lead stage; later moves (Lead -> Customer) don't count again.
+      SELECT l."targetId", MIN(l."createdAt") AS first_lead
+      FROM "AuditLog" l JOIN "Contact" c ON c."id" = l."targetId"
+      WHERE l."workspaceId" = ${scope.workspaceId} AND l."action" = 'contact.stage_changed'
+        AND COALESCE(
+          (l."metadata"->>'toPosition')::int > 0,
+          COALESCE(l."metadata"->>'to', l."metadata"->>'stage', '') IN (${Prisma.join([...LEGACY_LEAD_STAGES])})
+        )
+        AND ${contactScope(scope)}
+      GROUP BY l."targetId"
+    ) firsts
+    WHERE ${between(Prisma.sql`first_lead`, range)}
     GROUP BY 1
   `);
 }
 
-/** Fallback when no stage audit exists yet: non-"New" contacts touched on that day (over-counts tag edits etc.). */
+/** Fallback when no stage audit exists yet: contacts whose place past a first stage last changed on that day. */
 function reportLeadsFromContactsByDay(scope: Scope, range: AnalyticsRange): Promise<CountDayRow[]> {
   return prisma.$queryRaw<CountDayRow[]>(Prisma.sql`
-    SELECT ${localDay(Prisma.sql`c."updatedAt"`, range.timezone)} AS day, COUNT(*)::int AS count
-    FROM "Contact" c
-    WHERE ${contactScope(scope)} AND c."stage" <> 'New' AND ${between(Prisma.sql`c."updatedAt"`, range)}
+    SELECT ${localDay(Prisma.sql`pe."updatedAt"`, range.timezone)} AS day, COUNT(DISTINCT pe."contactId")::int AS count
+    FROM "PipelineEntry" pe
+    JOIN "PipelineStage" ps ON ps."id" = pe."stageId"
+    JOIN "Contact" c ON c."id" = pe."contactId"
+    WHERE ${contactScope(scope)} AND ps."position" > 0 AND ${between(Prisma.sql`pe."updatedAt"`, range)}
     GROUP BY 1
   `);
 }
 
 // ───────────────────────── Current-window breakdowns ─────────────────────────
 
-type CountRow = { count: number };
-
-async function loadFunnel(scope: Scope, range: AnalyticsRange, comments: number, attempted: number, delivered: number): Promise<AnalyticsFunnel> {
-  const [[clickedRow], [leadRow]] = await Promise.all([
-    prisma.$queryRaw<CountRow[]>(Prisma.sql`
-      SELECT COUNT(DISTINCT k."contactId")::int AS count
+async function loadFunnel(scope: Scope, range: AnalyticsRange): Promise<AnalyticsFunnel> {
+  const [row] = await prisma.$queryRaw<Array<{ triggered: number; reached: number; responded: number; leads: number }>>(Prisma.sql`
+    WITH triggered AS (
+      SELECT DISTINCT s."contactId" AS id
+      FROM "FlowSession" s ${sessionJoin(scope)}
+      WHERE ${sessionScope(scope)} AND ${between(Prisma.sql`s."createdAt"`, range, true)}
+    ),
+    reached AS (
+      SELECT DISTINCT d."contactId" AS id
+      FROM "DeliveryLog" d
+      WHERE ${deliveryScope(scope)} AND d."automationId" IS NOT NULL AND d."status" = ${SENT} AND d."kind" <> ${PUBLIC_REPLY}
+        AND ${between(Prisma.sql`d."createdAt"`, range, true)}
+        AND d."contactId" IN (SELECT id FROM triggered)
+    ),
+    responded AS (
+      SELECT k."contactId" AS id
       FROM "LinkClick" k ${clickJoin(scope)}
-      WHERE ${clickScope(scope)} AND k."contactId" IS NOT NULL AND ${between(Prisma.sql`k."createdAt"`, range, true)}
-    `),
-    prisma.$queryRaw<CountRow[]>(Prisma.sql`
-      SELECT COUNT(DISTINCT d."contactId")::int AS count
-      FROM "DeliveryLog" d JOIN "Contact" c ON c."id" = d."contactId"
-      WHERE ${deliveryScope(scope)} AND d."status" = ${SENT} AND d."kind" <> ${PUBLIC_REPLY}
-        AND ${between(Prisma.sql`d."createdAt"`, range, true)} AND ${leadSignal(Prisma.sql`c`)}
-    `),
-  ]);
-  const clicked = clickedRow?.count ?? 0;
-  const leads = leadRow?.count ?? 0;
+      WHERE ${clickScope(scope)} AND t."automationId" IS NOT NULL AND ${between(Prisma.sql`k."createdAt"`, range, true)}
+        AND k."contactId" IN (SELECT id FROM reached)
+      UNION
+      SELECT cv."contactId" AS id
+      FROM "Message" m JOIN "Conversation" cv ON cv."id" = m."conversationId"
+      WHERE ${conversationScope(scope)} AND m."direction" = 'INBOUND'::"MessageDirection"
+        AND ${between(Prisma.sql`m."createdAt"`, range, true)}
+        AND cv."contactId" IN (SELECT id FROM reached)
+    )
+    SELECT
+      (SELECT COUNT(*) FROM triggered)::int AS triggered,
+      (SELECT COUNT(*) FROM reached)::int AS reached,
+      (SELECT COUNT(*) FROM responded)::int AS responded,
+      (SELECT COUNT(*) FROM "Contact" c WHERE c."id" IN (SELECT id FROM responded) AND ${leadSignal(Prisma.sql`c`)})::int AS leads
+  `);
+  const triggered = row?.triggered ?? 0;
+  const reached = row?.reached ?? 0;
+  const responded = row?.responded ?? 0;
+  const leads = row?.leads ?? 0;
 
   const values: Array<[FunnelStepKey, string, number]> = [
-    ["comments", "Triggered", comments],
-    ["dmsSent", "DMs attempted", attempted],
-    ["delivered", "Delivered", delivered],
-    ["clicked", "Clicked", clicked],
-    ["leads", "Leads", leads],
+    ["triggered", "Commented or messaged", triggered],
+    ["reached", "Got a DM", reached],
+    ["responded", "Clicked or replied", responded],
+    ["leads", "Became a lead", leads],
   ];
   const steps: FunnelStep[] = values.map(([key, label, value], i) => {
     const prev = i === 0 ? null : values[i - 1][2];
     return { key, label, value, conversion: prev === null || prev === 0 ? null : value / prev };
   });
-  return { comments, dmsSent: attempted, delivered, clicked, leads, steps };
+  return { triggered, reached, responded, leads, steps };
 }
 
 type ChannelCountRow = { channelId: string | null; count: number };
@@ -1277,30 +1330,35 @@ async function loadInboxPerformance(scope: Scope, range: AnalyticsRange): Promis
   };
 }
 
-function parsePipelineStages(json: Prisma.JsonValue): string[] {
-  if (!Array.isArray(json)) return [...DEFAULT_PIPELINE_STAGES];
-  const stages = json.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
-  return stages.length > 0 ? stages : [...DEFAULT_PIPELINE_STAGES];
-}
-
-/** Stock (not range-bound) counts per pipeline stage, in the workspace's stage order; unknown stages trail. */
-async function loadContactsByStage(scope: Scope, pipelineStages: string[]): Promise<StageCount[]> {
-  const grouped = await prisma.contact.groupBy({
-    by: ["stage"],
-    where: {
-      workspaceId: scope.workspaceId,
-      ...(scope.channelId ? { channelId: scope.channelId } : {}),
-      ...(scope.automationId ? { flowSessions: { some: { automationId: scope.automationId } } } : {}),
-    },
-    _count: { _all: true },
+/** Stock (not range-bound) counts per stage for every pipeline, honouring the account and automation filters. */
+async function loadPipelineBreakdowns(scope: Scope): Promise<PipelineBreakdown[]> {
+  const [pipelines, grouped] = await Promise.all([
+    prisma.pipeline.findMany({
+      where: { workspaceId: scope.workspaceId },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      select: { id: true, name: true, stages: { orderBy: { position: "asc" }, select: { id: true, name: true, color: true } } },
+    }),
+    prisma.pipelineEntry.groupBy({
+      by: ["stageId"],
+      where: {
+        workspaceId: scope.workspaceId,
+        ...(scope.channelId || scope.automationId
+          ? {
+              contact: {
+                ...(scope.channelId ? { channelId: scope.channelId } : {}),
+                ...(scope.automationId ? { flowSessions: { some: { automationId: scope.automationId } } } : {}),
+              },
+            }
+          : {}),
+      },
+      _count: { _all: true },
+    }),
+  ]);
+  const counts = new Map(grouped.map((g) => [g.stageId, g._count._all]));
+  return pipelines.map((p) => {
+    const stages = p.stages.map((st) => ({ stageId: st.id, stage: st.name, color: st.color, count: counts.get(st.id) ?? 0 }));
+    return { pipelineId: p.id, name: p.name, total: stages.reduce((sum, st) => sum + st.count, 0), stages };
   });
-  const counts = new Map(grouped.map((g) => [g.stage, g._count._all]));
-  const known = pipelineStages.map((stage) => ({ stage, count: counts.get(stage) ?? 0 }));
-  const extra = [...counts.keys()]
-    .filter((stage) => !pipelineStages.includes(stage))
-    .sort()
-    .map((stage) => ({ stage, count: counts.get(stage) ?? 0 }));
-  return [...known, ...extra];
 }
 
 // ───────────────────────── Series assembly ─────────────────────────
@@ -1320,7 +1378,7 @@ function emptyTotals(): AnalyticsTotals {
   return { comments: 0, dmsSent: 0, publicReplies: 0, clicks: 0, newContacts: 0, leads: 0, conversations: 0, ctr: 0 };
 }
 
-function buildReportSeries(range: AnalyticsRange, rows: ReportRows): { series: AnalyticsSeriesPoint[]; current: AnalyticsTotals; previous: AnalyticsTotals; attempted: number } {
+function buildReportSeries(range: AnalyticsRange, rows: ReportRows): { series: AnalyticsSeriesPoint[]; previousSeries: AnalyticsSeriesPoint[]; current: AnalyticsTotals; previous: AnalyticsTotals; attempted: number } {
   const index = new Map<string, number>();
   const points: ReportPoint[] = range.keys.map((date, i) => {
     index.set(date, i);
@@ -1366,8 +1424,10 @@ function buildReportSeries(range: AnalyticsRange, rows: ReportRows): { series: A
   current.ctr = rate(current.clicks, current.dmsSent);
   previous.ctr = rate(previous.clicks, previous.dmsSent);
 
-  const series = points.slice(range.currentStartIndex).map(({ attempted: _attempted, ...point }) => point);
-  return { series, current, previous, attempted };
+  const strip = ({ attempted: _attempted, ...point }: ReportPoint): AnalyticsSeriesPoint => point;
+  const series = points.slice(range.currentStartIndex).map(strip);
+  const previousSeries = points.slice(0, range.currentStartIndex).map(strip);
+  return { series, previousSeries, current, previous, attempted };
 }
 
 async function resolveScope(workspaceId: string, input: Pick<AnalyticsInput, "channelId" | "automationId">): Promise<Scope> {
@@ -1381,9 +1441,9 @@ async function resolveScope(workspaceId: string, input: Pick<AnalyticsInput, "ch
   return { workspaceId, channelId, automationId };
 }
 
-async function workspaceSettings(workspaceId: string, timezone?: string): Promise<{ timezone: string; pipelineStages: string[] }> {
-  const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true, pipelineStages: true } });
-  return { timezone: timezone ?? ws.timezone, pipelineStages: parsePipelineStages(ws.pipelineStages) };
+async function workspaceSettings(workspaceId: string, timezone?: string): Promise<{ timezone: string }> {
+  const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
+  return { timezone: timezone ?? ws.timezone };
 }
 
 // ───────────────────────── Public API ─────────────────────────
@@ -1392,7 +1452,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
   const [scope, settings] = await Promise.all([resolveScope(workspaceId, input), workspaceSettings(workspaceId, input.timezone)]);
   const range = resolveAnalyticsRange(input, settings.timezone);
 
-  const [delivery, triggers, contacts, clicks, inbound, leadsAudit, leadsContacts, byChannel, byAutomation, topKeywords, skipReasons, heatmap, inbox, contactsByStage, anySession, anyDelivery] =
+  const [delivery, triggers, contacts, clicks, inbound, leadsAudit, leadsContacts, byChannel, byAutomation, topKeywords, skipReasons, heatmap, inbox, pipelines, anySession, anyDelivery] =
     await Promise.all([
       reportDeliveriesByDay(scope, range),
       reportTriggersByDay(scope, range),
@@ -1407,14 +1467,14 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
       loadReportSkipReasons(scope, range),
       loadHeatmap(scope, range),
       loadInboxPerformance(scope, range),
-      loadContactsByStage(scope, settings.pipelineStages),
+      loadPipelineBreakdowns(scope),
       prisma.flowSession.findFirst({ where: { workspaceId }, select: { id: true } }),
       prisma.deliveryLog.findFirst({ where: { workspaceId }, select: { id: true } }),
     ]);
 
   // Prefer the CRM's explicit stage-change audit; fall back to the updatedAt approximation only when none exists.
   const leadsSource: AnalyticsReport["leadsSource"] = leadsAudit.length > 0 ? "audit" : "contacts";
-  const { series, current, previous, attempted } = buildReportSeries(range, {
+  const { series, previousSeries, current, previous } = buildReportSeries(range, {
     delivery,
     triggers,
     contacts,
@@ -1422,7 +1482,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
     inbound,
     leads: leadsSource === "audit" ? leadsAudit : leadsContacts,
   });
-  const funnel = await loadFunnel(scope, range, current.comments, attempted, current.dmsSent);
+  const funnel = await loadFunnel(scope, range);
 
   const deltas: AnalyticsDeltas = {
     comments: ratio(current.comments, previous.comments),
@@ -1451,6 +1511,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
     previous,
     deltas,
     series,
+    previousSeries,
     funnel,
     byChannel,
     byAutomation,
@@ -1458,7 +1519,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
     skipReasons,
     heatmap,
     inbox,
-    contactsByStage,
+    pipelines,
     leadsSource,
     hasAnyData: anySession !== null || anyDelivery !== null,
   };
@@ -1468,18 +1529,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
 export async function getAnalyticsFunnel(workspaceId: string, input: AnalyticsInput = {}): Promise<AnalyticsFunnel & { range: Pick<AnalyticsRange, "from" | "to" | "days"> }> {
   const [scope, settings] = await Promise.all([resolveScope(workspaceId, input), workspaceSettings(workspaceId, input.timezone)]);
   const range = resolveAnalyticsRange(input, settings.timezone);
-  const [[triggerRow], [deliveryRow]] = await Promise.all([
-    prisma.$queryRaw<CountRow[]>(Prisma.sql`
-      SELECT COUNT(*)::int AS count FROM "FlowSession" s ${sessionJoin(scope)}
-      WHERE ${sessionScope(scope)} AND ${between(Prisma.sql`s."createdAt"`, range, true)}
-    `),
-    prisma.$queryRaw<Array<{ attempted: number; sent: number }>>(Prisma.sql`
-      SELECT (COUNT(*))::int AS attempted, (COUNT(*) FILTER (WHERE d."status" = ${SENT}))::int AS sent
-      FROM "DeliveryLog" d
-      WHERE ${deliveryScope(scope)} AND d."kind" <> ${PUBLIC_REPLY} AND ${between(Prisma.sql`d."createdAt"`, range, true)}
-    `),
-  ]);
-  const funnel = await loadFunnel(scope, range, triggerRow?.count ?? 0, deliveryRow?.attempted ?? 0, deliveryRow?.sent ?? 0);
+  const funnel = await loadFunnel(scope, range);
   return { ...funnel, range: { from: range.from, to: range.to, days: range.days } };
 }
 

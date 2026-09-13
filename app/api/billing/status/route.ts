@@ -7,6 +7,6 @@ export const runtime = "nodejs";
 
 /** GET /api/billing/status → BillingOverview for the active workspace. Admin+. */
 export const GET = withWorkspace(
-  async (_req, ctx) => NextResponse.json(await getBillingOverview(ctx.workspace.id)),
+  async (_req, ctx) => NextResponse.json(await getBillingOverview(ctx.organization.id)),
   { minRole: "ADMIN" },
 );

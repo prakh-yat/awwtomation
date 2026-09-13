@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { brand } from "@/lib/brand";
 import { listTrackedLinks } from "@/lib/services/links";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
@@ -8,7 +7,7 @@ import { LinksView } from "./links-view";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: `Tracked links · ${brand.name}` };
+export const metadata: Metadata = { title: "Links" };
 
 export default async function LinksPage() {
   const ctx = await requireWorkspaceContext();

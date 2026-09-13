@@ -4,6 +4,8 @@
  * (ARCHITECTURE §3), so one helper can turn any non-2xx into a typed error
  * that the UI can toast — and branch on `code` for plan-limit upsells.
  */
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
+
 export class ClientApiError extends Error {
   constructor(
     public status: number,
@@ -32,7 +34,7 @@ export async function apiFetch<T>(url: string, opts: RequestOptions = {}): Promi
       body: opts.json !== undefined ? JSON.stringify(opts.json) : undefined,
     });
   } catch {
-    throw new ClientApiError(0, "Network error — check your connection and try again");
+    throw new ClientApiError(0, "Couldn't connect. Check your internet connection and try again.");
   }
 
   if (!res.ok) {
@@ -49,8 +51,9 @@ export async function apiFetch<T>(url: string, opts: RequestOptions = {}): Promi
   return (await res.json()) as T;
 }
 
+/** API messages are already customer copy; transport failures and anything technical get translated. */
 export function errorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }
 
 export function isPlanLimitError(err: unknown): boolean {

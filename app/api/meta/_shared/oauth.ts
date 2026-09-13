@@ -11,16 +11,17 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { constantTimeEqual } from "@/lib/crypto";
 import { appUrl, isMetaConfigured } from "@/lib/env";
+import { categorise } from "@/lib/errors/customer-messages";
 import { logger } from "@/lib/logger";
 import { buildFacebookAuthUrl } from "@/lib/meta/facebook";
 import { buildInstagramAuthUrl } from "@/lib/meta/instagram";
 import { buildOAuthState, newOAuthNonce, parseOAuthState, type OAuthStatePayload } from "@/lib/meta/oauth-state";
 import { MetaApiError } from "@/lib/meta/types";
 import { canStartConnect } from "@/lib/services/channels";
-import { getMembership } from "@/lib/services/workspaces";
+import { assertMembership } from "@/lib/services/workspaces";
 import { ApiError } from "@/lib/workspace/api";
 import type { WorkspaceContext } from "@/lib/workspace/context";
-import { ACTIVE_WORKSPACE_COOKIE, activeWorkspaceCookieOptions } from "@/lib/workspace/cookie";
+import { ACTIVE_ORGANIZATION_COOKIE, ACTIVE_WORKSPACE_COOKIE, activeWorkspaceCookieOptions } from "@/lib/workspace/cookie";
 import { roleAtLeast } from "@/lib/workspace/permissions";
 
 export const OAUTH_NONCE_COOKIE = "or_oauth_nonce";
@@ -61,8 +62,8 @@ function clearNonce(res: NextResponse): NextResponse {
 }
 
 /**
- * Only our own `ApiError` text and Meta's Graph error text ever reach the
- * `?message=` toast, and both are rendered as plain text by React. Control
+ * Only our own `ApiError` text and the customer copy for a Meta error ever
+ * reach the `?message=` toast, and both are rendered as plain text by React. Control
  * characters are stripped and the length capped anyway so a pathological
  * upstream message can't be turned into a multi-line phishing toast.
  */
@@ -78,7 +79,8 @@ function errorRedirect(err: unknown, platform: ChannelPlatform): NextResponse {
   }
   if (err instanceof MetaApiError) {
     logger.warn("meta.oauth_callback_meta_error", { platform, code: err.code, subcode: err.subcode, message: err.message });
-    return channelsRedirect({ error: "meta", message: safeMessage(err.message) });
+    // Meta's own wording stays in the logs; the toast gets the translated explanation.
+    return channelsRedirect({ error: "meta", message: safeMessage(categorise(err).description) });
   }
   logger.error("meta.oauth_callback_failed", { platform, error: err });
   return channelsRedirect({ error: "unknown" });
@@ -159,11 +161,12 @@ export async function runOAuthCallback(
   if (!user) return clearNonce(NextResponse.redirect(appUrl("/login?next=%2Fchannels")));
   if (user.id !== state.userId) return clearNonce(channelsRedirect({ error: "session" }));
 
-  const membership = await getMembership(state.workspaceId, user.id);
-  if (!membership || !roleAtLeast(membership.role, "ADMIN")) return clearNonce(channelsRedirect({ error: "forbidden" }));
+  const access = await assertMembership(state.workspaceId, user.id, "MEMBER").catch(() => null);
+  if (!access || !roleAtLeast(access.role, "ADMIN")) return clearNonce(channelsRedirect({ error: "forbidden" }));
 
   try {
     const res = await onAuthorized({ state, user, code, redirectUri: callbackUri(platform) });
+    res.cookies.set(ACTIVE_ORGANIZATION_COOKIE, access.workspace.organizationId, activeWorkspaceCookieOptions());
     res.cookies.set(ACTIVE_WORKSPACE_COOKIE, state.workspaceId, activeWorkspaceCookieOptions());
     return clearNonce(res);
   } catch (err) {

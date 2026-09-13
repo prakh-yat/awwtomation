@@ -1,5 +1,5 @@
 // Awwtomation — multi-tenant Instagram & Facebook comment-to-DM automation platform.
-// Every tenant-owned row carries workspaceId; all reads MUST be scoped by it.
+// Organizations are the billable tenant; every workspace-owned row carries workspaceId and all reads MUST be scoped by it.
 
 generator client {
   provider = "prisma-client-js"
@@ -179,91 +179,111 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships        WorkspaceMember[]
-  sentInvitations    WorkspaceInvitation[] @relation("InvitedBy")
-  connectedChannels  Channel[]             @relation("ConnectedBy")
-  sentMessages       Message[]
-  assignedConversations Conversation[]     @relation("AssignedTo")
-  ownedContacts      Contact[]             @relation("ContactOwner")
-  contactNotes       ContactNote[]
-  auditLogs          AuditLog[]
+  memberships           OrganizationMember[]
+  sentInvitations       Invitation[]         @relation("InvitedBy")
+  connectedChannels     Channel[]            @relation("ConnectedBy")
+  sentMessages          Message[]
+  assignedConversations Conversation[]       @relation("AssignedTo")
+  ownedContacts         Contact[]            @relation("ContactOwner")
+  contactNotes          ContactNote[]
+  auditLogs             AuditLog[]
 }
 
-model Workspace {
+/// The billable account. Holds the plan, the monthly DM counter, the team and
+/// payments; every workspace inside it shares those limits. One person can
+/// belong to several organizations and switch between them.
+model Organization {
   id                String   @id @default(cuid())
   name              String
   slug              String   @unique
   plan              PlanTier @default(FREE)
-  timezone          String   @default("Asia/Kathmandu")
-  /// DMs sent in the current billing period (reset monthly by lib/billing/usage.ts).
+  /// DMs sent across all of the organization's workspaces in the current billing period (reset monthly by lib/billing/usage.ts).
   dmsSentThisPeriod Int      @default(0)
   usagePeriodStart  DateTime @default(now())
-  onboardedAt       DateTime?
-  /// CRM pipeline stages, in order. Contacts reference a stage by name.
-  pipelineStages    Json     @default("[\"New\",\"Engaged\",\"Lead\",\"Customer\",\"Lost\"]")
 
   // ── Billing (Dodo Payments) ──
-  planSource            PlanSource      @default(DEFAULT)
-  billingStatus         BillingStatus   @default(NONE)
+  planSource            PlanSource       @default(DEFAULT)
+  billingStatus         BillingStatus    @default(NONE)
   billingInterval       BillingInterval?
   billingCustomerId     String?
-  billingSubscriptionId String?         @unique
+  billingSubscriptionId String?          @unique
   billingEmail          String?
   currentPeriodEnd      DateTime?
-  cancelAtPeriodEnd     Boolean         @default(false)
+  cancelAtPeriodEnd     Boolean          @default(false)
   /// Plan the subscription is for (mirrors `plan` unless an admin override is active).
   subscribedPlan        PlanTier?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  members       WorkspaceMember[]
-  payments      Payment[]
-  segments      Segment[]
-  contactNotes  ContactNote[]
-  invitations   WorkspaceInvitation[]
-  channels      Channel[]
-  automations   Automation[]
-  contacts      Contact[]
-  conversations Conversation[]
-  broadcasts    Broadcast[]
-  deliveryLogs  DeliveryLog[]
-  trackedLinks  TrackedLink[]
-  flowSessions  FlowSession[]
-  jobs          Job[]
-  auditLogs     AuditLog[]
+  members     OrganizationMember[]
+  invitations Invitation[]
+  workspaces  Workspace[]
+  payments    Payment[]
 }
 
-model WorkspaceMember {
-  id          String        @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceRole @default(MEMBER)
-  createdAt   DateTime      @default(now())
+/// Roles are organization-wide: a member can open every workspace in the organization.
+model OrganizationMember {
+  id             String        @id @default(cuid())
+  organizationId String
+  userId         String
+  role           WorkspaceRole @default(MEMBER)
+  createdAt      DateTime      @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, userId])
+  @@unique([organizationId, userId])
   @@index([userId])
 }
 
-model WorkspaceInvitation {
-  id          String           @id @default(cuid())
-  workspaceId String
-  email       String
-  role        WorkspaceRole    @default(MEMBER)
-  token       String           @unique
-  status      InvitationStatus @default(PENDING)
-  invitedById String
-  expiresAt   DateTime
-  createdAt   DateTime         @default(now())
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           WorkspaceRole    @default(MEMBER)
+  token          String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  invitedBy User      @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
 
-  @@index([workspaceId])
+  @@index([organizationId])
   @@index([email])
+}
+
+/// A brand or client inside an organization: its own connected accounts,
+/// automations, contacts and pipelines.
+model Workspace {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  slug           String    @unique
+  timezone       String    @default("Asia/Kathmandu")
+  onboardedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  segments        Segment[]
+  contactNotes    ContactNote[]
+  channels        Channel[]
+  automations     Automation[]
+  contacts        Contact[]
+  conversations   Conversation[]
+  broadcasts      Broadcast[]
+  deliveryLogs    DeliveryLog[]
+  trackedLinks    TrackedLink[]
+  flowSessions    FlowSession[]
+  pipelines       Pipeline[]
+  pipelineEntries PipelineEntry[]
+  jobs            Job[]
+  auditLogs       AuditLog[]
+
+  @@index([organizationId])
 }
 
 // ───────────────────────── Channels (connected accounts) ─────────────────────────
@@ -271,28 +291,28 @@ model WorkspaceInvitation {
 /// A connected Instagram professional account or Facebook Page.
 /// One external account can only be connected to ONE workspace at a time.
 model Channel {
-  id          String          @id @default(cuid())
-  workspaceId String
-  platform    ChannelPlatform
+  id                String          @id @default(cuid())
+  workspaceId       String
+  platform          ChannelPlatform
   /// IG professional account id (Instagram Login) or Facebook Page id.
-  externalId  String
-  username    String?
-  name        String?
-  avatarUrl   String?
+  externalId        String
+  username          String?
+  name              String?
+  avatarUrl         String?
   /// AES-256-GCM encrypted (lib/crypto.ts). IG: long-lived user token. FB: page access token.
-  accessTokenEnc String
-  tokenExpiresAt DateTime?
+  accessTokenEnc    String
+  tokenExpiresAt    DateTime?
   /// FB only: the Instagram business account linked to the page, if any.
   linkedInstagramId String?
-  scopes      String[]        @default([])
-  status      ChannelStatus   @default(ACTIVE)
-  webhookSubscribed Boolean   @default(false)
-  followerCount Int?
-  lastSyncedAt DateTime?
-  lastError   String?
-  connectedById String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  scopes            String[]        @default([])
+  status            ChannelStatus   @default(ACTIVE)
+  webhookSubscribed Boolean         @default(false)
+  followerCount     Int?
+  lastSyncedAt      DateTime?
+  lastError         String?
+  connectedById     String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   connectedBy User?     @relation("ConnectedBy", fields: [connectedById], references: [id], onDelete: SetNull)
@@ -311,7 +331,7 @@ model Channel {
 
 /// Cached posts/reels so the post picker loads instantly.
 model Media {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   channelId    String
   externalId   String
   caption      String?
@@ -322,7 +342,7 @@ model Media {
   timestamp    DateTime?
   commentCount Int?
   likeCount    Int?
-  syncedAt     DateTime @default(now())
+  syncedAt     DateTime  @default(now())
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -332,29 +352,29 @@ model Media {
 // ───────────────────────── Automations & flows ─────────────────────────
 
 model Automation {
-  id          String           @id @default(cuid())
-  workspaceId String
-  channelId   String
-  name        String
-  status      AutomationStatus @default(DRAFT)
-  triggerType TriggerType      @default(COMMENT)
-  matchMode   MatchMode        @default(CONTAINS)
-  keywords    String[]         @default([])
-  excludeKeywords String[]     @default([])
+  id                 String           @id @default(cuid())
+  workspaceId        String
+  channelId          String
+  name               String
+  status             AutomationStatus @default(DRAFT)
+  triggerType        TriggerType      @default(COMMENT)
+  matchMode          MatchMode        @default(CONTAINS)
+  keywords           String[]         @default([])
+  excludeKeywords    String[]         @default([])
   /// External media ids this automation listens on. Empty = all posts.
-  mediaIds    String[]         @default([])
+  mediaIds           String[]         @default([])
   /// Flow graph: { nodes: FlowNode[], edges: FlowEdge[] } — see lib/automation/flow-types.ts
-  flow        Json
-  publicReplyEnabled Boolean   @default(false)
+  flow               Json
+  publicReplyEnabled Boolean          @default(false)
   /// One is picked at random per comment so replies don't look robotic.
-  publicReplies String[]       @default([])
+  publicReplies      String[]         @default([])
   /// Only send once per contact per automation.
-  oncePerContact Boolean       @default(true)
-  triggeredCount Int           @default(0)
-  sentCount   Int              @default(0)
-  lastTriggeredAt DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  oncePerContact     Boolean          @default(true)
+  triggeredCount     Int              @default(0)
+  sentCount          Int              @default(0)
+  lastTriggeredAt    DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -391,49 +411,47 @@ model FlowSession {
 // ───────────────────────── Contacts & inbox ─────────────────────────
 
 model Contact {
-  id            String          @id @default(cuid())
-  workspaceId   String
-  channelId     String
-  platform      ChannelPlatform
+  id           String          @id @default(cuid())
+  workspaceId  String
+  channelId    String
+  platform     ChannelPlatform
   /// IGSID (Instagram-scoped id) or PSID (page-scoped id).
-  externalId    String
-  username      String?
-  name          String?
-  avatarUrl     String?
-  isFollower    Boolean?
-  tags          String[]        @default([])
-  customFields  Json            @default("{}")
-  optedOut      Boolean         @default(false)
+  externalId   String
+  username     String?
+  name         String?
+  avatarUrl    String?
+  isFollower   Boolean?
+  tags         String[]        @default([])
+  customFields Json            @default("{}")
+  optedOut     Boolean         @default(false)
 
   // ── CRM ──
-  source        ContactSource   @default(WEBHOOK)
+  source          ContactSource @default(WEBHOOK)
   /// False for imported/manual records without a Meta id (cannot be DMed).
-  messageable   Boolean         @default(true)
-  email         String?
-  phone         String?
-  /// One of workspace.pipelineStages (free text so stages can be renamed).
-  stage         String          @default("New")
-  ownerId       String?
+  messageable     Boolean       @default(true)
+  email           String?
+  phone           String?
+  ownerId         String?
   lastContactedAt DateTime?
-  notesCount    Int             @default(0)
+  notesCount      Int           @default(0)
 
-  firstSeenAt   DateTime        @default(now())
+  firstSeenAt       DateTime  @default(now())
   lastInteractionAt DateTime?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  channel       Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  owner         User?          @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  conversations Conversation[]
-  flowSessions  FlowSession[]
-  deliveryLogs  DeliveryLog[]
-  linkClicks    LinkClick[]
-  notes         ContactNote[]
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  owner           User?           @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  conversations   Conversation[]
+  flowSessions    FlowSession[]
+  deliveryLogs    DeliveryLog[]
+  linkClicks      LinkClick[]
+  notes           ContactNote[]
+  pipelineEntries PipelineEntry[]
 
   @@unique([channelId, externalId])
   @@index([workspaceId, lastInteractionAt])
-  @@index([workspaceId, stage])
   @@index([workspaceId, ownerId])
   @@index([workspaceId, email])
 }
@@ -456,21 +474,76 @@ model ContactNote {
   @@index([workspaceId])
 }
 
+/// A sales or support funnel. A workspace can have several; a contact can sit in
+/// any number of them, at one stage each, or in none.
+model Pipeline {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stages    PipelineStage[]
+  entries   PipelineEntry[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId, position])
+}
+
+model PipelineStage {
+  id         String   @id @default(cuid())
+  pipelineId String
+  name       String
+  /// A key from STAGE_COLORS in lib/pipelines/colors.ts, e.g. "blue".
+  color      String   @default("gray")
+  position   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  pipeline Pipeline        @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  entries  PipelineEntry[]
+
+  @@unique([pipelineId, name])
+  @@index([pipelineId, position])
+}
+
+/// Where one contact sits in one pipeline. `updatedAt` moves with every stage change.
+model PipelineEntry {
+  id          String   @id @default(cuid())
+  workspaceId String
+  pipelineId  String
+  stageId     String
+  contactId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline  Pipeline      @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stage     PipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([pipelineId, contactId])
+  @@index([workspaceId, stageId])
+  @@index([contactId])
+}
+
 model Conversation {
-  id            String             @id @default(cuid())
-  workspaceId   String
-  channelId     String
-  contactId     String
-  externalId    String?
-  status        ConversationStatus @default(OPEN)
+  id                 String             @id @default(cuid())
+  workspaceId        String
+  channelId          String
+  contactId          String
+  externalId         String?
+  status             ConversationStatus @default(OPEN)
   /// Last INBOUND message time — the 24h messaging window is measured from this.
-  lastInboundAt DateTime?
-  lastMessageAt DateTime?
+  lastInboundAt      DateTime?
+  lastMessageAt      DateTime?
   lastMessagePreview String?
-  unreadCount   Int                @default(0)
-  assignedToId  String?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  unreadCount        Int                @default(0)
+  assignedToId       String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -506,24 +579,24 @@ model Message {
 // ───────────────────────── Broadcasts ─────────────────────────
 
 model Broadcast {
-  id          String          @id @default(cuid())
-  workspaceId String
-  channelId   String
-  name        String
+  id           String          @id @default(cuid())
+  workspaceId  String
+  channelId    String
+  name         String
   /// OutboundMessage shape — see lib/meta/types.ts
-  message     Json
+  message      Json
   /// { tags: string[], excludeTags: string[], onlyFollowers?: boolean }
-  audience    Json            @default("{}")
-  status      BroadcastStatus @default(DRAFT)
-  scheduledAt DateTime?
-  startedAt   DateTime?
-  completedAt DateTime?
-  targetCount Int             @default(0)
-  sentCount   Int             @default(0)
-  failedCount Int             @default(0)
-  skippedCount Int            @default(0)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  audience     Json            @default("{}")
+  status       BroadcastStatus @default(DRAFT)
+  scheduledAt  DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  targetCount  Int             @default(0)
+  sentCount    Int             @default(0)
+  failedCount  Int             @default(0)
+  skippedCount Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -552,7 +625,7 @@ model BillingEvent {
 /// Payment history shown on Settings → Billing.
 model Payment {
   id             String        @id @default(cuid())
-  workspaceId    String
+  organizationId String
   provider       String        @default("dodo")
   externalId     String        @unique
   subscriptionId String?
@@ -564,9 +637,9 @@ model Payment {
   paidAt         DateTime?
   createdAt      DateTime      @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@index([workspaceId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 // ───────────────────────── Segments ─────────────────────────
@@ -592,22 +665,22 @@ model Segment {
 // ───────────────────────── Delivery, links, logs ─────────────────────────
 
 model DeliveryLog {
-  id                String         @id @default(cuid())
-  workspaceId       String
-  channelId         String
-  automationId      String?
-  broadcastId       String?
-  contactId         String?
-  kind              DeliveryKind
-  status            DeliveryStatus
+  id                  String         @id @default(cuid())
+  workspaceId         String
+  channelId           String
+  automationId        String?
+  broadcastId         String?
+  contactId           String?
+  kind                DeliveryKind
+  status              DeliveryStatus
   /// The comment that triggered this (for dedupe: one private reply per comment).
-  commentExternalId String?
+  commentExternalId   String?
   recipientExternalId String?
-  recipientUsername String?
-  messagePreview    String?
-  errorMessage      String?
-  metaResponse      Json?
-  createdAt         DateTime       @default(now())
+  recipientUsername   String?
+  messagePreview      String?
+  errorMessage        String?
+  metaResponse        Json?
+  createdAt           DateTime       @default(now())
 
   workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   channel    Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)

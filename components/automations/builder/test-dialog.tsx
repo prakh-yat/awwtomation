@@ -132,7 +132,7 @@ export function TestDialog({ automationId, open, onOpenChange, settings, flow, m
                     {result.matches ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : <X className="h-3.5 w-3.5" strokeWidth={3} />}
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{result.matches ? "Match — this would trigger" : "No match"}</p>
+                    <p className="text-sm font-medium">{result.matches ? "Match. This would run the automation." : "No match"}</p>
                     <p className="text-[12px] text-muted-foreground">
                       {result.matches
                         ? result.matchedKeyword
@@ -162,7 +162,7 @@ export function TestDialog({ automationId, open, onOpenChange, settings, flow, m
                           {result.followGate ? " (after the follow check passes)" : ""}
                         </span>
                       ) : (
-                        <span className="text-warning">No message would be sent — the flow has no message step reachable from the trigger.</span>
+                        <span className="text-warning">No message would be sent. There&apos;s no message step connected to the trigger.</span>
                       )}
                     </div>
                   </div>
@@ -177,7 +177,7 @@ export function TestDialog({ automationId, open, onOpenChange, settings, flow, m
             accountAvatarUrl={accountAvatarUrl}
             contactText={result ? text : null}
             contactLabel={`Their ${subject}`}
-            emptyHint={result ? (result.matches ? "Nothing to send." : "No message — the text didn't match.") : "Run a test to preview the first message."}
+            emptyHint={result ? (result.matches ? "Nothing to send." : "No message. The text didn't match.") : "Run a test to preview the first message."}
           />
         </div>
       </DialogContent>

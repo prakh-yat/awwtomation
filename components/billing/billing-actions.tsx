@@ -52,7 +52,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
   const [resumePending, setResumePending] = React.useState(false);
 
   const state: ServiceState = overview.serviceState;
-  const disabledReason = !canManage ? "Only the workspace owner can change billing" : !overview.configured ? "Billing isn't configured yet" : null;
+  const disabledReason = !canManage ? "Only an owner of the organization can change billing" : !overview.configured ? "Billing isn't configured yet" : null;
 
   async function openPortal() {
     setPortalPending(true);
@@ -69,7 +69,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
     setResumePending(true);
     try {
       await apiFetch<BillingOverview>("/api/billing/resume", { method: "POST" });
-      toast.success("Cancellation reverted — your plan will keep renewing");
+      toast.success("Your plan will keep renewing");
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't resume the subscription"));
@@ -118,7 +118,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
           ) : null}
         </>
       )}
-      {!canManage ? <p className="basis-full text-xs text-muted-foreground">Only the workspace owner can change billing.</p> : null}
+      {!canManage ? <p className="basis-full text-xs text-muted-foreground">Only an owner of the organization can change billing.</p> : null}
     </div>
   );
 }
@@ -177,8 +177,8 @@ function CancelDialog({
           <DialogTitle>Cancel the {planLabel} plan?</DialogTitle>
           <DialogDescription>
             {endDate
-              ? `You keep everything until ${endDate}, then the workspace moves to Free limits. Nothing is refunded and you can resume any time before then.`
-              : "The workspace moves to Free limits at the end of the current period. You can resume any time before then."}
+              ? `You keep everything until ${endDate}, then the organization moves to Free limits. Nothing is refunded and you can resume any time before then.`
+              : "The organization moves to Free limits at the end of the current period. You can resume any time before then."}
           </DialogDescription>
         </DialogHeader>
 
@@ -204,7 +204,7 @@ function CancelDialog({
               id="cancel-comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Optional — this goes straight to the team."
+              placeholder="Optional. This goes straight to our team."
               rows={3}
               maxLength={500}
             />

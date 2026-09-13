@@ -54,13 +54,13 @@ export function PeriodControls({ days, channelId, channels }: PeriodControlsProp
 
   return (
     <div className={cn("flex items-center gap-2 transition-opacity", pending && "opacity-60")} aria-busy={pending || undefined}>
-      {channels.length > 0 ? (
+      {channels.length > 1 ? (
         <Select value={channelId ?? ALL_CHANNELS} onValueChange={(v) => navigate(days, v === ALL_CHANNELS ? null : v)}>
-          <SelectTrigger className="h-9 w-[190px]" aria-label="Channel">
-            <SelectValue placeholder="All channels" />
+          <SelectTrigger className="h-9 w-[200px]" aria-label="Account">
+            <SelectValue placeholder="All accounts" />
           </SelectTrigger>
           <SelectContent align="end">
-            <SelectItem value={ALL_CHANNELS}>All channels</SelectItem>
+            <SelectItem value={ALL_CHANNELS}>All accounts</SelectItem>
             {channels.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 <span className="flex items-center gap-2">

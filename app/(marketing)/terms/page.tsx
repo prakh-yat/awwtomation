@@ -34,10 +34,11 @@ export default function TermsPage() {
         policies.
       </p>
 
-      <h2>3. Accounts and workspaces</h2>
+      <h2>3. Accounts, organizations and workspaces</h2>
       <ul>
         <li>You must be at least 18 and provide accurate account information.</li>
-        <li>You are responsible for activity in your workspaces, including by team members you invite.</li>
+        <li>You are responsible for activity in your organizations and their workspaces, including by team members you invite.</li>
+        <li>Plans and billing apply to an organization and cover every workspace in it.</li>
         <li>You may only connect Instagram accounts and Facebook Pages that you own or are authorized to manage.</li>
         <li>Keep your Google sign-in secure. Notify us promptly at <a href={`mailto:${brand.supportEmail}`}>{brand.supportEmail}</a> if you suspect unauthorized access.</li>
       </ul>
@@ -66,8 +67,8 @@ export default function TermsPage() {
       <h2>6. Plans, billing and limits</h2>
       <ul>
         <li>Plans are described on the <Link href="/pricing">pricing page</Link>. Limits (channels, automations, monthly DMs, team members) are enforced automatically; messages beyond your DM limit are not sent.</li>
-        <li>Paid plans are billed monthly in advance. Prices exclude taxes, which we add where required.</li>
-        <li>You can upgrade, downgrade or cancel at any time from Settings. Downgrades take effect at the end of the current billing period; upgrades apply immediately.</li>
+        <li>Paid plans are billed monthly or yearly in advance, depending on the option you choose. Prices exclude taxes, which we add where required.</li>
+        <li>You can upgrade, downgrade or cancel at any time from Settings. Upgrades and downgrades apply immediately: an upgrade charges the difference for the rest of the billing period, and a downgrade credits unused time to your billing balance for future invoices. Cancelling keeps your plan until the end of the period you have paid for.</li>
         <li>Fees are non-refundable except where required by law or stated otherwise in writing.</li>
         <li>We may change prices with at least 30 days&apos; notice by email.</li>
       </ul>
@@ -89,7 +90,7 @@ export default function TermsPage() {
 
       <h2>9. Termination</h2>
       <p>
-        You may delete your workspace or account at any time. We may suspend or terminate the Service for material
+        You may delete a workspace, an organization or your account at any time. We may suspend or terminate the Service for material
         breach of these Terms, for legal reasons, or if we discontinue the Service (with reasonable notice). On
         termination your data is deleted as described in the <Link href="/data-deletion">data deletion page</Link>.
       </p>

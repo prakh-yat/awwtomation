@@ -53,13 +53,13 @@ export function toBillingError(err: unknown, context: string): ApiError {
         return new ApiError(400, "The billing provider rejected the request", "BILLING_BAD_REQUEST");
       case 401:
       case 403:
-        return new ApiError(503, "Billing is misconfigured — please contact support", "BILLING_MISCONFIGURED");
+        return new ApiError(503, "Billing isn't available right now. Please contact support.", "BILLING_MISCONFIGURED");
       case 404:
         return new ApiError(404, "Billing record not found", "BILLING_NOT_FOUND");
       case 409:
         return new ApiError(409, "That change conflicts with the current subscription state", "BILLING_CONFLICT");
       case 429:
-        return new ApiError(429, "Too many billing requests — try again in a moment", "BILLING_RATE_LIMITED");
+        return new ApiError(429, "Too many requests. Try again in a moment.", "BILLING_RATE_LIMITED");
       default:
         return new ApiError(502, "The billing provider is having trouble. Please try again.", "BILLING_UNAVAILABLE");
     }

@@ -14,6 +14,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { shiftDayKey, zonedDayKey, zonedDayStart } from "@/lib/services/links";
 import { ApiError } from "@/lib/workspace/api";
+import { customerReason, deliveryReason } from "@/lib/errors/customer-messages";
 
 // ───────────────────────── Limits ─────────────────────────
 
@@ -80,12 +81,12 @@ export type DeliveryLogItem = {
   kind: DeliveryKind;
   status: DeliveryStatus;
   createdAt: string;
-  commentExternalId: string | null;
-  recipientExternalId: string | null;
   recipientUsername: string | null;
   messagePreview: string | null;
-  errorMessage: string | null;
-  metaResponse: Prisma.JsonValue | null;
+  /** Plain-language reason for a skip or failure; null when sent. */
+  reason: string | null;
+  /** One or two sentences on what happened and what to do; null when sent. */
+  reasonDetail: string | null;
   channel: { id: string; platform: ChannelPlatform; username: string | null; name: string | null };
   automation: { id: string; name: string } | null;
   broadcast: { id: string; name: string } | null;
@@ -168,12 +169,9 @@ const logSelect = {
   kind: true,
   status: true,
   createdAt: true,
-  commentExternalId: true,
-  recipientExternalId: true,
   recipientUsername: true,
   messagePreview: true,
   errorMessage: true,
-  metaResponse: true,
   channel: { select: { id: true, platform: true, username: true, name: true } },
   automation: { select: { id: true, name: true } },
   broadcast: { select: { id: true, name: true } },
@@ -188,12 +186,10 @@ function toItem(row: LogRow): DeliveryLogItem {
     kind: row.kind,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
-    commentExternalId: row.commentExternalId,
-    recipientExternalId: row.recipientExternalId,
     recipientUsername: row.recipientUsername ?? row.contact?.username ?? null,
     messagePreview: row.messagePreview,
-    errorMessage: row.errorMessage,
-    metaResponse: row.metaResponse ?? null,
+    reason: customerReason(row.status, row.errorMessage),
+    reasonDetail: row.status === "SENT" ? null : deliveryReason(row.status, row.errorMessage).description,
     channel: row.channel,
     automation: row.automation,
     broadcast: row.broadcast,
@@ -276,18 +272,15 @@ export async function listLogFilterOptions(workspaceId: string): Promise<LogFilt
 
 const CSV_HEADER = [
   "time_utc",
-  "kind",
-  "status",
-  "recipient_username",
-  "recipient_id",
+  "type",
+  "outcome",
+  "reason",
+  "recipient",
   "channel",
   "platform",
   "automation",
   "broadcast",
-  "message_preview",
-  "error",
-  "comment_id",
-  "meta_response",
+  "message",
 ] as const;
 
 /** RFC 4180 quoting plus a guard against spreadsheet formula injection (`=cmd()`). */
@@ -304,16 +297,13 @@ function csvRow(item: DeliveryLogItem): string {
     item.createdAt,
     item.kind,
     item.status,
+    item.reason,
     item.recipientUsername,
-    item.recipientExternalId,
     channelLabel,
     item.channel.platform,
     item.automation?.name ?? null,
     item.broadcast?.name ?? null,
     item.messagePreview,
-    item.errorMessage,
-    item.commentExternalId,
-    item.metaResponse === null ? null : JSON.stringify(item.metaResponse),
   ]
     .map(csvCell)
     .join(",");

@@ -6,15 +6,13 @@ import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { DeliveryLogItem } from "@/lib/services/logs";
 import { cn, truncate } from "@/lib/utils";
 
 import { formatLogTime, formatLogTimeLong, recipientHandle } from "./format";
 import { KIND_LABELS, STATUS_LABELS, STATUS_SHORT_LABELS, statusVariant } from "./labels";
 
-const PREVIEW_MAX = 60;
-const ERROR_MAX = 48;
+const PREVIEW_MAX = 80;
 
 export interface LogRowProps {
   item: DeliveryLogItem;
@@ -23,7 +21,7 @@ export interface LogRowProps {
   onToggle: (id: string) => void;
 }
 
-function SourceCell({ item }: { item: DeliveryLogItem }) {
+function SourceLink({ item }: { item: DeliveryLogItem }) {
   if (item.automation) {
     return (
       <Link
@@ -54,21 +52,20 @@ function SourceCell({ item }: { item: DeliveryLogItem }) {
 function Detail({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-[13px]">{children}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 break-words text-[13px] text-foreground">{children}</dd>
     </div>
   );
 }
 
 /**
- * Two physical rows: the summary line, and (when expanded) a detail panel
- * spanning every column. Keeping them as siblings preserves the table's
- * hairline borders without nesting tables.
+ * Summary row plus an optional detail row spanning every column. Everything
+ * shown here is the customer's own activity in their own words — no internal
+ * ids, raw platform errors or API payloads ever reach this component.
  */
 export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
-  const recipient = recipientHandle(item.recipientUsername, item.contact?.name, item.recipientExternalId);
-  const channelLabel = item.channel.username ? `@${item.channel.username}` : (item.channel.name ?? item.channel.id);
-  const metaJson = item.metaResponse === null ? null : JSON.stringify(item.metaResponse, null, 2);
+  const recipient = recipientHandle(item.recipientUsername, item.contact?.name);
+  const channelLabel = item.channel.username ? `@${item.channel.username}` : (item.channel.name ?? "Channel");
 
   return (
     <>
@@ -90,18 +87,23 @@ export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
         </TableCell>
         <TableCell className="whitespace-nowrap tabular-nums text-muted-foreground" title={formatLogTimeLong(item.createdAt, timezone)}>
           {formatLogTime(item.createdAt, timezone)}
+          {/* Phones drop the recipient column, so the handle rides along under the time. */}
+          <span className="mt-0.5 block max-w-[150px] truncate text-[12px] text-foreground sm:hidden">{recipient}</span>
         </TableCell>
-        <TableCell>
-          <Badge variant="outline">{KIND_LABELS[item.kind]}</Badge>
-        </TableCell>
+        <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">{KIND_LABELS[item.kind]}</TableCell>
         <TableCell>
           <Badge variant={statusVariant(item.status)} title={STATUS_LABELS[item.status]}>
             {STATUS_SHORT_LABELS[item.status]}
           </Badge>
+          {item.status === "FAILED" && item.reason ? (
+            <span className="mt-1 block max-w-[160px] truncate text-[11px] text-muted-foreground" title={item.reason}>
+              {item.reason}
+            </span>
+          ) : null}
         </TableCell>
-        <TableCell className="max-w-[180px]">
+        <TableCell className="hidden max-w-[180px] sm:table-cell">
           <div className="flex items-center gap-1.5">
-            <PlatformIcon platform={item.channel.platform} size={13} className="text-muted-foreground" />
+            <PlatformIcon platform={item.channel.platform} size={13} className="shrink-0 text-muted-foreground" />
             {item.contact ? (
               <Link
                 href={`/contacts/${item.contact.id}`}
@@ -118,79 +120,46 @@ export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
             )}
           </div>
         </TableCell>
-        <TableCell className="max-w-[200px]">
+        <TableCell className="hidden max-w-[200px] lg:table-cell">
           <div className="flex min-w-0">
-            <SourceCell item={item} />
+            <SourceLink item={item} />
           </div>
         </TableCell>
-        <TableCell className="max-w-[260px] text-muted-foreground">
+        <TableCell className="hidden max-w-[360px] text-muted-foreground xl:table-cell">
           {item.messagePreview ? (
             <span className="block truncate" title={item.messagePreview}>
               {truncate(item.messagePreview, PREVIEW_MAX)}
             </span>
           ) : (
-            <span className="text-muted-foreground/60">—</span>
-          )}
-        </TableCell>
-        <TableCell className="max-w-[220px]">
-          {item.errorMessage ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn("block truncate", item.status === "FAILED" ? "text-destructive" : "text-muted-foreground")}>
-                  {truncate(item.errorMessage, ERROR_MAX)}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="left" className="max-w-sm whitespace-pre-wrap break-words">
-                {item.errorMessage}
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <span className="text-muted-foreground/60">—</span>
+            <span className="text-muted-foreground/50">—</span>
           )}
         </TableCell>
       </TableRow>
 
       {expanded ? (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={8} className="px-4 py-4">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-                <Detail label="Time">{formatLogTimeLong(item.createdAt, timezone)}</Detail>
-                <Detail label="Channel">
-                  <span className="inline-flex items-center gap-1.5">
-                    <PlatformIcon platform={item.channel.platform} size={13} className="text-muted-foreground" />
-                    {channelLabel}
-                  </span>
+          <TableCell colSpan={7} className="px-4 py-4">
+            <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Detail label="Time">{formatLogTimeLong(item.createdAt, timezone)}</Detail>
+              <Detail label="Account">
+                <span className="inline-flex items-center gap-1.5">
+                  <PlatformIcon platform={item.channel.platform} size={13} className="text-muted-foreground" />
+                  {channelLabel}
+                </span>
+              </Detail>
+              <Detail label="Recipient">{recipient}</Detail>
+              <Detail label="Sent by">
+                <SourceLink item={item} />
+              </Detail>
+              <Detail label="Message" className="sm:col-span-2">
+                {item.messagePreview ? <span className="whitespace-pre-wrap">{item.messagePreview}</span> : "—"}
+              </Detail>
+              {item.reasonDetail ? (
+                <Detail label={item.status === "FAILED" ? "What went wrong" : "Why it wasn't sent"} className="sm:col-span-2">
+                  <span className="text-muted-foreground">{item.reasonDetail}</span>
                 </Detail>
-                <Detail label="Recipient id">
-                  <span className="font-mono text-xs">{item.recipientExternalId ?? "—"}</span>
-                </Detail>
-                <Detail label="Comment id">
-                  <span className="font-mono text-xs">{item.commentExternalId ?? "—"}</span>
-                </Detail>
-                <Detail label="Message" className="col-span-2">
-                  {item.messagePreview ? <span className="whitespace-pre-wrap">{item.messagePreview}</span> : "—"}
-                </Detail>
-                {item.errorMessage ? (
-                  <Detail label="Error" className="col-span-2">
-                    <span className={cn("whitespace-pre-wrap", item.status === "FAILED" && "text-destructive")}>{item.errorMessage}</span>
-                  </Detail>
-                ) : null}
-                <Detail label="Log id" className="col-span-2">
-                  <span className="font-mono text-xs text-muted-foreground">{item.id}</span>
-                </Detail>
-              </dl>
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Meta response</p>
-                {metaJson ? (
-                  <pre className="mt-1 max-h-64 overflow-auto rounded-md border bg-background p-3 font-mono text-xs leading-relaxed scrollbar-thin">
-                    {metaJson}
-                  </pre>
-                ) : (
-                  <p className="mt-1 text-[13px] text-muted-foreground">No response recorded — the message never reached Meta.</p>
-                )}
-              </div>
-            </div>
+              ) : null}
+            </dl>
           </TableCell>
         </TableRow>
       ) : null}

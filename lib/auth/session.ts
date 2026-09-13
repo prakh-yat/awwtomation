@@ -4,7 +4,6 @@ import { cache } from "react";
 
 import { devAuthEmail } from "@/lib/auth/dev";
 import { prisma } from "@/lib/db";
-import { superAdminEmails } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { clearActiveWorkspaceCookie } from "@/lib/workspace/cookie";
@@ -13,7 +12,17 @@ function pickString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-type GoogleProfile = { email: string; name: string | null; avatarUrl: string | null; isSuperAdmin: boolean };
+/** "vikas.shrestha@example.com" -> "Vikas Shrestha", so the dev sign-in shows a real-looking name. */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+type GoogleProfile = { email: string; name: string | null; avatarUrl: string | null };
 
 /**
  * Mirrors the Supabase user into our `User` table.
@@ -30,8 +39,7 @@ async function syncUser(supabaseId: string, profile: GoogleProfile): Promise<Use
     const changed =
       existing.email !== profile.email ||
       existing.name !== profile.name ||
-      existing.avatarUrl !== profile.avatarUrl ||
-      existing.isSuperAdmin !== profile.isSuperAdmin;
+      existing.avatarUrl !== profile.avatarUrl;
     if (!changed) return existing;
     return prisma.user.update({ where: { id: existing.id }, data: profile });
   }
@@ -58,9 +66,8 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
   if (devEmail) {
     return syncUser(`dev:${devEmail}`, {
       email: devEmail,
-      name: "Local Developer",
+      name: process.env.DEV_AUTH_NAME?.trim() || nameFromEmail(devEmail),
       avatarUrl: null,
-      isSuperAdmin: superAdminEmails().includes(devEmail),
     });
   }
 
@@ -84,7 +91,6 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     email,
     name: pickString(meta.full_name) ?? pickString(meta.name) ?? null,
     avatarUrl: pickString(meta.avatar_url) ?? pickString(meta.picture) ?? null,
-    isSuperAdmin: superAdminEmails().includes(email),
   };
 
   try {

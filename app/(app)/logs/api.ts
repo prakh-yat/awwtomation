@@ -1,5 +1,6 @@
 "use client";
 
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
 import type { DeliveryLogListResult, LogStats } from "@/lib/services/logs";
 
 import { type LogFilterState, logFiltersToSearchParams } from "./filters";
@@ -46,6 +47,7 @@ export const logsApi = {
   },
 };
 
+/** API messages are already customer copy; transport failures and anything technical get translated. */
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }

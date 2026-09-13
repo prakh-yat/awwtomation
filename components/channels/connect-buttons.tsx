@@ -28,7 +28,7 @@ export function ConnectButtons({ configured, size = "default", className }: Conn
           </a>
         </Button>
       ) : (
-        <Button size={size} disabled title="Instagram Login is not configured on this server">
+        <Button size={size} disabled title="Instagram connections are unavailable right now">
           <PlatformIcon platform="INSTAGRAM" />
           Connect Instagram
         </Button>
@@ -41,7 +41,7 @@ export function ConnectButtons({ configured, size = "default", className }: Conn
           </a>
         </Button>
       ) : (
-        <Button size={size} variant="outline" disabled title="Facebook Login is not configured on this server">
+        <Button size={size} variant="outline" disabled title="Facebook connections are unavailable right now">
           <PlatformIcon platform="FACEBOOK" />
           Connect Facebook Page
         </Button>

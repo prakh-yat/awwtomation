@@ -8,16 +8,16 @@ Someone comments `LINK` on a reel → they get a DM with your link a second late
 
 | Area | What it does |
 |---|---|
-| **Automations** | Keyword / any-comment / DM / story-reply triggers on specific posts or all posts. Visual flow builder (React Flow): Trigger → Message (up to 3 buttons) → Follow gate → Delay → Tag. Public reply variants. Once-per-contact. Templates. Per-automation analytics. |
+| **Dashboard & analytics** | Daily overview (trend against the previous period, what needs attention, plan usage, top automations, latest conversations) and a full analytics report: people funnel, busiest times, keywords, per-account and per-automation tables, CSV export. |
+| **Automations** | Keyword / any-comment / DM / story-reply triggers on specific posts or all posts. Visual flow builder (React Flow): Trigger → Message (up to 3 buttons) → Ask a question → Follow gate → Delay → Tag → Add to pipeline / Move stage / Remove from pipeline. New automations open on an empty canvas; templates are one click away. Public reply variants. Once-per-contact. Templates. Per-automation analytics. |
 | **Inbox** | Unified Instagram + Messenger live chat. 24-hour window indicator, human-agent 7-day mode, assignment, automated-message badges, link buttons. |
-| **Contacts** | Everyone who interacted: tags, custom fields, follower status, opt-out, timeline, CSV export, bulk tagging. **Segments**: saved filters (channel, tags all/any, followers, last interaction, opt-out) that broadcasts can target. |
+| **Contacts (CRM)** | Everyone who interacted, plus people added by hand or CSV import. Paginated list. **Pipelines**: as many as you need per workspace, each with its own coloured stages; view all contacts or one pipeline (stage tabs, list or drag-and-drop board). Owners, notes, tags, custom fields, follower status, opt-out, activity timeline, bulk stage/owner/tag changes, CSV import (into a pipeline) and export. **Segments**: saved filters (account, tags all/any, pipeline and stage, owner, source, followers, last activity, opt-out) that broadcasts can target. |
 | **Broadcasts** | Send to a tagged audience — only contacts inside Meta's 24h window are eligible, and the UI shows the live count. Scheduling. |
 | **Channels** | Connect Instagram professional accounts (Instagram Login) and Facebook Pages (Facebook Login). Token health, webhook status, post cache. *Disconnect* keeps history; **Delete channel & data** (owner only) purges the channel and everything under it — the same cascade Meta's data-deletion callback runs. |
 | **Tracked links** | `/l/{slug}` redirects with click attribution to contact + automation. |
-| **Logs** | Every send, skip and failure with the Meta response and a plain-English reason. |
-| **Workspaces & team** | Owner / Admin / Member roles, invite links, workspace switcher. |
+| **Logs** | Every send, skip and failure with a plain-English reason (the raw Meta response stays in the database and server logs). |
+| **Organizations, workspaces & team** | An organization is the billable account: it holds the plan, the team (Owner / Admin / Member) and any number of workspaces (brands or clients). Switch or create organizations from the account menu, switch workspaces from the sidebar. Invite links. |
 | **Plans & usage** | FREE / STARTER / PRO / AGENCY with DM, channel, automation and seat caps enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation) — see [docs/BILLING.md](docs/BILLING.md). |
-| **Admin** | Super-admin panel: all workspaces, plan overrides, job queue, webhook events, health. |
 | **Marketing site** | Landing, pricing, privacy, terms, data-deletion (required for Meta App Review). |
 
 Branding is pure black & white; the product name lives in `lib/brand.ts`.
@@ -35,7 +35,7 @@ cp .env.example .env        # keep the "Local development" block: DATABASE_URL o
 npm install
 npm run db:local            # terminal 1 — embedded Postgres (PGlite), data in .local-db/
 npx prisma db push          # create the tables
-npm run db:seed             # demo workspace with channels, contacts, logs, analytics
+npm run db:seed             # demo organizations and workspaces with channels, contacts, pipelines, logs, analytics
 npm run dev                 # http://localhost:3000 — signed in as DEV_AUTH_EMAIL
 npm run worker              # terminal 2 — sends the DMs
 ```
@@ -60,10 +60,9 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | `META_APP_ID`, `META_APP_SECRET` | for Facebook + webhooks | Facebook app credentials. |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | for Instagram | Instagram Login product credentials (different from the app id). |
 | `META_WEBHOOK_VERIFY_TOKEN` | yes | Any string; paste the same into Meta's webhook config. |
-| `SUPER_ADMIN_EMAILS` | recommended | Comma-separated; unlocks `/admin`. |
 | `META_GRAPH_API_VERSION` | no | Defaults to `v25.0`. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | Invites work as links without email. |
-| `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them every workspace stays on FREE. |
+| `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them every organization stays on FREE. |
 | `DEV_AUTH_EMAIL` | dev only | Sign in as this email without Supabase. Ignored unless `NODE_ENV=development`. |
 
 `NEXT_PUBLIC_*` values are inlined at build time — change them and rebuild.

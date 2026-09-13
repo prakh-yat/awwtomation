@@ -48,8 +48,18 @@ export type BuilderAction =
   | { type: "nodesChange"; changes: NodeChange<BuilderNode>[] }
   | { type: "edgesChange"; changes: EdgeChange<BuilderEdge>[] }
   | { type: "connect"; connection: Connection }
-  | { type: "addNode"; nodeType: AddableNodeType }
+  /**
+   * Adds a step. `after` wires it from that node's handle (inserting it before
+   * whatever the handle pointed at); without it the step goes after the
+   * selected node. `data` pre-fills it, e.g. with the first pipeline.
+   */
+  | { type: "addNode"; nodeType: AddableNodeType; data?: FlowNodeData; after?: { nodeId: string; handle: string } }
   | { type: "updateNodeData"; id: string; data: FlowNodeData; handleRemap?: Record<string, string | null> }
+  /**
+   * Moves nodes to new positions. `rebaseline` (used when a crowded layout is
+   * tidied on open) keeps a clean flow clean: tidying isn't an edit to save.
+   */
+  | { type: "arrange"; positions: Record<string, { x: number; y: number }>; rebaseline?: boolean }
   | { type: "removeNode"; id: string }
   | { type: "removeEdge"; id: string }
   | { type: "select"; id: string | null }
@@ -174,10 +184,103 @@ function edgeFromHandle(edges: BuilderEdge[], source: string, handle: string): B
   return edges.find((e) => e.source === source && normalizeHandle(e.sourceHandle) === normalizeHandle(handle));
 }
 
+/** The last step on the main path (next, or "following" on a follow gate) whose way out is still free. */
+function endOfMainPath(nodes: BuilderNode[], edges: BuilderEdge[]): BuilderNode | undefined {
+  const trigger = nodes.find((n) => n.data.type === "trigger");
+  const seen = new Set<string>();
+  let cursor = trigger;
+  while (cursor && !seen.has(cursor.id)) {
+    seen.add(cursor.id);
+    const handles = allowedHandles(cursor.data);
+    const primary = handles.includes("next") ? "next" : handles[0];
+    const edge = primary ? edgeFromHandle(edges, cursor.id, primary) : undefined;
+    if (!edge) return cursor;
+    cursor = nodes.find((n) => n.id === edge.target);
+  }
+  return trigger;
+}
+
 // ───────────────────────── Node factories ─────────────────────────
 
-const NODE_WIDTH = 240;
-const STEP_Y = 170;
+export const NODE_WIDTH = 272;
+const STEP_Y = 200;
+const STEP_X = NODE_WIDTH + 72;
+/** Vertical space between a step and the row below it. */
+const ROW_GAP = 64;
+const COLUMN_GAP = 48;
+
+type Box = { id: string; x: number; y: number; w: number; h: number };
+
+function boxesOf(nodes: BuilderNode[]): Box[] {
+  return nodes.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_WIDTH, h: n.measured?.height ?? 140 }));
+}
+
+/** True when two steps overlap or sit closer than `gap`. */
+export function hasCrowdedNodes(nodes: BuilderNode[], gap = 12): boolean {
+  const boxes = boxesOf(nodes);
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i];
+      const b = boxes[j];
+      if (a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap) return true;
+    }
+  }
+  return false;
+}
+
+const snap = (v: number) => Math.round(v / 8) * 8;
+
+/**
+ * Rows by distance from the trigger (the first way each step is reached), each
+ * row placed below the tallest step of the row above. Steps keep their left to
+ * right order and roughly their x, pushed apart where they would touch.
+ * Steps nothing leads to go in a last row.
+ */
+export function tidyPositions(nodes: BuilderNode[], edges: BuilderEdge[]): Record<string, { x: number; y: number }> {
+  const boxes = boxesOf(nodes);
+  const root = nodes.find((n) => n.data.type === "trigger");
+  if (!root) return {};
+  const depth = new Map<string, number>([[root.id, 0]]);
+  const queue = [root.id];
+  while (queue.length > 0) {
+    const id = queue.shift() as string;
+    const outgoing = edges.filter((e) => e.source === id).sort((a, b) => handleOrder(a.sourceHandle) - handleOrder(b.sourceHandle));
+    for (const e of outgoing) {
+      if (depth.has(e.target) || !boxes.some((b) => b.id === e.target)) continue;
+      depth.set(e.target, (depth.get(id) ?? 0) + 1);
+      queue.push(e.target);
+    }
+  }
+  const last = Math.max(0, ...depth.values()) + 1;
+  const rows = new Map<number, Box[]>();
+  for (const b of boxes) {
+    const d = depth.get(b.id) ?? last;
+    rows.set(d, [...(rows.get(d) ?? []), b]);
+  }
+
+  const positions: Record<string, { x: number; y: number }> = {};
+  let y = root.position.y;
+  for (const d of [...rows.keys()].sort((a, b) => a - b)) {
+    const row = (rows.get(d) ?? []).sort((a, b) => a.x - b.x);
+    let minX = -Infinity;
+    for (const b of row) {
+      const x = Math.max(b.x, minX);
+      positions[b.id] = { x: snap(x), y: snap(y) };
+      minX = x + b.w + COLUMN_GAP;
+    }
+    y += Math.max(...row.map((b) => b.h)) + ROW_GAP;
+  }
+  return positions;
+}
+
+/** "next" and "yes" first, then buttons and quick replies in order, "no" last: the reading order of a flow. */
+function handleOrder(handle: string | null | undefined): number {
+  const h = normalizeHandle(handle);
+  if (h === "next" || h === "yes") return 0;
+  if (h === "no") return 900;
+  const n = Number(h.split(":")[1]);
+  return Number.isFinite(n) ? 1 + n : 500;
+}
 
 export function newNodeData(type: AddableNodeType): FlowNodeData {
   switch (type) {
@@ -193,7 +296,23 @@ export function newNodeData(type: AddableNodeType): FlowNodeData {
       return { type, tag: "" };
     case "remove_tag":
       return { type, tag: "" };
+    case "add_to_pipeline":
+    case "move_stage":
+      return { type, pipelineId: "", stageId: "" };
+    case "remove_from_pipeline":
+      return { type, pipelineId: "" };
   }
+}
+
+/** A new step's data with the first pipeline (and a sensible stage) already picked, so it works without extra clicks. */
+export function prefilledNodeData(type: AddableNodeType, pipelines: ReadonlyArray<{ id: string; stages: ReadonlyArray<{ id: string }> }>): FlowNodeData {
+  const data = newNodeData(type);
+  const first = pipelines[0];
+  if (!first) return data;
+  if (data.type === "add_to_pipeline") return { ...data, pipelineId: first.id, stageId: first.stages[0]?.id ?? "" };
+  if (data.type === "move_stage") return { ...data, pipelineId: first.id, stageId: first.stages[1]?.id ?? first.stages[0]?.id ?? "" };
+  if (data.type === "remove_from_pipeline") return { ...data, pipelineId: first.id };
+  return data;
 }
 
 const ID_PREFIX: Record<AddableNodeType, string> = {
@@ -203,6 +322,9 @@ const ID_PREFIX: Record<AddableNodeType, string> = {
   delay: "delay",
   add_tag: "tag",
   remove_tag: "untag",
+  add_to_pipeline: "pipeline",
+  move_stage: "stage",
+  remove_from_pipeline: "unpipeline",
 };
 
 function uniqueId(prefix: string, taken: Set<string>): string {
@@ -213,18 +335,32 @@ function uniqueId(prefix: string, taken: Set<string>): string {
   return `${prefix}-${Date.now().toString(36)}`;
 }
 
-/** Slot below the anchor; shifts right while another node already sits there. */
-function placeBelow(anchor: BuilderNode | undefined, nodes: BuilderNode[]): { x: number; y: number } {
+/**
+ * Slot for a step leaving `anchor` by `handle`: below for "next" and
+ * "following", below and to the right for "not following", beside for button
+ * and quick-reply branches. Shifts right while another node already sits there.
+ */
+function placeAfter(anchor: BuilderNode | undefined, nodes: BuilderNode[], handle = "next", avoidOverlap = true): { x: number; y: number } {
   if (!anchor) {
     const bottom = nodes.reduce((max, n) => Math.max(max, n.position.y), 0);
     return { x: 0, y: bottom + STEP_Y };
   }
-  const candidate = { x: anchor.position.x, y: anchor.position.y + STEP_Y };
+  const h = normalizeHandle(handle);
+  // Below the anchor's real height once React Flow has measured it, so tall messages don't get covered.
+  const below = anchor.position.y + Math.max(STEP_Y, (anchor.measured?.height ?? 0) + ROW_GAP);
+  const candidate =
+    h.startsWith("btn:") || h.startsWith("qr:")
+      ? { x: anchor.position.x + STEP_X, y: anchor.position.y + (Number(h.split(":")[1]) || 0) * 64 }
+      : h === "no"
+        ? { x: anchor.position.x + STEP_X / 2, y: below }
+        : h === "yes"
+          ? { x: anchor.position.x - STEP_X / 2, y: below }
+          : { x: anchor.position.x, y: below };
   const occupied = (p: { x: number; y: number }) =>
     nodes.some((n) => Math.abs(n.position.x - p.x) < NODE_WIDTH && Math.abs(n.position.y - p.y) < STEP_Y * 0.6);
   let tries = 0;
-  while (occupied(candidate) && tries < 8) {
-    candidate.x += NODE_WIDTH + 40;
+  while (avoidOverlap && occupied(candidate) && tries < 8) {
+    candidate.x += STEP_X;
     tries++;
   }
   return candidate;
@@ -272,16 +408,35 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
     case "addNode": {
       const taken = new Set(state.nodes.map((n) => n.id));
       const id = uniqueId(ID_PREFIX[action.nodeType], taken);
-      const anchor = state.nodes.find((n) => n.id === state.selectedNodeId) ?? state.nodes.find((n) => n.data.type === "trigger");
-      const position = placeBelow(anchor, state.nodes);
-      const node: BuilderNode = { id, type: action.nodeType, position, data: newNodeData(action.nodeType), deletable: true, selected: true };
+      const anchor = action.after
+        ? state.nodes.find((n) => n.id === action.after?.nodeId)
+        : (state.nodes.find((n) => n.id === state.selectedNodeId) ?? endOfMainPath(state.nodes, state.edges));
+      const data = action.data?.type === action.nodeType ? action.data : newNodeData(action.nodeType);
+      let edges = [...state.edges];
 
-      // Auto-wire from the anchor's first free handle so a new step is reachable straight away.
-      const edges = [...state.edges];
-      if (anchor) {
-        const free = allowedHandles(anchor.data).find((h) => !edgeFromHandle(edges, anchor.id, h));
-        if (free) edges.push({ ...EDGE_DEFAULTS, id: `e-${anchor.id}-${free}-${id}`, source: anchor.id, target: id, sourceHandle: free });
+      // Wire from the requested handle, or the anchor's first free one, so a new step is reachable straight away.
+      const handle = anchor
+        ? action.after && allowedHandles(anchor.data).includes(normalizeHandle(action.after.handle))
+          ? normalizeHandle(action.after.handle)
+          : allowedHandles(anchor.data).find((h) => !edgeFromHandle(edges, anchor.id, h))
+        : undefined;
+      const existing = anchor && handle ? edgeFromHandle(edges, anchor.id, handle) : undefined;
+
+      if (anchor && handle && existing) {
+        // Inserting on a handle that already leads somewhere puts the new step in between
+        // and moves everything from that row down to make room.
+        const position = placeAfter(anchor, state.nodes, handle, false);
+        const node: BuilderNode = { id, type: action.nodeType, position, data, deletable: true, selected: true };
+        const moved = state.nodes.map((n) => (n.id !== anchor.id && n.position.y >= position.y - STEP_Y * 0.4 ? { ...n, position: { x: n.position.x, y: n.position.y + STEP_Y } } : n));
+        edges = edges.filter((e) => e.id !== existing.id);
+        edges.push({ ...EDGE_DEFAULTS, id: `e-${anchor.id}-${handle}-${id}`, source: anchor.id, target: id, sourceHandle: handle });
+        edges.push({ ...EDGE_DEFAULTS, id: `e-${id}-next-${existing.target}`, source: id, target: existing.target, sourceHandle: "next" });
+        return { ...state, nodes: [...withSelection(moved, null), node], edges, selectedNodeId: id };
       }
+
+      const position = placeAfter(anchor, state.nodes, handle);
+      const node: BuilderNode = { id, type: action.nodeType, position, data, deletable: true, selected: true };
+      if (anchor && handle) edges.push({ ...EDGE_DEFAULTS, id: `e-${anchor.id}-${handle}-${id}`, source: anchor.id, target: id, sourceHandle: handle });
       return { ...state, nodes: [...withSelection(state.nodes, null), node], edges, selectedNodeId: id };
     }
 
@@ -302,6 +457,12 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         edges.push(mapped === current ? e : { ...e, sourceHandle: mapped });
       }
       return { ...state, nodes, edges };
+    }
+
+    case "arrange": {
+      const nodes = state.nodes.map((n) => (action.positions[n.id] ? { ...n, position: action.positions[n.id] } : n));
+      const wasClean = snapshot(state.settings, state.nodes, state.edges) === state.savedSnapshot;
+      return { ...state, nodes, savedSnapshot: action.rebaseline && wasClean ? snapshot(state.settings, nodes, state.edges) : state.savedSnapshot };
     }
 
     case "removeNode": {
@@ -350,7 +511,7 @@ export function nodeErrorsFrom(errors: string[], nodes: BuilderNode[]): Map<stri
   return map;
 }
 
-export const SAMPLE_VARS: Record<string, string> = { username: "@jane_doe", name: "Jane Doe", first_name: "Jane" };
+export const SAMPLE_VARS: Record<string, string> = { username: "@sita.rai", name: "Sita Rai", first_name: "Sita" };
 
 export function renderPreviewMessage(message: OutboundMessage, vars: Record<string, string> = SAMPLE_VARS): OutboundMessage {
   return {
@@ -362,8 +523,8 @@ export function renderPreviewMessage(message: OutboundMessage, vars: Record<stri
 }
 
 export function followPromptMessage(retryPrompt: string | undefined, accountHandle: string): OutboundMessage {
-  const text = retryPrompt?.trim() || `Looks like you're not following ${accountHandle} yet. Follow, then tap the button below to continue 👇`;
-  return { text, buttons: [{ type: "postback", title: "I'm following ✓", payload: "follow_check" }] };
+  const text = retryPrompt?.trim() || `It looks like you're not following ${accountHandle} yet. Follow, then tap the button below to continue.`;
+  return { text, buttons: [{ type: "postback", title: "I'm following", payload: "follow_check" }] };
 }
 
 /**

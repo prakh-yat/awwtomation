@@ -3,9 +3,9 @@ import {
   type BillingStatus,
   type PaymentStatus,
   type PlanSource,
+  type Organization,
   type PlanTier,
   Prisma,
-  type Workspace,
 } from "@prisma/client";
 import type DodoPayments from "dodopayments";
 import { z } from "zod";
@@ -19,7 +19,6 @@ import {
   requireProductId,
   resolvePlanFromProductId,
   type DodoMode,
-  type ProductEnvName,
 } from "@/lib/billing/dodo/config";
 import {
   type NormalizedPayment,
@@ -47,14 +46,15 @@ import {
 import { prisma } from "@/lib/db";
 import { appUrl } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { recordAudit } from "@/lib/services/workspaces";
+import { recordAudit } from "@/lib/services/audit";
 import { ApiError } from "@/lib/workspace/api";
 
 /**
- * Dodo Payments subscription lifecycle. Every function takes the workspace id
- * first and scopes its writes by it; provider ids (`sub_…`, `cus_…`) are only
- * ever trusted after they have been tied to a workspace through a verified
- * webhook or an API call made with our own secret key.
+ * Dodo Payments subscription lifecycle. Plans belong to organizations: every
+ * function takes the organization id first and scopes its writes by it;
+ * provider ids (`sub_…`, `cus_…`) are only ever trusted after they have been
+ * tied to an organization through a verified webhook or an API call made with
+ * our own secret key. Audit rows carry the organization id in metadata.
  */
 
 // ───────────────────────── Schemas ─────────────────────────
@@ -120,8 +120,8 @@ const ACTIVE_STATUSES: BillingStatus[] = ["ACTIVE", "TRIALING"];
 /** Statuses where a subscription exists at the provider and must be changed, not replaced. */
 const LIVE_STATUSES: BillingStatus[] = ["ACTIVE", "TRIALING", "PAST_DUE", "ON_HOLD"];
 
-type BillingWorkspace = Pick<
-  Workspace,
+type BillingOrganization = Pick<
+  Organization,
   | "id"
   | "name"
   | "plan"
@@ -136,7 +136,7 @@ type BillingWorkspace = Pick<
   | "subscribedPlan"
 >;
 
-const WORKSPACE_BILLING_SELECT = {
+const ORGANIZATION_BILLING_SELECT = {
   id: true,
   name: true,
   plan: true,
@@ -149,17 +149,17 @@ const WORKSPACE_BILLING_SELECT = {
   currentPeriodEnd: true,
   cancelAtPeriodEnd: true,
   subscribedPlan: true,
-} as const satisfies Prisma.WorkspaceSelect;
+} as const satisfies Prisma.OrganizationSelect;
 
-async function loadWorkspace(workspaceId: string): Promise<BillingWorkspace> {
-  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: WORKSPACE_BILLING_SELECT });
-  if (!ws) throw new ApiError(404, "Workspace not found", "NOT_FOUND");
-  return ws;
+async function loadOrganization(organizationId: string): Promise<BillingOrganization> {
+  const org = await prisma.organization.findUnique({ where: { id: organizationId }, select: ORGANIZATION_BILLING_SELECT });
+  if (!org) throw new ApiError(404, "Organization not found", "NOT_FOUND");
+  return org;
 }
 
-function requireLiveSubscription(ws: BillingWorkspace): string {
+function requireLiveSubscription(ws: BillingOrganization): string {
   if (!ws.billingSubscriptionId || !LIVE_STATUSES.includes(ws.billingStatus)) {
-    throw new ApiError(409, "This workspace doesn't have an active subscription", "NO_SUBSCRIPTION");
+    throw new ApiError(409, "This organization doesn't have an active subscription", "NO_SUBSCRIPTION");
   }
   return ws.billingSubscriptionId;
 }
@@ -177,21 +177,33 @@ function iso(date: Date | null | undefined): string | null {
 }
 
 /**
- * Which workspace a subscription belongs to. The subscription id already stored
- * on a workspace is authoritative; `metadata.workspace_id` is only honoured
- * when that workspace has no live subscription of its own, so a stray or
- * replayed event can never re-point a paying workspace at another customer's
- * subscription.
+ * Organizations created before organizations existed kept their workspace's id,
+ * so a `workspace_id` hint in older Dodo metadata still names the organization.
+ * Newer hints name a workspace only if someone passes one; map those too.
  */
-async function resolveWorkspaceForSubscription(sub: NormalizedSubscription): Promise<BillingWorkspace | null> {
-  const byId = await prisma.workspace.findUnique({
+async function loadHintedOrganization(hint: string | null): Promise<BillingOrganization | null> {
+  if (!hint) return null;
+  const direct = await prisma.organization.findUnique({ where: { id: hint }, select: ORGANIZATION_BILLING_SELECT });
+  if (direct) return direct;
+  const workspace = await prisma.workspace.findUnique({ where: { id: hint }, select: { organizationId: true } });
+  return workspace ? loadOrganization(workspace.organizationId).catch(() => null) : null;
+}
+
+/**
+ * Which organization a subscription belongs to. The subscription id already
+ * stored on an organization is authoritative; the metadata hint is only
+ * honoured when that organization has no live subscription of its own, so a
+ * stray or replayed event can never re-point a paying organization at another
+ * customer's subscription.
+ */
+async function resolveOrganizationForSubscription(sub: NormalizedSubscription): Promise<BillingOrganization | null> {
+  const byId = await prisma.organization.findUnique({
     where: { billingSubscriptionId: sub.externalSubscriptionId },
-    select: WORKSPACE_BILLING_SELECT,
+    select: ORGANIZATION_BILLING_SELECT,
   });
   if (byId) return byId;
 
-  if (!sub.workspaceId) return null;
-  const hinted = await prisma.workspace.findUnique({ where: { id: sub.workspaceId }, select: WORKSPACE_BILLING_SELECT });
+  const hinted = await loadHintedOrganization(sub.organizationId);
   if (!hinted) return null;
 
   const hasOtherLiveSubscription =
@@ -199,8 +211,8 @@ async function resolveWorkspaceForSubscription(sub: NormalizedSubscription): Pro
     hinted.billingSubscriptionId !== sub.externalSubscriptionId &&
     LIVE_STATUSES.includes(hinted.billingStatus);
   if (hasOtherLiveSubscription) {
-    logger.warn("billing.subscription_workspace_mismatch", {
-      workspaceId: hinted.id,
+    logger.warn("billing.subscription_organization_mismatch", {
+      organizationId: hinted.id,
       existing: hinted.billingSubscriptionId,
       incoming: sub.externalSubscriptionId,
       status: sub.status,
@@ -212,27 +224,27 @@ async function resolveWorkspaceForSubscription(sub: NormalizedSubscription): Pro
 
 // ───────────────────────── Subscription sync ─────────────────────────
 
-export type SyncResult = { workspaceId: string | null; status: BillingStatus; plan: PlanTier | null; applied: boolean };
+export type SyncResult = { organizationId: string | null; status: BillingStatus; plan: PlanTier | null; applied: boolean };
 
 /**
- * Writes a subscription snapshot onto its workspace. Idempotent: applying the
+ * Writes a subscription snapshot onto its organization. Idempotent: applying the
  * same snapshot twice is a no-op, and applying an older snapshot after a newer
  * one only matters if the caller passes stale data (webhook handlers re-fetch
  * from the API first for exactly that reason).
  *
- * `plan` is only touched when the workspace isn't under an admin override; the
+ * `plan` is only touched when the organization isn't under an admin override; the
  * billing columns are always recorded so the override can be lifted later.
  */
 async function applySubscriptionSnapshot(sub: NormalizedSubscription): Promise<SyncResult> {
-  const ws = await resolveWorkspaceForSubscription(sub);
+  const ws = await resolveOrganizationForSubscription(sub);
   if (!ws) {
-    logger.warn("billing.subscription_unresolved", { subscriptionId: sub.externalSubscriptionId, hint: sub.workspaceId });
-    return { workspaceId: null, status: sub.status, plan: sub.tier, applied: false };
+    logger.warn("billing.subscription_unresolved", { subscriptionId: sub.externalSubscriptionId, hint: sub.organizationId });
+    return { organizationId: null, status: sub.status, plan: sub.tier, applied: false };
   }
 
   if (!sub.tier) {
     // A product we don't know about: record the provider state but never grant a plan for it.
-    logger.error("billing.unknown_product", { workspaceId: ws.id, productId: sub.productId, subscriptionId: sub.externalSubscriptionId });
+    logger.error("billing.unknown_product", { organizationId: ws.id, productId: sub.productId, subscriptionId: sub.externalSubscriptionId });
   }
 
   const override = ws.planSource === "ADMIN_OVERRIDE";
@@ -252,7 +264,7 @@ async function applySubscriptionSnapshot(sub: NormalizedSubscription): Promise<S
 
   const interval: BillingInterval | null = sub.interval ?? ws.billingInterval;
 
-  await prisma.workspace.update({
+  await prisma.organization.update({
     where: { id: ws.id },
     data: {
       plan,
@@ -270,20 +282,20 @@ async function applySubscriptionSnapshot(sub: NormalizedSubscription): Promise<S
 
   if (ws.billingStatus !== sub.status || ws.plan !== plan || ws.cancelAtPeriodEnd !== sub.cancelAtPeriodEnd) {
     logger.info("billing.subscription_synced", {
-      workspaceId: ws.id,
+      organizationId: ws.id,
       subscriptionId: sub.externalSubscriptionId,
       from: { status: ws.billingStatus, plan: ws.plan },
       to: { status: sub.status, plan, provider: sub.providerStatus },
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
     });
   }
-  return { workspaceId: ws.id, status: sub.status, plan, applied: true };
+  return { organizationId: ws.id, status: sub.status, plan, applied: true };
 }
 
 /**
  * Pulls the latest subscription state from Dodo and applies it. `snapshot`
  * (typically a webhook payload) is used as a fallback when the API is
- * unreachable so an outage never leaves a paid workspace un-activated.
+ * unreachable so an outage never leaves a paid organization un-activated.
  */
 export async function syncSubscription(
   externalSubscriptionId: string,
@@ -305,35 +317,34 @@ export async function syncSubscription(
 
 // ───────────────────────── Payments ─────────────────────────
 
-async function resolveWorkspaceForPayment(payment: NormalizedPayment): Promise<BillingWorkspace | null> {
+async function resolveOrganizationForPayment(payment: NormalizedPayment): Promise<BillingOrganization | null> {
   if (payment.subscriptionId) {
-    const bySub = await prisma.workspace.findUnique({
+    const bySub = await prisma.organization.findUnique({
       where: { billingSubscriptionId: payment.subscriptionId },
-      select: WORKSPACE_BILLING_SELECT,
+      select: ORGANIZATION_BILLING_SELECT,
     });
     if (bySub) return bySub;
   }
-  if (!payment.workspaceId) return null;
-  const hinted = await prisma.workspace.findUnique({ where: { id: payment.workspaceId }, select: WORKSPACE_BILLING_SELECT });
+  const hinted = await loadHintedOrganization(payment.organizationId);
   if (!hinted) return null;
-  // Same rule as subscriptions: a workspace paying for a different live subscription doesn't get someone else's receipts.
+  // Same rule as subscriptions: an organization paying for a different live subscription doesn't get someone else's receipts.
   const foreign =
     payment.subscriptionId !== null &&
     hinted.billingSubscriptionId !== null &&
     hinted.billingSubscriptionId !== payment.subscriptionId &&
     LIVE_STATUSES.includes(hinted.billingStatus);
   if (foreign) {
-    logger.warn("billing.payment_workspace_mismatch", { workspaceId: hinted.id, paymentId: payment.externalId });
+    logger.warn("billing.payment_organization_mismatch", { organizationId: hinted.id, paymentId: payment.externalId });
     return null;
   }
   return hinted;
 }
 
-async function upsertPayment(payment: NormalizedPayment, workspaceId: string): Promise<void> {
+async function upsertPayment(payment: NormalizedPayment, organizationId: string): Promise<void> {
   await prisma.payment.upsert({
     where: { externalId: payment.externalId },
     create: {
-      workspaceId,
+      organizationId,
       externalId: payment.externalId,
       subscriptionId: payment.subscriptionId,
       amountCents: payment.amountCents,
@@ -344,7 +355,7 @@ async function upsertPayment(payment: NormalizedPayment, workspaceId: string): P
       paidAt: payment.paidAt,
     },
     update: {
-      // Never move a payment between workspaces; only its state and links may change.
+      // Never move a payment between organizations; only its state and links may change.
       status: payment.status,
       amountCents: payment.amountCents,
       currency: payment.currency,
@@ -358,7 +369,7 @@ async function upsertPayment(payment: NormalizedPayment, workspaceId: string): P
 
 async function recordPayment(raw: DodoPayments.Payment, eventType: string): Promise<boolean> {
   const draft = normalizePayment(raw, eventType);
-  const ws = await resolveWorkspaceForPayment(draft);
+  const ws = await resolveOrganizationForPayment(draft);
   if (!ws) {
     logger.warn("billing.payment_unresolved", { paymentId: raw.payment_id, subscriptionId: raw.subscription_id ?? null });
     return false;
@@ -366,7 +377,7 @@ async function recordPayment(raw: DodoPayments.Payment, eventType: string): Prom
   const payment = normalizePayment(raw, eventType, ws.subscribedPlan);
   await upsertPayment(payment, ws.id);
   if (payment.customerId && !ws.billingCustomerId) {
-    await prisma.workspace.update({ where: { id: ws.id }, data: { billingCustomerId: payment.customerId } });
+    await prisma.organization.update({ where: { id: ws.id }, data: { billingCustomerId: payment.customerId } });
   }
   return true;
 }
@@ -444,7 +455,7 @@ async function dispatchWebhook(event: ParsedWebhook): Promise<boolean> {
 // ───────────────────────── Checkout ─────────────────────────
 
 export type StartCheckoutInput = {
-  workspaceId: string;
+  organizationId: string;
   userId: string;
   email: string;
   name: string | null;
@@ -460,13 +471,13 @@ export async function startCheckout(input: StartCheckoutInput): Promise<Checkout
   if (!isPurchasablePlan(input.tier)) throw new ApiError(422, "That plan can't be purchased", "PLAN_NOT_PURCHASABLE");
   const productId = requireProductId(input.tier, input.interval);
 
-  const ws = await loadWorkspace(input.workspaceId);
+  const ws = await loadOrganization(input.organizationId);
   if (ws.billingSubscriptionId && LIVE_STATUSES.includes(ws.billingStatus)) {
     throw new ApiError(
       409,
       ACTIVE_STATUSES.includes(ws.billingStatus)
-        ? "This workspace already has a subscription — switch plans from Settings → Billing instead"
-        : "This workspace has an unpaid subscription — update the payment method from Settings → Billing instead",
+        ? "This organization already has a plan. Change it from Settings, then Billing."
+        : "This organization has an unpaid plan. Update the payment method from Settings, then Billing.",
       "ALREADY_SUBSCRIBED",
     );
   }
@@ -475,12 +486,13 @@ export async function startCheckout(input: StartCheckoutInput): Promise<Checkout
   const params: DodoPayments.CheckoutSessionCreateParams = {
     product_cart: [{ product_id: productId, quantity: 1 }],
     customer: ws.billingCustomerId ? { customer_id: ws.billingCustomerId } : { email: input.email, name: customerName },
-    return_url: appUrl(`/checkout/success?workspace=${ws.id}&tier=${input.tier}&interval=${input.interval}`),
+    return_url: appUrl(`/checkout/success?organization=${ws.id}&tier=${input.tier}&interval=${input.interval}`),
     cancel_url: appUrl(`/checkout?tier=${input.tier}&interval=${input.interval}`),
-    metadata: { workspace_id: ws.id, plan_tier: input.tier, billing_interval: input.interval, user_id: input.userId },
+    metadata: { organization_id: ws.id, plan_tier: input.tier, billing_interval: input.interval, user_id: input.userId },
     show_saved_payment_methods: true,
     customization: { theme: "light", show_on_demand_tag: false },
-    feature_flags: { allow_discount_code: true, allow_tax_id: true },
+    // Straight back to our success page: Dodo's own status screen shows the business's primary brand, not ours.
+    feature_flags: { allow_discount_code: true, allow_tax_id: true, redirect_immediately: true },
   };
   if (input.billing) {
     params.billing_address = {
@@ -506,16 +518,15 @@ export async function startCheckout(input: StartCheckoutInput): Promise<Checkout
     throw new ApiError(502, "The billing provider didn't return a checkout link", "BILLING_UNAVAILABLE");
   }
 
-  await prisma.workspace.update({ where: { id: ws.id }, data: { billingEmail: input.email } });
+  await prisma.organization.update({ where: { id: ws.id }, data: { billingEmail: input.email } });
   await recordAudit({
-    workspaceId: ws.id,
     userId: input.userId,
     action: "billing.checkout_started",
     targetType: "checkout_session",
     targetId: session.session_id,
-    metadata: { tier: input.tier, interval: input.interval },
+    metadata: { organizationId: ws.id, tier: input.tier, interval: input.interval },
   });
-  logger.info("billing.checkout_started", { workspaceId: ws.id, sessionId: session.session_id, tier: input.tier, interval: input.interval });
+  logger.info("billing.checkout_started", { organizationId: ws.id, sessionId: session.session_id, tier: input.tier, interval: input.interval });
 
   return { checkoutUrl: session.checkout_url, sessionId: session.session_id, mode: getDodoMode() };
 }
@@ -527,10 +538,10 @@ export async function startCheckout(input: StartCheckoutInput): Promise<Checkout
  * Any of the ids Dodo appends to the return URL is enough to find the subscription.
  */
 export async function reconcileCheckoutSession(
-  workspaceId: string,
+  organizationId: string,
   ids: { sessionId?: string; paymentId?: string; subscriptionId?: string },
 ): Promise<BillingOverview> {
-  const ws = await loadWorkspace(workspaceId);
+  const ws = await loadOrganization(organizationId);
 
   if (isBillingConfigured()) {
     const client = getDodoClient();
@@ -551,10 +562,10 @@ export async function reconcileCheckoutSession(
 
       if (subscriptionId) {
         const result = await syncSubscription(subscriptionId);
-        // The caller's workspace must be the one the subscription resolved to — never activate a stranger's workspace.
-        if (result.applied && result.workspaceId !== workspaceId) {
-          logger.warn("billing.reconcile_workspace_mismatch", { workspaceId, resolved: result.workspaceId, subscriptionId });
-          throw new ApiError(403, "That subscription belongs to a different workspace", "FORBIDDEN");
+        // The caller's organization must be the one the subscription resolved to — never activate a stranger's.
+        if (result.applied && result.organizationId !== organizationId) {
+          logger.warn("billing.reconcile_organization_mismatch", { organizationId, resolved: result.organizationId, subscriptionId });
+          throw new ApiError(403, "That subscription belongs to a different organization", "FORBIDDEN");
         }
       }
     } catch (err) {
@@ -562,13 +573,13 @@ export async function reconcileCheckoutSession(
     }
   }
 
-  return getBillingOverview(workspaceId);
+  return getBillingOverview(organizationId);
 }
 
 // ───────────────────────── Subscription changes ─────────────────────────
 
-export async function cancelSubscription(workspaceId: string, actorId: string, input: CancelInput): Promise<BillingOverview> {
-  const ws = await loadWorkspace(workspaceId);
+export async function cancelSubscription(organizationId: string, actorId: string, input: CancelInput): Promise<BillingOverview> {
+  const ws = await loadOrganization(organizationId);
   const subscriptionId = requireLiveSubscription(ws);
   if (ws.cancelAtPeriodEnd && !input.immediately) {
     throw new ApiError(409, "This subscription is already set to cancel at the end of the period", "ALREADY_CANCELLING");
@@ -588,18 +599,17 @@ export async function cancelSubscription(workspaceId: string, actorId: string, i
   }
   await applySubscriptionSnapshot(normalizeSubscription(updated));
   await recordAudit({
-    workspaceId,
     userId: actorId,
     action: input.immediately ? "billing.subscription_cancelled" : "billing.cancellation_scheduled",
     targetType: "subscription",
     targetId: subscriptionId,
-    metadata: { feedback: input.feedback ?? null, periodEnd: iso(updated.next_billing_date ? new Date(updated.next_billing_date) : null) },
+    metadata: { organizationId, feedback: input.feedback ?? null, periodEnd: iso(updated.next_billing_date ? new Date(updated.next_billing_date) : null) },
   });
-  return getBillingOverview(workspaceId);
+  return getBillingOverview(organizationId);
 }
 
-export async function resumeSubscription(workspaceId: string, actorId: string): Promise<BillingOverview> {
-  const ws = await loadWorkspace(workspaceId);
+export async function resumeSubscription(organizationId: string, actorId: string): Promise<BillingOverview> {
+  const ws = await loadOrganization(organizationId);
   const subscriptionId = requireLiveSubscription(ws);
   if (!ws.cancelAtPeriodEnd) throw new ApiError(409, "This subscription isn't scheduled to cancel", "NOT_CANCELLING");
 
@@ -610,8 +620,8 @@ export async function resumeSubscription(workspaceId: string, actorId: string): 
     throw toBillingError(err, "subscriptions.update:resume");
   }
   await applySubscriptionSnapshot(normalizeSubscription(updated));
-  await recordAudit({ workspaceId, userId: actorId, action: "billing.cancellation_reverted", targetType: "subscription", targetId: subscriptionId });
-  return getBillingOverview(workspaceId);
+  await recordAudit({ userId: actorId, action: "billing.cancellation_reverted", targetType: "subscription", targetId: subscriptionId, metadata: { organizationId } });
+  return getBillingOverview(organizationId);
 }
 
 /**
@@ -622,7 +632,7 @@ export async function resumeSubscription(workspaceId: string, actorId: string): 
  * reported as 402 so the UI can send the customer to the portal.
  */
 export async function changePlan(
-  workspaceId: string,
+  organizationId: string,
   actorId: string,
   tier: PlanTier,
   interval: BillingIntervalId,
@@ -631,13 +641,13 @@ export async function changePlan(
   if (!isPurchasablePlan(tier)) throw new ApiError(422, "That plan can't be purchased", "PLAN_NOT_PURCHASABLE");
   const productId = requireProductId(tier, interval);
 
-  const ws = await loadWorkspace(workspaceId);
+  const ws = await loadOrganization(organizationId);
   const subscriptionId = requireLiveSubscription(ws);
   if (!ACTIVE_STATUSES.includes(ws.billingStatus)) {
     throw new ApiError(409, "Settle the outstanding payment before changing plans", "SUBSCRIPTION_UNPAID");
   }
   if (ws.subscribedPlan === tier && ws.billingInterval === interval) {
-    throw new ApiError(409, "The workspace is already on that plan", "SAME_PLAN");
+    throw new ApiError(409, "The organization is already on that plan", "SAME_PLAN");
   }
 
   const client = getDodoClient();
@@ -649,7 +659,7 @@ export async function changePlan(
       proration_billing_mode: "prorated_immediately",
       effective_at: "immediately",
       on_payment_failure: "prevent_change",
-      metadata: { workspace_id: ws.id, plan_tier: tier, billing_interval: interval, user_id: actorId },
+      metadata: { organization_id: ws.id, plan_tier: tier, billing_interval: interval, user_id: actorId },
     });
     after = await client.subscriptions.retrieve(subscriptionId);
   } catch (err) {
@@ -660,12 +670,12 @@ export async function changePlan(
   const landed = resolvePlanFromProductId(after.product_id);
   const upgraded = ws.subscribedPlan ? comparePlans(ws.subscribedPlan, tier) > 0 : true;
   await recordAudit({
-    workspaceId,
     userId: actorId,
     action: "billing.plan_changed",
     targetType: "subscription",
     targetId: subscriptionId,
     metadata: {
+      organizationId,
       from: { tier: ws.subscribedPlan, interval: ws.billingInterval },
       to: { tier, interval },
       applied: landed?.tier === tier && landed.interval === interval,
@@ -680,12 +690,12 @@ export async function changePlan(
       "PAYMENT_FAILED",
     );
   }
-  return getBillingOverview(workspaceId);
+  return getBillingOverview(organizationId);
 }
 
-export async function customerPortalUrl(workspaceId: string): Promise<string> {
-  const ws = await loadWorkspace(workspaceId);
-  if (!ws.billingCustomerId) throw new ApiError(409, "No billing account yet — subscribe to a plan first", "NO_CUSTOMER");
+export async function customerPortalUrl(organizationId: string): Promise<string> {
+  const ws = await loadOrganization(organizationId);
+  if (!ws.billingCustomerId) throw new ApiError(409, "There are no invoices yet. Choose a paid plan first.", "NO_CUSTOMER");
   try {
     const session = await getDodoClient().customers.customerPortal.create(ws.billingCustomerId, {
       return_url: appUrl("/settings/billing"),
@@ -710,8 +720,8 @@ export type PaymentRow = {
   createdAt: string;
 };
 
-export async function listPayments(workspaceId: string, limit = 50): Promise<PaymentRow[]> {
-  const rows = await prisma.payment.findMany({ where: { workspaceId }, orderBy: { createdAt: "desc" }, take: limit });
+export async function listPayments(organizationId: string, limit = 50): Promise<PaymentRow[]> {
+  const rows = await prisma.payment.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: limit });
   return rows.map((p) => ({
     id: p.id,
     externalId: p.externalId,
@@ -748,11 +758,12 @@ export type BillingOverview = {
   hasCustomer: boolean;
   configured: boolean;
   mode: DodoMode;
-  missingProducts: ProductEnvName[];
+  /** Plan/interval pairs that can't be bought right now, e.g. "PRO_ANNUAL". Never env var names — this reaches the browser. */
+  unavailablePlans: string[];
 };
 
-export async function getBillingOverview(workspaceId: string): Promise<BillingOverview> {
-  const ws = await loadWorkspace(workspaceId);
+export async function getBillingOverview(organizationId: string): Promise<BillingOverview> {
+  const ws = await loadOrganization(organizationId);
   const info = serviceStateInfo(ws);
   const interval = ws.billingInterval;
   const subscribed = ws.subscribedPlan;
@@ -776,7 +787,7 @@ export async function getBillingOverview(workspaceId: string): Promise<BillingOv
     hasCustomer: ws.billingCustomerId !== null,
     configured: isBillingConfigured(),
     mode: getDodoMode(),
-    missingProducts: missingProductIds(),
+    unavailablePlans: missingProductIds().map((name) => name.replace(/^DODO_PRODUCT_/, "")),
   };
 }
 

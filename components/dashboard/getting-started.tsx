@@ -19,7 +19,7 @@ type Step = {
 const STEPS: readonly Step[] = [
   {
     key: "hasChannel",
-    title: "Connect a channel",
+    title: "Connect an account",
     description: "Link an Instagram professional account or a Facebook Page.",
     href: "/channels",
     cta: "Connect",
@@ -28,17 +28,17 @@ const STEPS: readonly Step[] = [
   {
     key: "hasAutomation",
     title: "Create an automation",
-    description: "Pick a post, choose a keyword and write the DM people receive.",
-    href: "/automations/new",
+    description: "Pick a post, choose a keyword and write the DM people get.",
+    href: "/automations/templates",
     cta: "Create",
     icon: Workflow,
   },
   {
     key: "hasSentDm",
-    title: "Watch DMs arrive",
-    description: "Comment your keyword on the post — the first delivery shows up in your logs.",
+    title: "Test it",
+    description: "Comment the keyword from a different account. The DM it sends shows up in Logs.",
     href: "/logs",
-    cta: "Open logs",
+    cta: "Open Logs",
     icon: MessageSquare,
   },
 ];
@@ -56,7 +56,7 @@ export function GettingStarted({ setup }: { setup: SetupProgress }) {
     <Card>
       <CardHeader className="flex-row items-start justify-between space-y-0">
         <div className="space-y-1">
-          <CardTitle>Get started with {brand.name}</CardTitle>
+          <CardTitle>Set up {brand.name}</CardTitle>
           <CardDescription>Three steps to your first automated DM.</CardDescription>
         </div>
         <div className="w-32 text-right">

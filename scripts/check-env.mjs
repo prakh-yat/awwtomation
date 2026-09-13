@@ -46,7 +46,6 @@ const GROUPS = [
       { name: "NEXT_PUBLIC_APP_URL", level: "required", check: (v) => (/^https?:\/\//.test(v) ? (v.startsWith("http://") && process.env.NODE_ENV === "production" ? "http:// in production — Meta OAuth needs https" : null) : "must start with http(s)://") },
       { name: "APP_ENCRYPTION_KEY", level: "required", check: (v) => (v.length >= 32 ? null : "must be at least 32 characters (openssl rand -base64 32)") },
       { name: "CRON_SECRET", level: "recommended", note: "protects /api/cron/*", check: (v) => (v.length >= 8 ? null : "must be at least 8 characters") },
-      { name: "SUPER_ADMIN_EMAILS", level: "recommended", note: "unlocks /admin" },
       { name: "NODE_ENV", level: "optional" },
     ],
   },
@@ -122,7 +121,7 @@ function mask(name, value) {
     // String-level so the output stays readable (URL.toString() would percent-encode the mask).
     return value.replace(/\/\/([^:/@]*)(:[^@]*)?@/, (_m, user, pass) => `//${user.slice(0, 4)}…${pass ? ":••••" : ""}@`);
   }
-  if (name === "NODE_ENV" || name === "DODO_MODE" || name === "META_GRAPH_API_VERSION" || name === "SUPER_ADMIN_EMAILS" || name === "EMAIL_FROM" || name === "DEV_AUTH_EMAIL" || /_MS$|_SIZE$/.test(name)) {
+  if (name === "NODE_ENV" || name === "DODO_MODE" || name === "META_GRAPH_API_VERSION" || name === "EMAIL_FROM" || name === "DEV_AUTH_EMAIL" || /_MS$|_SIZE$/.test(name)) {
     return value;
   }
   if (value.length <= 6) return "•".repeat(value.length);

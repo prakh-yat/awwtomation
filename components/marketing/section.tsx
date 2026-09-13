@@ -2,74 +2,27 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-export interface SectionProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
-  eyebrow?: React.ReactNode;
-  title?: React.ReactNode;
-  description?: React.ReactNode;
-  /** Center the heading block (default: left-aligned). */
-  align?: "left" | "center";
-  /** Inverts the section to black-on-white → white-on-black. */
-  inverted?: boolean;
-  /** Width of the inner container. */
-  width?: "default" | "narrow" | "wide";
+/** Page-width wrapper shared by the nav, every marketing section and the footer. */
+function Container({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("mx-auto w-full max-w-6xl px-6", className)} {...props} />;
 }
 
-const widths = {
-  default: "max-w-6xl",
-  narrow: "max-w-3xl",
-  wide: "max-w-7xl",
-} as const;
-
-/** Vertical rhythm + heading block shared by every marketing section. */
-function Section({
-  eyebrow,
-  title,
-  description,
-  align = "left",
-  inverted = false,
-  width = "default",
-  className,
-  children,
-  ...props
-}: SectionProps) {
-  const hasHeading = Boolean(eyebrow || title || description);
+/** Section heading: sentence case, no eyebrow above it. */
+function SectionTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <section
-      className={cn("py-20 sm:py-24", inverted && "bg-primary text-primary-foreground", className)}
+    <h2
+      className={cn(
+        "text-balance text-[28px] font-semibold leading-[1.15] tracking-[-0.022em] text-foreground sm:text-[34px]",
+        className,
+      )}
       {...props}
-    >
-      <div className={cn("mx-auto w-full px-6", widths[width])}>
-        {hasHeading ? (
-          <div className={cn("mb-12 max-w-2xl", align === "center" && "mx-auto text-center")}>
-            {eyebrow ? (
-              <p
-                className={cn(
-                  "mb-3 text-[11px] font-medium uppercase tracking-[0.18em]",
-                  inverted ? "text-primary-foreground/60" : "text-muted-foreground",
-                )}
-              >
-                {eyebrow}
-              </p>
-            ) : null}
-            {title ? (
-              <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
-            ) : null}
-            {description ? (
-              <p
-                className={cn(
-                  "mt-4 text-balance text-base leading-7",
-                  inverted ? "text-primary-foreground/70" : "text-muted-foreground",
-                )}
-              >
-                {description}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        {children}
-      </div>
-    </section>
+    />
   );
+}
+
+/** The paragraph that sits under or beside a section heading. */
+function SectionText({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn("text-[16px] leading-[1.65] text-muted-foreground", className)} {...props} />;
 }
 
 export type ProseProps = React.HTMLAttributes<HTMLDivElement>;
@@ -109,15 +62,15 @@ export interface LegalPageProps {
 /** Shell for privacy / terms / data-deletion: narrow prose column with a dated header. */
 function LegalPage({ title, description, updated, children }: LegalPageProps) {
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-16 sm:py-20">
+    <Container className="max-w-3xl pb-24 pt-16 sm:pt-20">
       <header className="border-b pb-8">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
-        {description ? <p className="mt-3 text-base text-muted-foreground">{description}</p> : null}
-        <p className="mt-4 text-xs uppercase tracking-wider text-muted-foreground">Last updated {updated}</p>
+        <h1 className="text-balance text-[32px] font-semibold leading-tight tracking-[-0.022em] sm:text-[40px]">{title}</h1>
+        {description ? <p className="mt-3 text-[16px] leading-relaxed text-muted-foreground">{description}</p> : null}
+        <p className="mt-5 text-[13px] text-muted-foreground">Last updated {updated}</p>
       </header>
       <Prose className="pt-2">{children}</Prose>
-    </div>
+    </Container>
   );
 }
 
-export { Section, Prose, LegalPage };
+export { Container, SectionTitle, SectionText, Prose, LegalPage };

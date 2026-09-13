@@ -90,10 +90,6 @@ has("META_WEBHOOK_VERIFY_TOKEN")
   ? pass("META_WEBHOOK_VERIFY_TOKEN")
   : fail("META_WEBHOOK_VERIFY_TOKEN", "Not set.", "Any random string; paste the same value into Meta's webhook config.");
 
-has("SUPER_ADMIN_EMAILS")
-  ? pass("SUPER_ADMIN_EMAILS", env.SUPER_ADMIN_EMAILS)
-  : console.log(`  ${c.yellow("WARN")}  SUPER_ADMIN_EMAILS not set — /admin will be unreachable.`);
-
 // ── 2. Supabase ─────────────────────────────────────────────────────────────
 section("2. Supabase");
 

@@ -2,13 +2,13 @@ import { formatDistanceToNowStrict } from "date-fns";
 
 import type { ContactListItem } from "@/lib/services/contacts";
 
-/** Name to show in lists and headers: real name, else @username, else a short external id. */
-export function contactDisplayName(contact: Pick<ContactListItem, "name" | "username" | "externalId">): string {
+/** Name to show in lists and headers: real name, else @username, else which platform they came from. */
+export function contactDisplayName(contact: Pick<ContactListItem, "name" | "username" | "platform">): string {
   const name = contact.name?.trim();
   if (name) return name;
   const username = contact.username?.trim();
   if (username) return `@${username.replace(/^@/, "")}`;
-  return `User ${contact.externalId.slice(-6)}`;
+  return contact.platform === "FACEBOOK" ? "Facebook user" : "Instagram user";
 }
 
 /**
@@ -36,22 +36,26 @@ export function formatRelative(value: Date | string | null | undefined): string 
   return formatDistanceToNowStrict(toDate(value), { addSuffix: true });
 }
 
-/** Absolute time in the workspace timezone, e.g. "6 Sep 2026, 14:05". */
+const DATE_TIME: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+const DATE_ONLY: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
+
+/** Absolute time in the workspace timezone, e.g. "Sep 6, 2026, 14:05". */
 export function formatAbsolute(value: Date | string | null | undefined, timeZone: string): string {
   if (!value) return "";
   try {
-    return new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "medium", timeStyle: "short" }).format(toDate(value));
+    return new Intl.DateTimeFormat("en-US", { ...DATE_TIME, timeZone }).format(toDate(value));
   } catch {
-    // Unknown IANA zone on this runtime — fall back to UTC rather than crash the page.
-    return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }).format(toDate(value));
+    // Unknown IANA zone on this runtime: fall back to UTC rather than crash the page.
+    return new Intl.DateTimeFormat("en-US", { ...DATE_TIME, timeZone: "UTC" }).format(toDate(value));
   }
 }
 
+/** "Sep 6, 2026" in the workspace timezone. */
 export function formatDate(value: Date | string | null | undefined, timeZone: string): string {
   if (!value) return "—";
   try {
-    return new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "medium" }).format(toDate(value));
+    return new Intl.DateTimeFormat("en-US", { ...DATE_ONLY, timeZone }).format(toDate(value));
   } catch {
-    return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", dateStyle: "medium" }).format(toDate(value));
+    return new Intl.DateTimeFormat("en-US", { ...DATE_ONLY, timeZone: "UTC" }).format(toDate(value));
   }
 }

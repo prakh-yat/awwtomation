@@ -40,7 +40,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
     try {
       const result = await apiFetch<{ eligible: number; skippedWindow: number }>(`/api/broadcasts/${row.id}/send`, { method: "POST" });
       toast.success(`Sending “${row.name}” to ${formatCount(result.eligible)} contact${result.eligible === 1 ? "" : "s"}`, {
-        description: result.skippedWindow > 0 ? `${formatCount(result.skippedWindow)} skipped — outside the 24h window` : undefined,
+        description: result.skippedWindow > 0 ? `${formatCount(result.skippedWindow)} not sent because they haven't messaged you in the last 24 hours` : undefined,
       });
       router.refresh();
     } catch (err) {
@@ -52,7 +52,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
   async function cancel() {
     try {
       const result = await apiFetch<{ cancelledJobs: number }>(`/api/broadcasts/${row.id}/cancel`, { method: "POST" });
-      toast.success(row.status === "SENDING" ? `Cancelled — ${formatCount(result.cancelledJobs)} queued messages stopped` : "Schedule cancelled");
+      toast.success(row.status === "SENDING" ? `Cancelled. ${formatCount(result.cancelledJobs)} queued messages won't be sent.` : "Schedule cancelled");
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't cancel the broadcast"));

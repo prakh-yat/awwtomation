@@ -59,7 +59,7 @@ export function MediaPicker({ channelId, open, onOpenChange, selected, onChange,
         setItems(result.items);
         onLoaded(result.items);
         if (opts.refresh) {
-          toast.success(result.refreshQueued ? "Refreshing posts — check back in a few seconds" : "Posts are up to date");
+          toast.success(result.refreshQueued ? "Refreshing posts. Check back in a few seconds." : "Posts are up to date");
         }
       } catch (err) {
         toast.error(errorMessage(err, "Couldn't load posts"));

@@ -140,7 +140,7 @@ function TagPicker({ id, value, onChange, options, placeholder = "Search tags…
             ) : null}
             {filtered.length === 0 && !canCreate ? (
               <li className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-                {options.length === 0 ? "No tags yet — type one to add it" : "No matching tags"}
+                {options.length === 0 ? "No tags yet. Type one to add it." : "No matching tags"}
               </li>
             ) : null}
           </ul>

@@ -14,15 +14,21 @@ import type { ConversationDetail, FlowSessionSummary } from "@/lib/services/inbo
 import { cn, initials } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./api";
-import { contactDisplayName, contactHandle, formatDateTime, shortRelative, userDisplayName } from "./format";
+import { contactDisplayName, contactHandle, formatDateTime, relativeAgo, userDisplayName } from "./format";
 
 const MAX_TAG_LENGTH = 64;
+
+/** "delivery_city" reads as "Delivery city"; the key itself stays editable on the contact page. */
+function fieldLabel(key: string): string {
+  const words = key.replace(/[_-]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
+}
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
+        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
         {action}
       </div>
       {children}
@@ -185,7 +191,7 @@ function ContactPanel({ conversation, now, onTagsChange, className }: ContactPan
             <dl className="space-y-1.5">
               {fields.map(([key, value]) => (
                 <div key={key} className="flex items-baseline justify-between gap-3 text-xs">
-                  <dt className="shrink-0 text-muted-foreground">{key}</dt>
+                  <dt className="shrink-0 text-muted-foreground">{fieldLabel(key)}</dt>
                   <dd className="truncate text-right font-medium" title={formatFieldValue(value)}>
                     {formatFieldValue(value)}
                   </dd>
@@ -211,7 +217,7 @@ function ContactPanel({ conversation, now, onTagsChange, className }: ContactPan
                       <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{session.automation.name}</span>
-                        <span className="block text-[11px] text-muted-foreground">{shortRelative(session.updatedAt, now)} ago</span>
+                        <span className="block text-[11px] text-muted-foreground">{relativeAgo(session.updatedAt, now)}</span>
                       </span>
                       <Badge variant={badge.variant}>{badge.label}</Badge>
                     </Link>
@@ -231,12 +237,12 @@ function ContactPanel({ conversation, now, onTagsChange, className }: ContactPan
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted-foreground">First seen</dt>
               <dd className="font-medium" title={formatDateTime(contact.firstSeenAt)}>
-                {shortRelative(contact.firstSeenAt, now)} ago
+                {relativeAgo(contact.firstSeenAt, now)}
               </dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted-foreground">Last active</dt>
-              <dd className="font-medium">{contact.lastInteractionAt ? `${shortRelative(contact.lastInteractionAt, now)} ago` : "—"}</dd>
+              <dd className="font-medium">{contact.lastInteractionAt ? relativeAgo(contact.lastInteractionAt, now) : "—"}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted-foreground">Status</dt>

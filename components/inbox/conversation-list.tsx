@@ -128,18 +128,22 @@ function ConversationList({
 
   let emptyState: React.ReactNode = null;
   if (noChannels) {
+    // On wider screens the conversation pane carries this call to action; phones only see the list.
     emptyState = (
-      <EmptyState
-        icon={Plug}
-        title="Connect a channel"
-        description="Link an Instagram or Facebook account and every DM lands here."
-        action={
-          <Button asChild size="sm">
-            <Link href="/channels">Connect a channel</Link>
-          </Button>
-        }
-        className="m-4"
-      />
+      <>
+        <EmptyState
+          icon={Plug}
+          title="Connect an account"
+          description="Connect an Instagram or Facebook account and its DMs show up here."
+          action={
+            <Button asChild size="sm">
+              <Link href="/channels">Connect an account</Link>
+            </Button>
+          }
+          className="m-4 md:hidden"
+        />
+        <p className="hidden px-4 py-6 text-center text-[13px] text-muted-foreground md:block">No conversations yet.</p>
+      </>
     );
   } else if (items.length === 0 && !loading) {
     emptyState = (
@@ -201,7 +205,7 @@ function ConversationList({
           {loading ? <Spinner size="sm" className="absolute right-2.5 top-1/2 -translate-y-1/2" /> : null}
         </div>
 
-        <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filter conversations">
+        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 scrollbar-none" role="tablist" aria-label="Filter conversations">
           {INBOX_FILTERS.map((f) => {
             const active = filter === f.id;
             const count = f.count ? counts[f.count] : undefined;
@@ -214,13 +218,13 @@ function ConversationList({
                 onClick={() => onFilterChange(f.id)}
                 disabled={noChannels}
                 className={cn(
-                  "inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:opacity-50",
-                  active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground",
+                  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+                  active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
               >
                 {f.label}
                 {count !== undefined && count > 0 ? (
-                  <span className={cn("tabular-nums", active ? "text-primary-foreground/70" : "text-muted-foreground/70")}>{count}</span>
+                  <span className={cn("tabular-nums", active ? "text-background/70" : "text-muted-foreground/70")}>{count}</span>
                 ) : null}
               </button>
             );
@@ -229,11 +233,11 @@ function ConversationList({
 
         {channels.length > 1 ? (
           <Select value={channelId} onValueChange={onChannelChange}>
-            <SelectTrigger className="h-8 text-[13px]" aria-label="Filter by channel">
-              <SelectValue placeholder="All channels" />
+            <SelectTrigger className="h-8 text-[13px]" aria-label="Filter by account">
+              <SelectValue placeholder="All accounts" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_CHANNELS}>All channels</SelectItem>
+              <SelectItem value={ALL_CHANNELS}>All accounts</SelectItem>
               {channels.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   <span className="flex items-center gap-2">

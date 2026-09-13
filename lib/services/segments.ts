@@ -16,7 +16,7 @@ import { z } from "zod";
 import { MAX_TAG_LENGTH } from "@/lib/automation/flow-types";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { recordAudit } from "@/lib/services/workspaces";
+import { recordAudit } from "@/lib/services/audit";
 import { ApiError } from "@/lib/workspace/api";
 
 // ───────────────────────── Limits ─────────────────────────
@@ -27,8 +27,6 @@ export const SEGMENT_DESCRIPTION_MAX_LENGTH = 200;
 export const SEGMENT_MAX_FILTER_TAGS = 50;
 export const SEGMENT_MAX_LAST_INTERACTION_DAYS = 365;
 export const SEGMENT_MAX_QUERY_LENGTH = 120;
-/** Longest stage name accepted in a filter (mirrors `PIPELINE_STAGE_MAX_LENGTH`; defined here to keep this module a leaf). */
-export const SEGMENT_MAX_STAGE_LENGTH = 24;
 /** Sentinel for `ownerId`: contacts with no owner. Not a real user id, so it can never collide. */
 export const SEGMENT_OWNER_UNASSIGNED = "unassigned";
 /** A contact's "Segments" chip list evaluates at most this many segments. */
@@ -74,7 +72,8 @@ const filterTagList = z.array(tagSchema).max(SEGMENT_MAX_FILTER_TAGS).transform(
  * - `excludeOptedOut`: optedOut = false. `optedOut`: exact match, used by the raw list API; `excludeOptedOut` wins if both are set.
  * - `q`: case-insensitive substring on username, name or email (a leading "@" is ignored).
  * CRM keys (all additive):
- * - `stage`: exact pipeline stage name. `ownerId`: a member's user id, or `SEGMENT_OWNER_UNASSIGNED`.
+ * - `pipelineId`: the contact is in that pipeline. `stageId`: at that stage (any pipeline the stage belongs to).
+ * - `ownerId`: a member's user id, or `SEGMENT_OWNER_UNASSIGNED`.
  * - `source`: how the contact entered (WEBHOOK / IMPORT / MANUAL).
  * - `hasEmail` / `hasPhone`: true = field present, false = field empty.
  * - `messageable`: true = reachable over DM (has a Meta id); false = CRM-only records.
@@ -91,7 +90,8 @@ const segmentFiltersBase = z.object({
   lastInteractionDays: z.number().int().min(1).max(SEGMENT_MAX_LAST_INTERACTION_DAYS).optional(),
   excludeOptedOut: z.boolean().optional(),
   optedOut: z.boolean().optional(),
-  stage: z.string().trim().min(1).max(SEGMENT_MAX_STAGE_LENGTH).optional(),
+  pipelineId: z.string().min(1).max(64).optional(),
+  stageId: z.string().min(1).max(64).optional(),
   ownerId: z.string().min(1).max(64).optional(),
   source: z.nativeEnum(ContactSource).optional(),
   hasEmail: z.boolean().optional(),
@@ -128,8 +128,8 @@ export function compactSegmentFilters(filters: SegmentFilters): SegmentFilters {
   if (filters.lastInteractionDays) out.lastInteractionDays = filters.lastInteractionDays;
   if (filters.excludeOptedOut) out.excludeOptedOut = true;
   else if (filters.optedOut !== undefined) out.optedOut = filters.optedOut;
-  const stage = filters.stage?.trim();
-  if (stage) out.stage = stage;
+  if (filters.pipelineId) out.pipelineId = filters.pipelineId;
+  if (filters.stageId) out.stageId = filters.stageId;
   if (filters.ownerId) out.ownerId = filters.ownerId;
   if (filters.source) out.source = filters.source;
   if (filters.hasEmail !== undefined) out.hasEmail = filters.hasEmail;
@@ -186,8 +186,11 @@ export function buildContactWhere(workspaceId: string, filters: SegmentFilters, 
   if (filters.excludeOptedOut) where.optedOut = false;
   else if (filters.optedOut !== undefined) where.optedOut = filters.optedOut;
 
-  const stage = filters.stage?.trim();
-  if (stage) where.stage = stage;
+  if (filters.pipelineId || filters.stageId) {
+    where.pipelineEntries = {
+      some: { ...(filters.pipelineId ? { pipelineId: filters.pipelineId } : {}), ...(filters.stageId ? { stageId: filters.stageId } : {}) },
+    };
+  }
   if (filters.ownerId) where.ownerId = filters.ownerId === SEGMENT_OWNER_UNASSIGNED ? null : filters.ownerId;
   if (filters.source) where.source = filters.source;
   // "Present" means a non-empty string; imports never write "" but a manual edit could clear it to null.

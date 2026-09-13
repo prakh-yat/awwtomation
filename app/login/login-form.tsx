@@ -14,6 +14,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_user: "We couldn't read your Google profile. Please try again.",
 };
 
+const START_FAILED = "We couldn't open Google sign-in. Please try again in a moment.";
+
 function GoogleIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 shrink-0">
@@ -54,12 +56,13 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
         options: { redirectTo, queryParams: { prompt: "select_account" } },
       });
       if (oauthError) {
-        setLocalError(oauthError.message);
+        // Supabase's wording describes our auth configuration, not anything the visitor can act on.
+        setLocalError(START_FAILED);
         setPending(false);
       }
       // On success the browser navigates to Google; leave the button disabled.
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Could not start sign-in.");
+    } catch {
+      setLocalError(START_FAILED);
       setPending(false);
     }
   }
@@ -69,7 +72,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
       {message ? (
         <div
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+          className="rounded-lg border border-destructive/25 bg-destructive/5 px-3.5 py-2.5 text-[13px] leading-5 text-destructive"
         >
           {message}
         </div>
@@ -79,7 +82,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
         type="button"
         onClick={signInWithGoogle}
         disabled={pending}
-        className="inline-flex h-10 w-full items-center justify-center gap-2.5 rounded-md border border-input bg-white px-4 text-sm font-medium text-foreground shadow-card transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-input bg-background px-4 text-[15px] font-medium text-foreground shadow-[0_1px_2px_rgb(24_24_27/0.06)] transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {pending ? (
           <span

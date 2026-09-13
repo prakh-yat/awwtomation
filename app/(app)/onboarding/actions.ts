@@ -4,38 +4,35 @@ import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { logger } from "@/lib/logger";
-import { createWorkspace, workspaceNameSchema } from "@/lib/services/workspaces";
+import { createOrganization, organizationNameSchema } from "@/lib/services/organizations";
 import { ApiError } from "@/lib/workspace/api";
-import { setActiveWorkspaceCookie } from "@/lib/workspace/cookie";
+import { setActiveOrganizationCookies } from "@/lib/workspace/cookie";
 
-export type CreateWorkspaceState = { error?: string };
+export type CreateOrganizationState = { error?: string };
 
 /**
  * `useActionState` handler for the onboarding form. Returns a state object on
- * validation/server errors; on success it sets the active cookie and redirects
- * straight into channel setup (step 2).
+ * validation/server errors; on success it opens the new organization and goes
+ * straight into connecting an account (step 2).
  */
-export async function createWorkspaceAction(
-  _prev: CreateWorkspaceState,
-  formData: FormData,
-): Promise<CreateWorkspaceState> {
+export async function createOrganizationAction(_prev: CreateOrganizationState, formData: FormData): Promise<CreateOrganizationState> {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=%2Fonboarding");
 
   const raw = formData.get("name");
-  const parsed = workspaceNameSchema.safeParse(typeof raw === "string" ? raw : "");
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter a workspace name" };
+  const parsed = organizationNameSchema.safeParse(typeof raw === "string" ? raw : "");
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter a name" };
 
-  let workspaceId: string;
+  let ids: { organizationId: string; workspaceId: string };
   try {
-    const workspace = await createWorkspace(user.id, parsed.data);
-    workspaceId = workspace.id;
+    const { organization, workspace } = await createOrganization(user.id, { name: parsed.data });
+    ids = { organizationId: organization.id, workspaceId: workspace.id };
   } catch (err) {
     if (err instanceof ApiError) return { error: err.message };
-    logger.error("onboarding.create_workspace_failed", { userId: user.id, error: err });
-    return { error: "We couldn't create your workspace. Please try again." };
+    logger.error("onboarding.create_organization_failed", { userId: user.id, error: err });
+    return { error: "We couldn't create your organization. Please try again." };
   }
 
-  await setActiveWorkspaceCookie(workspaceId);
+  await setActiveOrganizationCookies(ids.organizationId, ids.workspaceId);
   redirect("/channels?onboarding=1");
 }

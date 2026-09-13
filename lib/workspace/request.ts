@@ -9,3 +9,16 @@ export const PATHNAME_HEADER = "x-pathname";
 
 /** The one `(app)` route that must render for users with zero workspaces. */
 export const ONBOARDING_PATH = "/onboarding";
+
+/**
+ * The automation builder: `/automations/<id>` exactly, not its report or the
+ * templates page. It takes the whole viewport and folds the sidebar away.
+ */
+export function isBuilderPath(pathname: string | null | undefined): boolean {
+  return Boolean(pathname && /^\/automations\/(?!templates$|new$)[^/]+\/?$/.test(pathname));
+}
+
+/** Pages that draw edge to edge with no page padding: the builder and the three-pane inbox. */
+export function isFullBleedPath(pathname: string | null | undefined): boolean {
+  return isBuilderPath(pathname) || pathname === "/inbox" || Boolean(pathname?.startsWith("/inbox/"));
+}

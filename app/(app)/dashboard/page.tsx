@@ -1,23 +1,24 @@
 import type { Metadata } from "next";
 
-import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { ChannelBreakdown } from "@/components/dashboard/channel-breakdown";
+import { MetricTabs, type MetricTab } from "@/components/charts/metric-tabs";
+import { withPrevious } from "@/components/charts/series";
+import { AttentionCard } from "@/components/dashboard/attention-card";
 import { GettingStarted } from "@/components/dashboard/getting-started";
-import { OverviewChart } from "@/components/dashboard/overview-chart";
 import { PeriodControls } from "@/components/dashboard/period-controls";
-import { SkipReasons } from "@/components/dashboard/skip-reasons";
-import { StatRow } from "@/components/dashboard/stat-row";
+import { PlanCard } from "@/components/dashboard/plan-card";
+import { RecentConversations } from "@/components/dashboard/recent-conversations";
 import { TopAutomations } from "@/components/dashboard/top-automations";
-import { UsageCard } from "@/components/dashboard/usage-card";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { brand } from "@/lib/brand";
-import { getChannelBreakdown, getOverview, parseAnalyticsPeriod } from "@/lib/services/analytics";
+import { getAnalyticsFilterOptions, getOverview, parseAnalyticsPeriod } from "@/lib/services/analytics";
+import { getAttentionItems, getRecentConversations } from "@/lib/services/dashboard";
+import { formatNumber } from "@/lib/utils";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
+import { canManageBilling } from "@/lib/workspace/permissions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: `Overview · ${brand.name}` };
+export const metadata: Metadata = { title: "Dashboard" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -30,73 +31,85 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const params = await searchParams;
   const days = parseAnalyticsPeriod(first(params.days));
 
-  // The breakdown doubles as the channel list, which lets us drop an unknown
-  // `?channel=` silently instead of 404-ing the whole page.
-  const channels = await getChannelBreakdown(ctx.workspace.id, days, ctx.workspace.timezone);
+  // An unknown `?channel=` is dropped quietly rather than failing the page.
+  const { channels } = await getAnalyticsFilterOptions(ctx.workspace.id);
   const requestedChannel = first(params.channel);
-  const channelId = requestedChannel && channels.some((c) => c.id === requestedChannel) ? requestedChannel : undefined;
+  const channel = requestedChannel ? channels.find((c) => c.id === requestedChannel) : undefined;
 
-  const overview = await getOverview(ctx.workspace.id, { days, channelId, timezone: ctx.workspace.timezone });
-  const firstRun = channels.length === 0;
-  const showChecklist = firstRun || !overview.setup.hasSentDm;
+  const overview = await getOverview(ctx.workspace.id, { days, channelId: channel?.id, timezone: ctx.workspace.timezone });
+
+  if (channels.length === 0) {
+    return (
+      <>
+        <PageHeader title="Dashboard" description="Connect an Instagram or Facebook account to start replying to comments automatically." />
+        <div className="max-w-2xl">
+          <GettingStarted setup={overview.setup} />
+        </div>
+      </>
+    );
+  }
+
+  const [attention, conversations] = await Promise.all([
+    getAttentionItems({
+      workspace: ctx.workspace,
+      organization: ctx.organization,
+      role: ctx.role,
+      usage: overview.usage,
+      failed: overview.totals.failed,
+      skipReasons: overview.skipReasons,
+      days,
+    }),
+    getRecentConversations(ctx.workspace.id, ctx.user.id),
+  ]);
+
+  const { totals, deltas, series, previousSeries } = overview;
+  const metrics: MetricTab[] = [
+    { key: "sent", label: "DMs sent", value: formatNumber(totals.dmsSent), delta: deltas.dmsSent, data: withPrevious(series, previousSeries, (p) => p.sent) },
+    {
+      key: "runs",
+      label: "Automation runs",
+      value: formatNumber(totals.triggered),
+      delta: deltas.triggered,
+      data: withPrevious(series, previousSeries, (p) => p.triggered),
+    },
+    { key: "clicks", label: "Link clicks", value: formatNumber(totals.linkClicks), delta: deltas.linkClicks, data: withPrevious(series, previousSeries, (p) => p.clicks) },
+    {
+      key: "contacts",
+      label: "New contacts",
+      value: formatNumber(totals.newContacts),
+      delta: deltas.newContacts,
+      data: withPrevious(series, previousSeries, (p) => p.newContacts),
+    },
+  ];
+
+  const scope = channel ? (channel.username ? `@${channel.username.replace(/^@/, "")}` : (channel.name ?? "One account")) : null;
 
   return (
     <>
       <PageHeader
-        title="Overview"
-        description={
-          firstRun
-            ? `Welcome to ${brand.name}. Connect an account to start turning comments into DMs.`
-            : `What your automations did over the last ${days} days.`
-        }
-        actions={
-          firstRun ? undefined : (
-            <PeriodControls
-              days={days}
-              channelId={channelId ?? null}
-              channels={channels.map((c) => ({ id: c.id, platform: c.platform, username: c.username, name: c.name }))}
-            />
-          )
-        }
+        title="Dashboard"
+        description={`${scope ? `${scope} · ` : ""}Last ${days} days, compared with the ${days} days before.`}
+        actions={<PeriodControls days={days} channelId={channel?.id ?? null} channels={channels} />}
       />
 
-      {firstRun ? (
-        <div className="mx-auto max-w-2xl">
-          <GettingStarted setup={overview.setup} />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {showChecklist ? <GettingStarted setup={overview.setup} /> : null}
+      <div className="space-y-6">
+        {overview.setup.hasSentDm ? null : <GettingStarted setup={overview.setup} />}
 
-          <StatRow totals={overview.totals} deltas={overview.deltas} days={days} />
-
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>DMs sent vs triggers</CardTitle>
-                <CardDescription>
-                  Daily totals for the last {days} days
-                  {overview.period.timezone !== "UTC" ? ` · ${overview.period.timezone}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <OverviewChart data={overview.series} />
-              </CardContent>
-            </Card>
-            <UsageCard usage={overview.usage} />
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <TopAutomations automations={overview.topAutomations} />
-            <SkipReasons reasons={overview.skipReasons} />
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-3">
-            <ActivityFeed items={overview.recentActivity} className="lg:col-span-2" />
-            <ChannelBreakdown rows={channels} />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <Card className="overflow-hidden xl:col-span-2">
+            <MetricTabs metrics={metrics} fill />
+          </Card>
+          <div className="space-y-6">
+            <AttentionCard items={attention} />
+            <PlanCard usage={overview.usage} canManageBilling={canManageBilling(ctx.role)} />
           </div>
         </div>
-      )}
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <TopAutomations automations={overview.topAutomations} days={days} showAccount={channels.length > 1} className="xl:col-span-2" />
+          <RecentConversations data={conversations} />
+        </div>
+      </div>
     </>
   );
 }

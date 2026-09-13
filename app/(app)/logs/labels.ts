@@ -18,45 +18,46 @@ export const KIND_ORDER: readonly DeliveryKind[] = ["PRIVATE_REPLY", "MESSAGE", 
 export const STATUS_LABELS: Record<DeliveryStatus, string> = {
   SENT: "Sent",
   FAILED: "Failed",
-  SKIPPED_DUPLICATE: "Skipped · duplicate",
-  SKIPPED_RATE_LIMIT: "Skipped · rate limit",
-  SKIPPED_SELF: "Skipped · self",
-  SKIPPED_NOT_FOLLOWING: "Skipped · not following",
-  SKIPPED_WINDOW: "Skipped · outside 24h window",
-  SKIPPED_PLAN_LIMIT: "Skipped · plan limit",
-  SKIPPED_OPTED_OUT: "Skipped · opted out",
+  SKIPPED_DUPLICATE: "Not sent: already replied",
+  SKIPPED_RATE_LIMIT: "Not sent: hourly limit",
+  SKIPPED_SELF: "Not sent: own account",
+  SKIPPED_NOT_FOLLOWING: "Not sent: not following",
+  SKIPPED_WINDOW: "Not sent: outside 24-hour window",
+  SKIPPED_PLAN_LIMIT: "Not sent: monthly limit reached",
+  SKIPPED_OPTED_OUT: "Not sent: opted out",
 };
 
-/** Shorter form for the status badge inside the table, where "Skipped ·" is implied by the tone. */
+/** Shorter form for chips and the badge inside the table. */
 export const STATUS_SHORT_LABELS: Record<DeliveryStatus, string> = {
   SENT: "Sent",
   FAILED: "Failed",
-  SKIPPED_DUPLICATE: "Duplicate",
-  SKIPPED_RATE_LIMIT: "Rate limit",
-  SKIPPED_SELF: "Self",
+  SKIPPED_DUPLICATE: "Already replied",
+  SKIPPED_RATE_LIMIT: "Hourly limit",
+  SKIPPED_SELF: "Own account",
   SKIPPED_NOT_FOLLOWING: "Not following",
-  SKIPPED_WINDOW: "Outside 24h",
-  SKIPPED_PLAN_LIMIT: "Plan limit",
+  SKIPPED_WINDOW: "Outside 24 hours",
+  SKIPPED_PLAN_LIMIT: "Monthly limit",
   SKIPPED_OPTED_OUT: "Opted out",
 };
 
 /** Why each outcome happens, in terms of the Meta rules the sender enforces (ARCHITECTURE §6). */
 export const STATUS_HELP: Record<DeliveryStatus, string> = {
-  SENT: "Meta accepted the message. Delivery to the person's inbox is handled by Instagram or Messenger from there.",
-  FAILED: "Meta rejected the request — usually an expired connection, a person who can't be messaged, or content Meta doesn't allow. The reason column says which, and workspace admins can expand a row for the technical detail.",
-  SKIPPED_DUPLICATE: "Meta allows one private reply per comment. A reply had already been sent for this comment, or the automation is set to message each person only once.",
-  SKIPPED_RATE_LIMIT: "Instagram caps private replies at 750 per hour per account. Overflow is retried with backoff for up to 6 hours, then skipped.",
-  SKIPPED_SELF: "The comment came from the connected account itself. Meta doesn't allow an account to message itself, and it would waste a private-reply slot.",
-  SKIPPED_NOT_FOLLOWING: "The flow's follow gate checked the profile and the person isn't following the account yet. They get the retry prompt instead of the gated message.",
-  SKIPPED_WINDOW: "Messenger and Instagram only allow DMs within 24 hours of the person's last message to you. Private replies to comments are exempt; follow-ups and broadcasts are not.",
-  SKIPPED_PLAN_LIMIT: "The workspace used up this month's DM quota. Upgrade the plan under Settings → Billing to resume sending.",
-  SKIPPED_OPTED_OUT: "The person asked to stop receiving messages (marked opted out on their contact record). Nothing automated will be sent to them.",
+  SENT: "The message was accepted by Instagram or Messenger and delivered to the person's inbox.",
+  FAILED: "Instagram or Messenger didn't accept the message. Open the row to see why and what to do next.",
+  SKIPPED_DUPLICATE: "Instagram allows one DM per comment. Either this comment already had one, or the automation only messages each person once.",
+  SKIPPED_RATE_LIMIT: "Instagram limits how many DMs an account can send in reply to comments each hour. Anything over the limit is retried for up to 6 hours before it's skipped.",
+  SKIPPED_SELF: "The comment was posted by the connected account itself, and an account can't message itself.",
+  SKIPPED_NOT_FOLLOWING: "The automation only sends to followers, and this person wasn't following yet. They were asked to follow first.",
+  SKIPPED_WINDOW: "You can only message someone within 24 hours of their last message to you. Replies to comments don't count toward this; follow-ups and broadcasts do.",
+  SKIPPED_PLAN_LIMIT: "This workspace has used all of this month's DMs. Upgrade the plan to keep sending.",
+  SKIPPED_OPTED_OUT: "This person asked not to receive messages, so automations skip them.",
 };
 
+/** Same words as the automation report and contact timeline: a DM is a DM, wherever it started. */
 export const KIND_LABELS: Record<DeliveryKind, string> = {
-  PRIVATE_REPLY: "Private reply",
+  PRIVATE_REPLY: "DM from comment",
   MESSAGE: "DM",
-  PUBLIC_REPLY: "Public reply",
+  PUBLIC_REPLY: "Comment reply",
   BROADCAST: "Broadcast",
 };
 

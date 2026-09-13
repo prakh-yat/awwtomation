@@ -40,18 +40,26 @@ function LogoMark({ size = 28, flat = false, className, ...props }: LogoMarkProp
 }
 
 export interface WordmarkProps extends React.SVGAttributes<SVGSVGElement> {
-  /** Rendered height in px; width follows the 147:31 aspect ratio. */
+  /** Height of the lettering itself in px (top of the "i" dot to the baseline); width follows. */
   height?: number;
 }
 
-/** "Awwtomation." lettering (brand kit 13 / 14), outlined — no font needed. */
-function Wordmark({ height = 18, className, ...props }: WordmarkProps) {
-  const width = Math.round((height * 147) / 31);
+/**
+ * The brand kit file pads the lettering by 8 units on every side, which made
+ * the word render at half its box and pushed it away from the mark. The viewBox
+ * here is cropped to the glyphs, so `height` is the size you actually see and
+ * the gap next to the mark comes from layout alone.
+ */
+const WORDMARK_BOX = { x: 8, y: 8, width: 131, height: 14.64 } as const;
+
+/** "Awwtomation." lettering (brand kit 13 / 14), outlined, so no font is needed. */
+function Wordmark({ height = 12, className, ...props }: WordmarkProps) {
+  const width = Math.round((height * WORDMARK_BOX.width) / WORDMARK_BOX.height);
   return (
     <svg
       width={width}
       height={height}
-      viewBox="0 0 147 31"
+      viewBox={`${WORDMARK_BOX.x} ${WORDMARK_BOX.y} ${WORDMARK_BOX.width} ${WORDMARK_BOX.height}`}
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label={brand.name}
@@ -71,12 +79,16 @@ export interface LogoProps extends React.HTMLAttributes<HTMLSpanElement> {
   withWordmark?: boolean;
 }
 
-/** Horizontal lock-up: symbol + wordmark (brand kit 01 / 02). */
+/**
+ * Horizontal lock-up: symbol + wordmark (brand kit 01 / 02). The proportions
+ * follow the kit: capitals about two thirds the height of the symbol, and a gap
+ * of roughly a third of the symbol (most of it is the mark's own side bearing).
+ */
 function Logo({ size = 28, withWordmark = true, className, ...props }: LogoProps) {
   return (
-    <span className={cn("inline-flex items-center gap-2", className)} {...props}>
+    <span className={cn("inline-flex items-center gap-0.5", className)} {...props}>
       <LogoMark size={size} />
-      {withWordmark ? <Wordmark height={Math.round(size * 0.62)} /> : null}
+      {withWordmark ? <Wordmark height={Math.round(size * 0.46)} /> : null}
     </span>
   );
 }

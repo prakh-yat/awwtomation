@@ -43,9 +43,8 @@ Run `node scripts/check-env.mjs` (or `npm run check-env`) in the repo with your 
 | `APP_ENCRYPTION_KEY` | always | see above |
 | `CRON_SECRET` | always in prod | protects `/api/cron/*` |
 | `META_WEBHOOK_VERIFY_TOKEN` | before webhooks | any string, pasted into the Meta webhook config |
-| `SUPER_ADMIN_EMAILS` | recommended | your email → `/admin` |
 | `INSTAGRAM_APP_ID/SECRET`, `META_APP_ID/SECRET` | to connect channels | see `docs/SETUP.md` §3 — the app boots without them |
-| `DODO_*` | to charge money | see `docs/BILLING.md` — without them every workspace stays on FREE |
+| `DODO_*` | to charge money | see `docs/BILLING.md` — without them every organization stays on FREE |
 | `RESEND_API_KEY`, `EMAIL_FROM` | optional | invite emails; invites work as links regardless |
 
 **Build-time vs runtime.** Next.js inlines every `NEXT_PUBLIC_*` value into the JavaScript bundle when `next build` runs. Changing one later means rebuilding (Vercel/Railway/Render: redeploy; Docker: `docker compose build web`). Everything else is read at process start.
@@ -106,7 +105,7 @@ Fill in `.env`:
 
 - `NEXT_PUBLIC_APP_URL=https://app.example.com` and `APP_DOMAIN=app.example.com`
 - `POSTGRES_PASSWORD=<something long>` — the compose file builds `DATABASE_URL`/`DIRECT_URL` from it and **ignores** the `DATABASE_URL` lines in `.env` (they are overridden to point at the bundled Postgres container).
-- Supabase auth values, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `SUPER_ADMIN_EMAILS`, and Meta/Dodo credentials when you have them.
+- Supabase auth values, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and Meta/Dodo credentials when you have them.
 
 Check it: `docker run --rm -v "$PWD:/app" -w /app node:20-alpine node scripts/check-env.mjs` (or `node scripts/check-env.mjs` if Node is installed on the box).
 
@@ -231,20 +230,9 @@ Authentication, either form:
 
 ### 5.4 Health endpoint
 
-`GET /api/health` is public, secret-free and cheap. Docker's `HEALTHCHECK`, Railway and Render already poll it; add it to an uptime monitor (Better Uptime, UptimeRobot, cron-job.org) with a 1-minute interval.
+`GET /api/health` is public, secret-free and cheap. It answers `200 {"ok":true}` when the database responds and `503 {"ok":false}` when it doesn't, and says nothing else, so it reveals nothing about the deployment. Docker's `HEALTHCHECK`, Railway and Render already poll it; add it to an uptime monitor (Better Uptime, UptimeRobot, cron-job.org) with a 1-minute interval.
 
-```json
-{
-  "ok": true, "status": "ok", "version": "0.1.0", "commit": "a1b2c3d4e5f6",
-  "db": { "ok": true, "latencyMs": 4 },
-  "worker": { "status": "healthy", "lastHeartbeat": "2026-09-07T03:12:41.000Z", "dueJobs": 0 },
-  "billingConfigured": true, "metaConfigured": { "instagram": true, "facebook": false }, "cronConfigured": true
-}
-```
-
-- HTTP `503` only when the database is unreachable (that is what should restart/alert).
-- `worker.status`: `healthy` (touched a job in the last 5 min), `idle` (alive earlier, nothing to do), `stale` (**due jobs nobody is claiming for 2+ min — the worker is down**), `unknown` (never seen; fresh install).
-- `/admin/health` (super admins) shows the long version: queue depth, stale jobs, expiring tokens, webhook errors.
+For the detail, run `npx tsx scripts/ops-status.ts` against the production database: job queue depth and the oldest waiting job (a worker that is down shows up here first), stuck and failed jobs, webhook errors in the last 24 hours, and accounts that need reconnecting. It exits with code 1 when something needs attention, so it can run from a scheduled job and alert you.
 
 ### 5.5 Logs — where and what
 

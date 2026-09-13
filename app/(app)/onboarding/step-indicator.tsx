@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils";
 
 export const ONBOARDING_STEPS = [
-  { n: 1, label: "Create workspace" },
+  { n: 1, label: "Create organization" },
   { n: 2, label: "Connect Instagram" },
 ] as const;
 
-/** "1 Create workspace · 2 Connect Instagram" with the current step in black. */
+/** "1 Create organization · 2 Connect Instagram" with the current step in black. */
 export function StepIndicator({ current }: { current: 1 | 2 }) {
   return (
     <ol className="flex items-center justify-center gap-3 text-xs" aria-label="Onboarding progress">

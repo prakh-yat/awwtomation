@@ -38,3 +38,15 @@ export function utf8ByteLength(value: string): number {
 export function charLength(value: string): number {
   return Array.from(value).length;
 }
+
+/**
+ * One number to show under the message box: whichever of Instagram's two limits
+ * is closer. English text counts characters; Devanagari and other multi-byte
+ * scripts reach the byte limit first.
+ */
+export function messageLengthUsage(text: string, hasButtons: boolean): { value: number; max: number } {
+  const bytes = { value: utf8ByteLength(text), max: TEXT_MAX_BYTES };
+  if (!hasButtons) return bytes;
+  const chars = { value: charLength(text), max: TEXT_WITH_BUTTONS_MAX_CHARS };
+  return chars.value / chars.max >= bytes.value / bytes.max ? chars : bytes;
+}

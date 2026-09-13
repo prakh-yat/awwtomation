@@ -100,8 +100,6 @@ envVarGroups:
         generateValue: true
       - key: META_WEBHOOK_VERIFY_TOKEN
         generateValue: true
-      - key: SUPER_ADMIN_EMAILS
-        sync: false
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET

@@ -8,7 +8,7 @@ import { toast } from "@/components/ui/sonner";
 import type { SegmentFilters, SegmentSummary } from "@/lib/services/segments";
 
 import { errorMessage, segmentsApi } from "./api";
-import { type ContactFilterState, describeSegmentFilters, hasActiveFilters, stateToSegmentFilters } from "./filters";
+import { type ContactFilterState, describeSegmentFilters, hasActiveFilters, type PipelineNames, stateToSegmentFilters } from "./filters";
 import { SegmentFormDialog } from "./segments-dialog";
 
 export interface SegmentSaveActionsProps {
@@ -21,6 +21,8 @@ export interface SegmentSaveActionsProps {
   onUpdated: (segment: SegmentSummary) => void;
   /** Restore the active segment's filters. */
   onReset: () => void;
+  /** Names for pipeline and stage filters in the save dialog's summary. */
+  pipelines?: PipelineNames;
 }
 
 /**
@@ -28,7 +30,7 @@ export interface SegmentSaveActionsProps {
  * "Save as segment" for ad-hoc filters; "Save changes" / "Save as new" / reset
  * once a loaded segment has been edited.
  */
-function SegmentSaveActions({ filters, active, dirty, onCreated, onUpdated, onReset }: SegmentSaveActionsProps) {
+function SegmentSaveActions({ filters, active, dirty, onCreated, onUpdated, onReset, pipelines }: SegmentSaveActionsProps) {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [previewCount, setPreviewCount] = React.useState<number | null>(null);
@@ -105,7 +107,7 @@ function SegmentSaveActions({ filters, active, dirty, onCreated, onUpdated, onRe
         mode="create"
         initialName={active ? `${active.name} (copy)` : ""}
         count={previewCount}
-        summary={describeSegmentFilters(segmentFilters)}
+        summary={describeSegmentFilters(segmentFilters, pipelines)}
         onSubmit={create}
       />
     </>
