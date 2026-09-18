@@ -2,15 +2,15 @@
 
 Three tested layouts, from "no servers to manage" to "one Linux box you fully own". All of them run the same two processes and the same database schema; pick by budget and by how much you want to operate yourself.
 
-| | A. Vercel + Supabase + Railway worker | B. Docker Compose on a VPS | C. Railway all-in-one |
+| | A. Vercel + managed Postgres + Railway worker | B. Docker Compose on a VPS | C. Railway all-in-one |
 |---|---|---|---|
-| Accounts needed | Vercel, Supabase, Railway, Meta | a VPS (any provider), Supabase (auth only), Meta | Railway, Supabase (auth only), Meta |
+| Accounts needed | Vercel, a Postgres host, Railway, Google Cloud, Meta | a VPS (any provider), Google Cloud, Meta | Railway, Google Cloud, Meta |
 | Card required | Vercel Hobby: no. Railway: yes (after trial) | depends on the VPS provider — many accept local payment | yes (after trial) |
 | Ops effort | lowest | you patch the box, you back up | low |
 | Typical cost | $0–20 + $5 worker | $5–10 for the box | $10–20 |
 | Best for | fastest launch, global CDN | full control, data stays on your server, works from anywhere (including Nepal, no US-only services) | one dashboard for everything |
 
-Whatever you choose, **Supabase Auth is the one external service you cannot skip**: Google sign-in goes through it. The free tier is enough and it needs no card. The database can live anywhere.
+Whatever you choose, you need **a Google Cloud OAuth client** for sign-in (free, no card) and **a Postgres database**, which can live anywhere — the bundled one in recipe B, Supabase, Neon, RDS, whatever you already run.
 
 ---
 
@@ -37,7 +37,7 @@ Run `node scripts/check-env.mjs` (or `npm run check-env`) in the repo with your 
 | Variable | Needed | Notes |
 |---|---|---|
 | `NEXT_PUBLIC_APP_URL` | always | final https URL, no trailing slash. **Build-time** value. |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | always | Supabase → Project Settings → API. **Build-time** values. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | always | Google Cloud OAuth client (Web application). Redirect URI: `<NEXT_PUBLIC_APP_URL>/auth/callback`. Runtime values. |
 | `DATABASE_URL` | always | pooled URL (Supabase: port 6543, `?pgbouncer=true`) or plain Postgres |
 | `DIRECT_URL` | for migrations | direct URL (Supabase: port 5432). Same as `DATABASE_URL` for plain Postgres. |
 | `APP_ENCRYPTION_KEY` | always | see above |
@@ -49,16 +49,16 @@ Run `node scripts/check-env.mjs` (or `npm run check-env`) in the repo with your 
 
 **Build-time vs runtime.** Next.js inlines every `NEXT_PUBLIC_*` value into the JavaScript bundle when `next build` runs. Changing one later means rebuilding (Vercel/Railway/Render: redeploy; Docker: `docker compose build web`). Everything else is read at process start.
 
-### 1.4 Supabase (auth + optionally the database)
+### 1.4 Google OAuth client + database
 
-Follow `docs/SETUP.md` §1 once. The two settings people forget:
+Follow `docs/SETUP.md` §1 once. The two things people forget:
 
-- **Authentication → URL Configuration**: Site URL = `NEXT_PUBLIC_APP_URL`; Redirect URLs must include `https://YOUR_DOMAIN/**`.
+- **Authorized redirect URIs** on the Google client must contain `https://YOUR_DOMAIN/auth/callback` exactly — same scheme, same host, no trailing slash.
 - If you use Supabase Postgres: `DATABASE_URL` = pooled (6543, transaction mode, `?pgbouncer=true&connection_limit=10`), `DIRECT_URL` = direct (5432).
 
 ---
 
-## 2. Recipe A — Vercel (web) + Supabase (auth + DB) + Railway (worker)
+## 2. Recipe A — Vercel (web) + managed Postgres + Railway (worker)
 
 Vercel runs the Next.js app and the cron endpoints; Railway runs the long-lived worker (Vercel has no always-on processes).
 
@@ -70,15 +70,15 @@ Vercel runs the Next.js app and the cron endpoints; Railway runs the long-lived 
    ```
    or change the Vercel build command to `npx prisma migrate deploy && npm run build` so every deploy migrates first (needs `DIRECT_URL` in the build environment).
 4. **Crons** are declared in `vercel.json` (`tick` every minute, `reconcile` every 5 minutes, `refresh-tokens` daily at 03:00 UTC). Vercel enables them on deploy. **Hobby plan caveat**: Hobby allows two cron jobs, each at most once per day — a deploy with the minute schedules is rejected. On Hobby, keep only `refresh-tokens` in `vercel.json` and either run the Railway worker (then `tick` is unnecessary and the worker also reconciles) or point a free external scheduler such as cron-job.org at `https://YOUR_DOMAIN/api/cron/tick?token=YOUR_CRON_SECRET` every minute.
-5. **Worker on Railway**: New Project → Deploy from GitHub → this repo. In the service **Settings → Config-as-code**, set the path to `railway.worker.json` (start command `npm run worker`, no health check). Add the same variables as Vercel — the worker validates `NEXT_PUBLIC_SUPABASE_*` too even though it never signs anyone in. Deploy; the logs should show `worker.started` then a `worker.heartbeat` line every 30 s.
-6. **Domain**: Vercel → Settings → Domains → add yours; set `NEXT_PUBLIC_APP_URL` to it and redeploy. Update the Supabase redirect URL and the Meta URLs (§5.2).
+5. **Worker on Railway**: New Project → Deploy from GitHub → this repo. In the service **Settings → Config-as-code**, set the path to `railway.worker.json` (start command `npm run worker`, no health check). Add the same variables as Vercel — the worker validates `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` too even though it never signs anyone in. Deploy; the logs should show `worker.started` then a `worker.heartbeat` line every 30 s.
+6. **Domain**: Vercel → Settings → Domains → add yours; set `NEXT_PUBLIC_APP_URL` to it and redeploy. Update the Google redirect URI and the Meta URLs (§5.2).
 7. **Verify**: `curl https://YOUR_DOMAIN/api/health` → `"ok": true`, `"worker": { "status": "healthy" }` after the first heartbeat.
 
 ---
 
 ## 3. Recipe B — Docker Compose on a VPS
 
-Everything on one Linux machine: Postgres, web, worker, and Caddy for automatic HTTPS. Works on any provider that gives you a root shell (local Nepali hosts, Hetzner, DigitalOcean, Contabo, a Proxmox VM at the office…). No US-only payment or identity checks beyond Supabase Auth.
+Everything on one Linux machine: Postgres, web, worker, and Caddy for automatic HTTPS. Works on any provider that gives you a root shell (local Nepali hosts, Hetzner, DigitalOcean, Contabo, a Proxmox VM at the office…). No US-only payment or identity checks beyond a free Google Cloud project.
 
 **Sizing**: 1 vCPU / 2 GB RAM runs comfortably to a few hundred thousand DMs a month. Ubuntu 22.04 or 24.04.
 
@@ -105,7 +105,7 @@ Fill in `.env`:
 
 - `NEXT_PUBLIC_APP_URL=https://app.example.com` and `APP_DOMAIN=app.example.com`
 - `POSTGRES_PASSWORD=<something long>` — the compose file builds `DATABASE_URL`/`DIRECT_URL` from it and **ignores** the `DATABASE_URL` lines in `.env` (they are overridden to point at the bundled Postgres container).
-- Supabase auth values, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and Meta/Dodo credentials when you have them.
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and Meta/Dodo credentials when you have them.
 
 Check it: `docker run --rm -v "$PWD:/app" -w /app node:20-alpine node scripts/check-env.mjs` (or `node scripts/check-env.mjs` if Node is installed on the box).
 
@@ -196,7 +196,7 @@ Rather deploy the Docker image on Railway? In `railway.json` set `"builder": "DO
 
 ### 5.1 Domain + HTTPS rules
 
-- The app must be served over `https://`; Meta refuses plain-http redirect URIs and webhook callbacks, and Supabase cookies are `Secure`.
+- The app must be served over `https://`; Meta refuses plain-http redirect URIs and webhook callbacks, and the session cookie is `Secure` in production.
 - Vercel/Railway/Render terminate TLS for you. On Compose, Caddy does. Behind your own proxy, forward `X-Forwarded-Proto: https`.
 - `NEXT_PUBLIC_APP_URL` must equal what users type in the address bar — no `www` mismatch — or Google sign-in bounces back to the wrong host.
 
@@ -204,7 +204,7 @@ Rather deploy the Docker image on Railway? In `railway.json` set `"builder": "DO
 
 | Where | Setting | Value |
 |---|---|---|
-| Supabase → Authentication → URL Configuration | Site URL / Redirect URLs | `https://YOUR_DOMAIN` / `https://YOUR_DOMAIN/**` |
+| Google Cloud → Credentials → your OAuth client | Authorized redirect URI | `https://YOUR_DOMAIN/auth/callback` |
 | Meta app → Instagram → Business login settings | OAuth redirect URI | `https://YOUR_DOMAIN/api/meta/instagram/callback` |
 | same | Deauthorize / Data deletion | `https://YOUR_DOMAIN/api/meta/deauthorize`, `https://YOUR_DOMAIN/api/meta/data-deletion` |
 | Meta app → Facebook Login → Settings | Valid OAuth redirect URIs | `https://YOUR_DOMAIN/api/meta/facebook/callback` |
@@ -267,8 +267,10 @@ Test a restore once into a throwaway database. Backups nobody has restored are h
 
 | Symptom | Cause → fix |
 |---|---|
-| Build fails: "pass --build-arg NEXT_PUBLIC_…" | Docker build without the three public build args. Set them in `.env` (Compose reads it) or pass `--build-arg`. |
-| Login page loads, Google button errors | `NEXT_PUBLIC_SUPABASE_*` wrong at **build** time, or the domain is missing from Supabase Redirect URLs. Rebuild after fixing. |
+| Build fails: "pass --build-arg NEXT_PUBLIC_APP_URL" | Docker build without the public build arg. Set it in `.env` (Compose reads it) or pass `--build-arg`. |
+| `/login?error=not_configured` | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` missing on the server. |
+| `/login?error=exchange_failed` | Google rejected the code exchange — usually `redirect_uri_mismatch` (the URI on the client doesn't match `NEXT_PUBLIC_APP_URL` + `/auth/callback`) or a wrong client secret. The server log line `auth.google.token_exchange_failed` carries Google's own description. |
+| `/login?error=expired_state` | The sign-in took longer than 10 minutes, or cookies are being dropped — check that `NEXT_PUBLIC_APP_URL` matches the host in the address bar. |
 | `/api/health` → 503 | database unreachable: wrong `DATABASE_URL`, Postgres not started, firewall. Web logs show `admin.health.db_unreachable` with the driver error. |
 | `worker.status: "stale"` | worker process not running or cannot reach the DB. Check its logs for `worker.started`; on Compose `docker compose ps worker`. |
 | Cron returns 401 | `CRON_SECRET` mismatch, or the scheduler sends no header — use `?token=`. |

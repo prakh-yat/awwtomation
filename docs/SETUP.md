@@ -13,13 +13,25 @@ If you can't run a second process (e.g. Vercel only), point a cron at `GET /api/
 
 `GET /api/health` reports database, worker and integration status for both. Hosting recipes (Vercel + Railway, Docker Compose on a VPS, Railway all-in-one) live in **[docs/DEPLOY.md](DEPLOY.md)**; billing setup in **[docs/BILLING.md](BILLING.md)**.
 
-## 1. Supabase
+## 1. Google sign-in
 
-1. Create a project at supabase.com.
-2. **Authentication → Providers → Google** → enable. Paste a Google OAuth client id/secret (Google Cloud Console → APIs & Services → Credentials → OAuth client → Web application). Authorized redirect URI: `https://YOUR_PROJECT.supabase.co/auth/v1/callback`.
-3. **Authentication → URL Configuration**: Site URL = your `NEXT_PUBLIC_APP_URL`; add `http://localhost:3000/**` and `https://yourdomain.com/**` to Redirect URLs.
-4. **Project Settings → API**: copy `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-5. **Project Settings → Database**: copy the pooled (6543) URL into `DATABASE_URL` and the direct (5432) URL into `DIRECT_URL`.
+The app talks to Google directly (OAuth 2.0 authorization code + PKCE) — there is no auth vendor in between.
+
+1. **Google Cloud Console → APIs & Services → OAuth consent screen**: pick External, fill in the app name, support email and developer email. The scopes used are `openid`, `email` and `profile` — all non-sensitive, so no verification review is needed. While the app is in *Testing*, only the accounts you list under **Test users** can sign in; hit **Publish app** when you want anyone to.
+2. **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application**.
+3. **Authorized JavaScript origins**: your `NEXT_PUBLIC_APP_URL` (e.g. `https://app.yourdomain.com`).
+4. **Authorized redirect URIs** — one per environment, matched byte for byte:
+   - `https://app.yourdomain.com/auth/callback`
+   - `http://localhost:3000/auth/callback`
+5. Copy the client id and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+`npm run setup:urls` prints these values for your current `NEXT_PUBLIC_APP_URL`, and `npm run verify` checks the credentials against Google's token endpoint.
+
+Sessions are a signed cookie keyed by `APP_ENCRYPTION_KEY` — rotating that variable signs everyone out.
+
+## 1b. Postgres
+
+Any Postgres works; Supabase's is a convenient managed one. **Project Settings → Database**: copy the pooled (6543) URL into `DATABASE_URL` and the direct (5432) URL into `DIRECT_URL`.
 
 ## 2. Database
 
@@ -58,7 +70,7 @@ See `docs/META_APP_REVIEW.md` for the screencast script and permission justifica
 
 ## 4. Run locally
 
-### Without Supabase or Docker (fastest)
+### Without Google or Docker (fastest)
 
 An embedded Postgres (PGlite) and a dev-only sign-in bypass let you run the whole product on a laptop with no accounts:
 
@@ -72,9 +84,9 @@ In `.env` (see the "Local development" block in `.env.example`):
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/postgres?connection_limit=1&pgbouncer=true
 DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:5433/postgres?connection_limit=1&pgbouncer=true
 DEV_AUTH_EMAIL=you@example.com     # signs you in as this user — honoured only when NODE_ENV=development
-NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co   # must be present; never called while DEV_AUTH_EMAIL is set
-NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder
 ```
+
+With `DEV_AUTH_EMAIL` set, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` may be left empty.
 
 ```bash
 npx prisma db push        # terminal 2 — create the tables
@@ -85,7 +97,7 @@ npm run worker            # terminal 3 — sends the DMs (demo channels have fak
 
 The bypass is ignored in production builds.
 
-### With real Supabase + Meta
+### With real Google + Meta
 
 ```bash
 npm run dev       # http://localhost:3000
@@ -104,7 +116,7 @@ Paste that URL into `NEXT_PUBLIC_APP_URL` in `.env`, restart `npm run dev`, then
 
 ```bash
 npm run setup:urls      # prints the exact value for every console field
-npm run verify          # live-tests Supabase, Postgres, Meta, Dodo, webhook handshake
+npm run verify          # live-tests Google, Postgres, Meta, Dodo, webhook handshake
 ```
 
 > **The quick-tunnel URL changes every time cloudflared restarts**, and Meta matches redirect URIs exactly — so a restart means re-registering every URL. For anything beyond a one-off test, get a stable URL:
@@ -116,7 +128,7 @@ npm run verify          # live-tests Supabase, Postgres, Meta, Dodo, webhook han
 
 ## 5. Deploy
 
-Full recipes in **[docs/DEPLOY.md](DEPLOY.md)**: (a) Vercel + Supabase + Railway worker, (b) Docker Compose on any Linux VPS — `docker compose --profile proxy up -d --build` gives you Postgres, web, worker and automatic HTTPS, (c) Railway all-in-one. Config files are in the repo: `Dockerfile`, `docker-compose.yml`, `railway.json` / `railway.worker.json`, `render.yaml`, `vercel.json`.
+Full recipes in **[docs/DEPLOY.md](DEPLOY.md)**: (a) Vercel + managed Postgres + Railway worker, (b) Docker Compose on any Linux VPS — `docker compose --profile proxy up -d --build` gives you Postgres, web, worker and automatic HTTPS, (c) Railway all-in-one. Config files are in the repo: `Dockerfile`, `docker-compose.yml`, `railway.json` / `railway.worker.json`, `render.yaml`, `vercel.json`.
 
 The short version:
 

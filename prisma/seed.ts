@@ -262,7 +262,7 @@ async function upsertUser(email: string, name: string) {
   return prisma.user.upsert({
     where: { email },
     update: { name },
-    create: { supabaseId: `seed:${email}`, email, name },
+    create: { authId: `seed:${email}`, email, name },
   });
 }
 

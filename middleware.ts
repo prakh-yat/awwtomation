@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { updateSession } from "@/lib/supabase/middleware";
+import { updateSession } from "@/lib/auth/middleware";
 import { sanitizeNextPath } from "@/lib/utils";
 
 /**
@@ -28,8 +28,8 @@ function isProtected(pathname: string): boolean {
 }
 
 /**
- * A redirect is a brand-new response, so the refreshed Supabase cookies set
- * on `response` must be copied across or the session silently rots.
+ * A redirect is a brand-new response, so a session cookie refreshed on
+ * `response` must be copied across or the sliding expiry silently stops working.
  */
 function redirectWithCookies(url: URL, from: NextResponse): NextResponse {
   const redirect = NextResponse.redirect(url);
@@ -38,10 +38,10 @@ function redirectWithCookies(url: URL, from: NextResponse): NextResponse {
 }
 
 export async function middleware(request: NextRequest) {
-  const { response, user } = await updateSession(request);
+  const { response, userId } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
 
-  if (!user && isProtected(pathname)) {
+  if (!userId && isProtected(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
@@ -49,7 +49,7 @@ export async function middleware(request: NextRequest) {
     return redirectWithCookies(url, response);
   }
 
-  if (user && pathname === "/login") {
+  if (userId && pathname === "/login") {
     const url = request.nextUrl.clone();
     const next = sanitizeNextPath(request.nextUrl.searchParams.get("next"), "/dashboard");
     const target = new URL(next, request.nextUrl.origin);
@@ -63,7 +63,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // Skip static assets, Meta/Dodo webhooks (signed, no session), the health probe and
-  // cron routes (secret-guarded, must answer even when Supabase env is missing)
+  // cron routes (secret-guarded, must answer even when auth env is missing)
   // and tracked-link redirects (public, latency-sensitive). Everything else
   // refreshes the session.
   matcher: [

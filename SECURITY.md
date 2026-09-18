@@ -31,9 +31,12 @@ handlers only ever obtain `workspaceId` from the server-side workspace context
 cross-tenant page or API: operator tasks such as comping a plan run from the
 command line (`scripts/set-plan.ts`) with direct database access.
 
-**Authentication and roles.** Sign-in is Google via Supabase Auth; the middleware
-validates the JWT with `auth.getUser()` (not the cookie payload) on every
-protected page. Roles are OWNER > ADMIN > MEMBER (`lib/workspace/permissions.ts`).
+**Authentication and roles.** Sign-in is Google OAuth 2.0 with PKCE, handled by
+the app itself (`lib/auth/google.ts`, `app/auth/google`, `app/auth/callback`);
+the `state` and code verifier live in a short-lived httpOnly cookie and the code
+exchange happens server-side. The session is an HMAC-SHA256-signed cookie
+(`lib/auth/token.ts`, keyed by `APP_ENCRYPTION_KEY`) whose signature and expiry
+the middleware verifies on every protected page. Roles are OWNER > ADMIN > MEMBER (`lib/workspace/permissions.ts`).
 Route handlers declare `minRole` in `withWorkspace(...)` or enforce it in the
 service (`assertMembership`); the audit table in the security lane's report lists
 every route with its wrapper and role. Channels, team, settings and billing are
@@ -48,7 +51,7 @@ All app cookies are `SameSite=Lax`, `Secure` in production, and `httpOnly`
 except `or_sidebar` (a UI preference written by the client).
 
 **Browser hardening.** `next.config.ts` sets on every response: a
-Content-Security-Policy (self + Supabase + Graph API + Dodo checkout only;
+Content-Security-Policy (self + Graph API + Dodo checkout only;
 `frame-ancestors 'none'`; `unsafe-eval` only in development), `X-Frame-Options:
 DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
 strict-origin-when-cross-origin`, `Permissions-Policy` (camera/microphone/
@@ -89,7 +92,7 @@ whose key matches `/token|secret|password|authorization|cookie|access_token/i`
 or raw cookies.
 
 **Development auth gate.** `DEV_AUTH_EMAIL` signs every request in as that user
-without Supabase. It is hard-gated on `NODE_ENV === "development"`
+without Google. It is hard-gated on `NODE_ENV === "development"`
 (`lib/auth/dev.ts`), so it is inert in `next build`/`next start` even if the
 variable leaks into a production environment.
 
@@ -119,7 +122,9 @@ confirmation code.
       or `.env` shared outside the deployment: `APP_ENCRYPTION_KEY` (re-encrypt
       or reconnect channels), `META_APP_SECRET`, `INSTAGRAM_APP_SECRET`,
       `META_WEBHOOK_VERIFY_TOKEN`, `CRON_SECRET`, `DODO_SECRET_KEY`,
-      `DODO_WEBHOOK_SECRET`, `RESEND_API_KEY`, and the Supabase service/anon keys.
+      `DODO_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET` (rotating it
+      also invalidates nothing already signed in — rotate `APP_ENCRYPTION_KEY` to
+      force every session to end), and any database credentials.
 - [ ] Serve exclusively over HTTPS with `NEXT_PUBLIC_APP_URL` set to the public
       `https://` origin (cookies are `Secure`, HSTS preload is on, and the CSRF
       check compares against this host).
@@ -127,6 +132,9 @@ confirmation code.
       set anywhere in production configuration.
 - [ ] Register the Meta redirect URIs, webhook URL, deauthorize and data-deletion
       callbacks with the production domain only; remove localhost/ngrok entries.
+- [ ] On the Google OAuth client, list only the production
+      `https://<domain>/auth/callback` as an authorized redirect URI; remove the
+      localhost entry once you no longer develop against that client.
 - [ ] Restrict database access to the app and worker (Supabase: keep RLS enabled
       on any table exposed through PostgREST; the app uses Prisma over a private
       connection string).

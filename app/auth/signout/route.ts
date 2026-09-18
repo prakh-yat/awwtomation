@@ -11,8 +11,8 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   try {
     await signOut();
   } catch (err) {
-    // Even if Supabase is unreachable the cookies are cleared locally, so we
-    // still send the user to /login rather than showing an error.
+    // Clearing cookies is local and cannot really fail, but a surprise here
+    // must still land the visitor on /login rather than an error page.
     logger.warn("auth.signout_error", { error: err });
   }
   const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? new URL(request.url).origin;

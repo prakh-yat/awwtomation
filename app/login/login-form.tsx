@@ -2,19 +2,15 @@
 
 import { useState } from "react";
 
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-
 /** Messages keyed by the `?error=` values produced by `app/auth/callback`. */
 const ERROR_MESSAGES: Record<string, string> = {
   access_denied: "Google sign-in was cancelled. Try again when you're ready.",
   oauth_failed: "Google didn't complete the sign-in. Please try again.",
-  exchange_failed: "Your sign-in link is invalid or has expired. Please try again.",
   missing_code: "Something went wrong during sign-in. Please try again.",
-  sync_failed: "We couldn't set up your account. Please try again in a moment.",
-  no_user: "We couldn't read your Google profile. Please try again.",
+  expired_state: "That sign-in attempt expired. Please try again.",
+  exchange_failed: "We couldn't finish signing you in. Please try again in a moment.",
+  not_configured: "Google sign-in isn't set up on this server yet.",
 };
-
-const START_FAILED = "We couldn't open Google sign-in. Please try again in a moment.";
 
 function GoogleIcon() {
   return (
@@ -25,7 +21,7 @@ function GoogleIcon() {
       />
       <path
         fill="#34A853"
-        d="M12 24c3.24 0 5.95-1.08 7.94-2.91l-3.88-3.01c-1.08.72-2.45 1.16-4.06 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24Z"
+        d="M12 24c3.24 0 5.95-1.08 7.94-2.91l-3.88-3.01c-1.08.72-2.45 1.16-4.06 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29V17.37A12 12 0 0 0 12 24Z"
       />
       <path
         fill="#FBBC05"
@@ -39,33 +35,17 @@ function GoogleIcon() {
   );
 }
 
+/**
+ * A plain link to `/auth/google`, which mints the PKCE challenge server-side
+ * and redirects to Google. No auth SDK in the browser, and sign-in still works
+ * if the page's JavaScript never loads — the click handler only exists to show
+ * the spinner while the navigation is in flight.
+ */
 export function LoginForm({ next, error }: { next: string; error?: string }) {
   const [pending, setPending] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
 
-  const message = localError ?? (error ? (ERROR_MESSAGES[error] ?? "Sign-in failed. Please try again.") : null);
-
-  async function signInWithGoogle() {
-    setPending(true);
-    setLocalError(null);
-    try {
-      const supabase = createSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo, queryParams: { prompt: "select_account" } },
-      });
-      if (oauthError) {
-        // Supabase's wording describes our auth configuration, not anything the visitor can act on.
-        setLocalError(START_FAILED);
-        setPending(false);
-      }
-      // On success the browser navigates to Google; leave the button disabled.
-    } catch {
-      setLocalError(START_FAILED);
-      setPending(false);
-    }
-  }
+  const message = error ? (ERROR_MESSAGES[error] ?? "Sign-in failed. Please try again.") : null;
+  const href = `/auth/google?next=${encodeURIComponent(next)}`;
 
   return (
     <div className="space-y-4">
@@ -78,11 +58,11 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={signInWithGoogle}
-        disabled={pending}
-        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-input bg-background px-4 text-[15px] font-medium text-foreground shadow-[0_1px_2px_rgb(24_24_27/0.06)] transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+      <a
+        href={href}
+        onClick={() => setPending(true)}
+        aria-disabled={pending}
+        className="inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-input bg-background px-4 text-[15px] font-medium text-foreground shadow-[0_1px_2px_rgb(24_24_27/0.06)] transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-disabled:pointer-events-none aria-disabled:opacity-60"
       >
         {pending ? (
           <span
@@ -93,7 +73,7 @@ export function LoginForm({ next, error }: { next: string; error?: string }) {
           <GoogleIcon />
         )}
         {pending ? "Redirecting to Google…" : "Continue with Google"}
-      </button>
+      </a>
     </div>
   );
 }

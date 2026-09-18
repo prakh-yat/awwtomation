@@ -26,8 +26,8 @@ Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`)
 
 - Next.js 15 App Router, React 19, TypeScript strict. **Node runtime for all route handlers** (`export const runtime = "nodejs"` where Prisma/crypto is used).
 - Tailwind 3.4 + shadcn-style components in `components/ui/*` (Radix primitives, `cva`, `cn` from `@/lib/utils`).
-- Prisma 6 + Postgres (Supabase). Schema is FINAL at `prisma/schema.prisma` — read it. If you truly need a schema change, make it additive and note it in your final report.
-- Supabase Auth (`@supabase/ssr`) for **Google sign-in only**. Our own `User` row mirrors the Supabase user (`supabaseId`).
+- Prisma 6 + Postgres. Schema is FINAL at `prisma/schema.prisma` — read it. If you truly need a schema change, make it additive and note it in your final report.
+- Google OAuth 2.0 + PKCE, implemented in-app (`lib/auth/*`). Our own `User` row mirrors the Google identity (`authId` = `google:<sub>`; the column is still physically named `supabaseId`, see the `@map` in the schema).
 - Postgres-backed job queue (`Job` model) + `worker/index.ts` (run with `npm run worker`). No Redis.
 - `@xyflow/react` for the flow builder. `recharts` for charts. `sonner` for toasts. `lucide-react` icons. `zod` validation. `date-fns`.
 - Fonts: Geist Sans / Geist Mono via the `geist` package.
@@ -48,7 +48,7 @@ Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`)
 ## 4. Routes
 
 Marketing (public, `app/(marketing)/`): `/` landing, `/pricing`, `/privacy`, `/terms`, `/data-deletion`.
-Auth: `/login` (Google button), `app/auth/callback/route.ts` (Supabase code exchange → upsert User → ensure an organization with a workspace → redirect), `app/auth/signout/route.ts`.
+Auth: `/login` (Google button — a plain link), `app/auth/google/route.ts` (mint state + PKCE, redirect to Google), `app/auth/callback/route.ts` (verify state → exchange code → upsert User → start session → ensure an organization with a workspace → redirect), `app/auth/signout/route.ts`.
 App (protected, `app/(app)/`, uses sidebar shell):
 - `/dashboard` — overview KPIs + charts + recent activity
 - `/automations`, `/automations/templates`, `/automations/[id]` (builder; the sidebar folds to its rail and the page draws edge to edge), `/automations/[id]/analytics`. `/automations/new` redirects to the templates.
@@ -75,13 +75,14 @@ Already written (do not rewrite): `lib/env.ts` (`getEnv`, `optionalEnv`, `appUrl
 ### lib/logger.ts
 `export const logger = { info(event: string, meta?: object), warn(...), error(...) }` — JSON lines to stdout/stderr.
 
-### lib/supabase/server.ts, client.ts, middleware.ts
-- `createSupabaseServerClient()` (uses `cookies()` from next/headers) — server components/route handlers.
-- `createSupabaseBrowserClient()` — client components.
-- `updateSession(request: NextRequest): Promise<{ response: NextResponse; user: SupabaseUser | null }>` — used by `middleware.ts` to refresh the auth cookie and gate `/dashboard|/automations|...` → redirect to `/login?next=`.
+### lib/auth/google.ts, token.ts, cookies.ts, middleware.ts
+- `lib/auth/google.ts` — authorize URL, PKCE pair, code→`id_token` exchange, `readIdentity()` (validates `iss`/`aud`/`exp`/`email_verified`).
+- `lib/auth/token.ts` — `signSession()` / `verifySession()`: an HMAC-SHA256 cookie payload (`{uid, iat, exp}`) keyed by `APP_ENCRYPTION_KEY`. Web Crypto only, so the Edge middleware can verify it.
+- `lib/auth/cookies.ts` — cookie names/attributes plus the short-lived OAuth transaction blob (`state`, PKCE verifier, `next`).
+- `updateSession(request: NextRequest): Promise<{ response: NextResponse; userId: string | null }>` — used by `middleware.ts` to verify (and slide) the session cookie and gate `/dashboard|/automations|...` → redirect to `/login?next=`. No DB, no network.
 
 ### lib/auth/session.ts
-- `getCurrentUser(): Promise<User | null>` — reads Supabase session, upserts our `User` by `supabaseId` (email/name/avatar from Google metadata). Cached per request with `React.cache`.
+- `getCurrentUser(): Promise<User | null>` — verifies the session cookie and loads the `User` row. Cached per request with `React.cache`. `syncGoogleUser()` upserts by `authId`, falling back to email so an existing account re-links instead of colliding.
 - `requireUser(): Promise<User>` — redirects to `/login` if null.
 - `signOut()` helper used by `/auth/signout`.
 
@@ -237,14 +238,14 @@ export async function executeFlowStep(job: Job): Promise<void>;
 - Instagram DM preview component (`components/automations/dm-preview.tsx`): phone-shaped black/white mock rendering an `OutboundMessage`.
 
 ## 8. Environment variables (documented in `.env.example`)
-`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `DATABASE_URL`, `DIRECT_URL`, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_APP_ID`, `META_APP_SECRET`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `META_GRAPH_API_VERSION`, optional `RESEND_API_KEY`, `EMAIL_FROM`.
-Google OAuth is configured inside the Supabase dashboard (Authentication → Providers → Google); the app itself needs no Google secrets.
+`NEXT_PUBLIC_APP_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `DATABASE_URL`, `DIRECT_URL`, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_APP_ID`, `META_APP_SECRET`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `META_GRAPH_API_VERSION`, optional `RESEND_API_KEY`, `EMAIL_FROM`.
+The Google OAuth client lives in Google Cloud Console (APIs & Services → Credentials → Web application); its authorized redirect URI must be `<NEXT_PUBLIC_APP_URL>/auth/callback`.
 
 ## 9. File ownership (parallel build — stay inside your lane)
 
 | Lane | Owns |
 |---|---|
-| foundation-auth | `lib/logger.ts`, `lib/supabase/*`, `lib/auth/*`, `lib/workspace/*`, `lib/billing/*`, `lib/services/workspaces.ts`, `lib/services/organizations.ts`, `middleware.ts`, `app/auth/*`, `app/login/*`, `app/api/workspaces/*`, `app/api/organizations/*`, `app/organizations/*`, `app/(app)/onboarding/*`, `app/invite/[token]/*`, `app/api/invitations/*` |
+| foundation-auth | `lib/logger.ts`, `lib/auth/*`, `lib/workspace/*`, `lib/billing/*`, `lib/services/workspaces.ts`, `lib/services/organizations.ts`, `middleware.ts`, `app/auth/*`, `app/login/*`, `app/api/workspaces/*`, `app/api/organizations/*`, `app/organizations/*`, `app/(app)/onboarding/*`, `app/invite/[token]/*`, `app/api/invitations/*` |
 | foundation-meta | `lib/meta/*`, `lib/rate-limit.ts`, `lib/queue/*`, `lib/automation/*`, `worker/*`, `lib/webhooks/processor.ts`, `app/api/webhooks/meta/*`, `app/api/cron/*` |
 | foundation-ui | `components/ui/*`, `components/app-shell/*`, `app/layout.tsx`, `app/(app)/layout.tsx`, `app/(marketing)/*`, `app/not-found.tsx`, `app/error.tsx`, `public/*` (logo svg, favicon), `components/marketing/*` |
 | dashboard | `app/(app)/dashboard/*`, `components/dashboard/*`, `lib/services/analytics.ts`, `app/api/analytics/*` |

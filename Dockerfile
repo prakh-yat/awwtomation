@@ -2,14 +2,13 @@
 # Awwtomation — multi-stage build.
 #
 #   docker build --target runner -t awwtomation-web \
-#     --build-arg NEXT_PUBLIC_APP_URL=https://app.example.com \
-#     --build-arg NEXT_PUBLIC_SUPABASE_URL=https://xyz.supabase.co \
-#     --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=... .
+#     --build-arg NEXT_PUBLIC_APP_URL=https://app.example.com .
 #   docker build --target worker -t awwtomation-worker .
 #
 # NEXT_PUBLIC_* values are inlined into the JavaScript bundle at build time, so
 # they are build args here, not runtime env. Everything else (DATABASE_URL,
-# secrets…) is read at runtime from the container environment.
+# GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, other secrets…) is read at runtime
+# from the container environment.
 ARG NODE_VERSION=20
 
 # ── base ──────────────────────────────────────────────────────────────────────
@@ -30,14 +29,11 @@ RUN npm ci --no-audit --no-fund
 # ── builder: next build with standalone output ────────────────────────────────
 FROM base AS builder
 ARG NEXT_PUBLIC_APP_URL
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
-    NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL} \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-# Fail early: an image built without these renders a login page that cannot sign in.
-RUN test -n "$NEXT_PUBLIC_SUPABASE_URL" && test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" && test -n "$NEXT_PUBLIC_APP_URL" \
-  || (echo "ERROR: pass --build-arg NEXT_PUBLIC_APP_URL / NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY" && exit 1)
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+# The only NEXT_PUBLIC_* value the client bundle needs. Google sign-in runs
+# entirely server-side, so GOOGLE_CLIENT_ID/SECRET are runtime env, not build args.
+RUN test -n "$NEXT_PUBLIC_APP_URL" \
+  || (echo "ERROR: pass --build-arg NEXT_PUBLIC_APP_URL" && exit 1)
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # `npm run build` = prisma generate && next build. Regenerating here keeps the

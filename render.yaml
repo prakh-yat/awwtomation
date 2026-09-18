@@ -2,8 +2,8 @@
 # Dashboard → Blueprints → New Blueprint Instance → pick this repo. Render
 # creates every service below and prompts for the `sync: false` secrets once.
 #
-# Both processes share the "awwtomation" env group. NEXT_PUBLIC_* must be in
-# that group too: Render exposes env vars at build time and Next inlines them.
+# Both processes share the "awwtomation" env group. NEXT_PUBLIC_APP_URL must be
+# in that group too: Render exposes env vars at build time and Next inlines it.
 # Singapore is the closest region to South Asia; change it if your users aren't there.
 
 services:
@@ -73,8 +73,8 @@ services:
   #     - fromGroup: awwtomation
 
 # Optional: Render-managed Postgres instead of Supabase's. If you use it, set
-# DATABASE_URL and DIRECT_URL in the env group to its Internal Database URL
-# (Supabase Auth is still required for Google sign-in).
+# DATABASE_URL and DIRECT_URL in the env group to its Internal Database URL.
+# Sign-in talks to Google directly, so no other external service is needed.
 # databases:
 #   - name: awwtomation-db
 #     region: singapore
@@ -86,9 +86,9 @@ envVarGroups:
     envVars:
       - key: NEXT_PUBLIC_APP_URL
         sync: false
-      - key: NEXT_PUBLIC_SUPABASE_URL
+      - key: GOOGLE_CLIENT_ID
         sync: false
-      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+      - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: DATABASE_URL
         sync: false

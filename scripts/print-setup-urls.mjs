@@ -1,6 +1,6 @@
 /**
- * Prints the exact value for every field you must paste into the Supabase,
- * Google Cloud and Meta consoles, derived from NEXT_PUBLIC_APP_URL.
+ * Prints the exact value for every field you must paste into the Google Cloud
+ * and Meta consoles, derived from NEXT_PUBLIC_APP_URL.
  *
  *   node --env-file=.env scripts/print-setup-urls.mjs
  *
@@ -16,7 +16,6 @@ const cyan = (s) => `\x1b[36m${s}${RESET}`;
 const yellow = (s) => `\x1b[33m${s}${RESET}`;
 
 const app = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/\/$/, "");
-const supabase = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
 const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN ?? "";
 
 if (!app) {
@@ -34,29 +33,18 @@ function row(field, value) {
   console.log(`    ${cyan(value)}`);
 }
 
-console.log(`\n${bold("═══ Supabase")}  ${dim("supabase.com/dashboard → your project")}`);
-console.log(`\n${bold("Authentication → URL Configuration")}`);
-row("Site URL", app);
-row("Redirect URLs  (add both)", `${app}/**`);
-console.log(`    ${cyan("http://localhost:3000/**")}   ${dim("keeps plain local dev working")}`);
-console.log(`\n${bold("Authentication → Sign In / Providers → Google")}`);
-console.log(`    Enable it, then paste the Client ID + Client Secret from Google Cloud (below).`);
-if (supabase) {
-  console.log(`    ${dim("Supabase shows a callback URL — it is:")}`);
-  console.log(`    ${cyan(`${supabase}/auth/v1/callback`)}`);
-} else {
-  console.log(`    ${dim("Fill NEXT_PUBLIC_SUPABASE_URL in .env to see your callback URL here.")}`);
-}
-
 console.log(`\n${bold("═══ Google Cloud")}  ${dim("console.cloud.google.com → APIs & Services → Credentials")}`);
-console.log(`\n${bold("OAuth client ID → Web application")}`);
+console.log(`\n${bold("Create credentials → OAuth client ID → Web application")}`);
 row("Authorized JavaScript origins", app);
-row(
-  "Authorized redirect URI",
-  supabase ? `${supabase}/auth/v1/callback` : "<your-supabase-url>/auth/v1/callback  ← fill NEXT_PUBLIC_SUPABASE_URL first",
-);
-console.log(`    ${dim("Note: this points at SUPABASE, not at your app. Supabase brokers the")}`);
-console.log(`    ${dim("Google login and then redirects back to your app's /auth/callback.")}`);
+row("Authorized redirect URI", `${app}/auth/callback`);
+console.log(`    ${cyan("http://localhost:3000/auth/callback")}   ${dim("add this too, for local dev")}`);
+console.log(`    ${dim("Google matches redirect URIs exactly — no trailing slash, right scheme.")}`);
+console.log(`\n${bold("Then copy into .env")}`);
+console.log(`    ${cyan("GOOGLE_CLIENT_ID")}      ${dim("ends in .apps.googleusercontent.com")}`);
+console.log(`    ${cyan("GOOGLE_CLIENT_SECRET")}`);
+console.log(`\n${bold("APIs & Services → OAuth consent screen")}`);
+console.log(`    ${dim("Scopes needed: openid, email, profile (all non-sensitive — no review required).")}`);
+row("Authorized domain", app.replace(/^https?:\/\//, "").replace(/^app\./, ""));
 
 console.log(`\n${bold("═══ Meta")}  ${dim("developers.facebook.com → your app")}`);
 console.log(`\n${bold("App settings → Basic")}`);

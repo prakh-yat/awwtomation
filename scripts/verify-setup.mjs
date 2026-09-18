@@ -90,50 +90,52 @@ has("META_WEBHOOK_VERIFY_TOKEN")
   ? pass("META_WEBHOOK_VERIFY_TOKEN")
   : fail("META_WEBHOOK_VERIFY_TOKEN", "Not set.", "Any random string; paste the same value into Meta's webhook config.");
 
-// ── 2. Supabase ─────────────────────────────────────────────────────────────
-section("2. Supabase");
+// ── 2. Google sign-in ───────────────────────────────────────────────────────
+section("2. Google sign-in");
 
-if (!has("NEXT_PUBLIC_SUPABASE_URL") || !has("NEXT_PUBLIC_SUPABASE_ANON_KEY")) {
-  skip("Supabase API", "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY not filled in");
+if (!has("GOOGLE_CLIENT_ID") || !has("GOOGLE_CLIENT_SECRET")) {
+  skip("Google OAuth", "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not filled in");
 } else {
-  const url = env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "");
-  try {
-    const res = await get(`${url}/auth/v1/health`, {
-      headers: { apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY },
-    });
-    if (res.ok) {
-      pass("Supabase Auth reachable", url);
-    } else if (res.status === 401) {
-      fail("Supabase anon key", "Auth rejected the key (401).", "Copy the anon/publishable key from Project Settings → Data API.");
-    } else {
-      fail("Supabase Auth", `HTTP ${res.status} from ${url}/auth/v1/health`, "Check NEXT_PUBLIC_SUPABASE_URL.");
-    }
-  } catch (err) {
-    fail("Supabase Auth", `Could not reach ${url} (${err.message}).`, "Check the project URL and that the project isn't paused.");
+  if (env.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")) {
+    pass("GOOGLE_CLIENT_ID", env.GOOGLE_CLIENT_ID);
+  } else {
+    console.log(`  ${c.yellow("WARN")}  GOOGLE_CLIENT_ID does not end in .apps.googleusercontent.com — check you copied the client ID, not the project id.`);
   }
 
-  // Google provider: the authorize endpoint 302s to Google when enabled, and
-  // returns a 400 with "provider is not enabled" when it isn't.
+  // Probe the token endpoint with a deliberately bogus authorization code.
+  // Google answers "invalid_client" when the id/secret pair is wrong and
+  // "invalid_grant" when it is right but the code isn't — which is the pass.
+  const redirectUri = `${appUrl || "http://localhost:3000"}/auth/callback`;
   try {
-    const res = await get(
-      `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${appUrl || "http://localhost:3000"}/auth/callback`)}`,
-      { redirect: "manual", headers: { apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY } },
-    );
-    const location = res.headers.get("location") ?? "";
-    if (location.includes("accounts.google.com")) {
-      pass("Supabase Google provider enabled");
-    } else if (location.includes("error") || res.status >= 400) {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: "verify-setup-probe",
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (body.error === "invalid_grant") {
+      pass("Google accepted the client id + secret");
+    } else if (body.error === "invalid_client") {
       fail(
-        "Supabase Google provider",
-        "Supabase did not redirect to Google.",
-        "Dashboard → Authentication → Sign In / Providers → enable Google and paste your GCP client id + secret.",
+        "Google client credentials",
+        "Google rejected the client id/secret pair (invalid_client).",
+        "Re-copy both from Google Cloud Console → APIs & Services → Credentials → your Web application client.",
       );
     } else {
-      console.log(`  ${c.yellow("WARN")}  Google provider: unexpected response (${res.status}). Verify manually in the dashboard.`);
+      console.log(`  ${c.yellow("WARN")}  Unexpected response from Google (${body.error ?? res.status}). Verify manually.`);
     }
   } catch (err) {
-    console.log(`  ${c.yellow("WARN")}  Could not test the Google provider (${err.message}).`);
+    console.log(`  ${c.yellow("WARN")}  Could not reach Google's token endpoint (${err.message}).`);
   }
+
+  console.log(`        ${c.dim(`Redirect URI this deployment sends: ${redirectUri}`)}`);
+  console.log(`        ${c.dim('It must appear verbatim under "Authorized redirect URIs".')}`);
 }
 
 // ── 3. Database ─────────────────────────────────────────────────────────────

@@ -13,8 +13,8 @@ env:
   # Dummy values: nothing in CI talks to these services. NEXT_PUBLIC_* only
   # need to exist so `next build` can inline them; the rest satisfy getEnv().
   NEXT_PUBLIC_APP_URL: http://localhost:3000
-  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+  GOOGLE_CLIENT_ID: ci-only.apps.googleusercontent.com
+  GOOGLE_CLIENT_SECRET: ci-only-client-secret
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/awwtomation
   DIRECT_URL: postgresql://postgres:postgres@localhost:5432/awwtomation
   APP_ENCRYPTION_KEY: Y2ktb25seS1kdW1teS1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz
@@ -91,8 +91,6 @@ jobs:
           push: false
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
-            NEXT_PUBLIC_SUPABASE_URL=${{ env.NEXT_PUBLIC_SUPABASE_URL }}
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build worker image

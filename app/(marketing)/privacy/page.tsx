@@ -90,7 +90,7 @@ export default function PrivacyPage() {
           Facebook APIs.
         </li>
         <li>
-          <strong>Supabase</strong>: authentication and our managed Postgres database.
+          <strong>Supabase</strong>: our managed Postgres database.
         </li>
         <li>
           <strong>Our hosting provider</strong>: application servers and background workers.

@@ -57,10 +57,10 @@ const GROUPS = [
     ],
   },
   {
-    group: "Supabase auth",
+    group: "Google sign-in",
     vars: [
-      { name: "NEXT_PUBLIC_SUPABASE_URL", level: "required", check: (v) => (v.startsWith("https://") ? null : "must be https://") },
-      { name: "NEXT_PUBLIC_SUPABASE_ANON_KEY", level: "required" },
+      { name: "GOOGLE_CLIENT_ID", level: "required", check: (v) => (v.endsWith(".apps.googleusercontent.com") ? null : "usually ends in .apps.googleusercontent.com") },
+      { name: "GOOGLE_CLIENT_SECRET", level: "required" },
     ],
   },
   {

@@ -171,7 +171,10 @@ enum FlowSessionStatus {
 
 model User {
   id           String   @id @default(cuid())
-  supabaseId   String   @unique
+  /// External identity, namespaced by provider: "google:<sub>" (or "dev:<email>"
+  /// for the local bypass). Still stored in the column Supabase auth used, so
+  /// switching providers needed no migration and existing rows kept their data.
+  authId       String   @unique @map("supabaseId")
   email        String   @unique
   name         String?
   avatarUrl    String?

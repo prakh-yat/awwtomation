@@ -5,8 +5,9 @@ const isProduction = process.env.NODE_ENV === "production";
 /**
  * Content Security Policy. Kept in one place so the allow-list is auditable:
  * - Dodo checkout is embedded/loaded from *.dodopayments.com.
- * - Supabase auth (+ realtime websocket) and the Graph hosts are the only
- *   third-party origins the browser ever talks to directly.
+ * - The Graph hosts are the only third-party origins the browser talks to
+ *   directly; Google sign-in is a plain navigation to accounts.google.com and
+ *   the token exchange happens server-side.
  * - `unsafe-eval` exists solely for Next's development tooling (source maps,
  *   fast refresh) and is dropped from production builds.
  * - Images stay open (`https:`) because avatars and post thumbnails come from
@@ -19,14 +20,14 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.dodopayments.com https://graph.facebook.com https://graph.instagram.com${
+  `connect-src 'self' https://*.dodopayments.com https://graph.facebook.com https://graph.instagram.com${
     isProduction ? "" : " ws://localhost:* ws://127.0.0.1:*"
   }`,
   "frame-src https://*.dodopayments.com https://checkout.dodopayments.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self' https://accounts.google.com https://*.supabase.co",
+  "form-action 'self' https://accounts.google.com",
   "object-src 'none'",
 ].join("; ");
 

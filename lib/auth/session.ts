@@ -1,16 +1,15 @@
 import type { User } from "@prisma/client";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
+import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth/cookies";
 import { devAuthEmail } from "@/lib/auth/dev";
+import { type GoogleIdentity, googleAuthId } from "@/lib/auth/google";
+import { signSession, verifySession } from "@/lib/auth/token";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { clearActiveWorkspaceCookie } from "@/lib/workspace/cookie";
-
-function pickString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
 
 /** "vikas.shrestha@example.com" -> "Vikas Shrestha", so the dev sign-in shows a real-looking name. */
 function nameFromEmail(email: string): string {
@@ -22,18 +21,20 @@ function nameFromEmail(email: string): string {
     .join(" ");
 }
 
-type GoogleProfile = { email: string; name: string | null; avatarUrl: string | null };
+type Profile = { email: string; name: string | null; avatarUrl: string | null };
 
 /**
- * Mirrors the Supabase user into our `User` table.
+ * Mirrors an external identity into our `User` table.
  *
- * Insert on first sight; afterwards only write when something Google told us
- * actually changed, so the common path (every server render) stays read-only.
- * The email-uniqueness fallback handles a Supabase project being recreated:
- * same person, new `supabaseId` — we re-link rather than crash.
+ * Insert on first sight; afterwards only write when something the provider told
+ * us actually changed, so the common path stays read-only. The
+ * email-uniqueness fallback re-links an existing person to a new `authId`
+ * rather than crashing on the unique constraint — which is exactly what happens
+ * the first time an account that was created under Supabase auth signs in
+ * through Google directly.
  */
-async function syncUser(supabaseId: string, profile: GoogleProfile): Promise<User> {
-  const existing = await prisma.user.findUnique({ where: { supabaseId } });
+async function syncUser(authId: string, profile: Profile): Promise<User> {
+  const existing = await prisma.user.findUnique({ where: { authId } });
 
   if (existing) {
     const changed =
@@ -46,22 +47,36 @@ async function syncUser(supabaseId: string, profile: GoogleProfile): Promise<Use
 
   const byEmail = await prisma.user.findUnique({ where: { email: profile.email } });
   if (byEmail) {
-    logger.warn("auth.relink_supabase_id", { userId: byEmail.id, from: byEmail.supabaseId, to: supabaseId });
-    return prisma.user.update({ where: { id: byEmail.id }, data: { ...profile, supabaseId } });
+    logger.warn("auth.relink_auth_id", { userId: byEmail.id, from: byEmail.authId, to: authId });
+    return prisma.user.update({ where: { id: byEmail.id }, data: { ...profile, authId } });
   }
 
-  const created = await prisma.user.create({ data: { supabaseId, ...profile } });
+  const created = await prisma.user.create({ data: { authId, ...profile } });
   logger.info("auth.user_created", { userId: created.id, email: created.email });
   return created;
 }
 
+/** Called by the OAuth callback once Google's identity has been verified. */
+export async function syncGoogleUser(identity: GoogleIdentity): Promise<User> {
+  return syncUser(googleAuthId(identity.subject), {
+    email: identity.email,
+    name: identity.name,
+    avatarUrl: identity.avatarUrl,
+  });
+}
+
+/** Writes the signed session cookie. Route handlers / server actions only. */
+export async function createSession(userId: string): Promise<void> {
+  const store = await cookies();
+  store.set(SESSION_COOKIE, await signSession(userId), sessionCookieOptions());
+}
+
 /**
- * The signed-in application user, or null. Validates the session with
- * Supabase (`getUser`, not `getSession`) and upserts our own `User` row from
- * the Google profile. Cached per request via `React.cache`.
+ * The signed-in application user, or null. Verifies the session cookie's
+ * signature and expiry, then loads the row. Cached per request via `React.cache`.
  */
 export const getCurrentUser = cache(async (): Promise<User | null> => {
-  // Local development without Supabase — see lib/auth/dev.ts for the gate.
+  // Local development without Google credentials — see lib/auth/dev.ts for the gate.
   const devEmail = devAuthEmail();
   if (devEmail) {
     return syncUser(`dev:${devEmail}`, {
@@ -71,34 +86,12 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     });
   }
 
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: authUser },
-    error,
-  } = await supabase.auth.getUser();
+  const store = await cookies();
+  const payload = await verifySession(store.get(SESSION_COOKIE)?.value);
+  if (!payload) return null;
 
-  if (error || !authUser) return null;
-
-  const email = pickString(authUser.email)?.toLowerCase() ?? null;
-  if (!email) {
-    // Google always provides an email; if it's missing we can't key the account.
-    logger.warn("auth.user_without_email", { supabaseId: authUser.id });
-    return null;
-  }
-
-  const meta: Record<string, unknown> = authUser.user_metadata ?? {};
-  const profile: GoogleProfile = {
-    email,
-    name: pickString(meta.full_name) ?? pickString(meta.name) ?? null,
-    avatarUrl: pickString(meta.avatar_url) ?? pickString(meta.picture) ?? null,
-  };
-
-  try {
-    return await syncUser(authUser.id, profile);
-  } catch (err) {
-    logger.error("auth.sync_user_failed", { supabaseId: authUser.id, error: err });
-    throw err;
-  }
+  // A valid cookie for a deleted account: treat as signed out rather than 500.
+  return prisma.user.findUnique({ where: { id: payload.uid } });
 });
 
 /** Page guard: redirects to `/login` when signed out. */
@@ -109,14 +102,11 @@ export async function requireUser(): Promise<User> {
 }
 
 /**
- * Ends the Supabase session and forgets the active workspace. Only callable
- * where cookies can be written (route handlers / server actions).
+ * Ends the session and forgets the active workspace. Only callable where
+ * cookies can be written (route handlers / server actions).
  */
 export async function signOut(): Promise<void> {
-  if (!devAuthEmail()) {
-    const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.signOut();
-    if (error) logger.warn("auth.signout_failed", { error });
-  }
+  const store = await cookies();
+  store.delete(SESSION_COOKIE);
   await clearActiveWorkspaceCookie();
 }

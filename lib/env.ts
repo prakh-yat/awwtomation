@@ -20,14 +20,15 @@ const serverSchema = z.object({
   DATABASE_URL: z.string().min(1),
   DIRECT_URL: z.string().optional(),
 
-  // Optional at the schema level, then required below unless the dev sign-in
-  // bypass is active — local development with DEV_AUTH_EMAIL never calls
-  // Supabase, and demanding its credentials there produced a boot error for a
-  // dependency the process genuinely does not use.
+  // Google sign-in. Optional at the schema level, then required below unless the
+  // dev sign-in bypass is active — local development with DEV_AUTH_EMAIL never
+  // talks to Google, and demanding credentials there produced a boot error for a
+  // dependency the process genuinely does not use. The same applies to the
+  // worker, which has no HTTP surface at all.
   // `emptyAsUndefined` matters: a key left blank in .env arrives as "", which
-  // `.optional()` alone would still run through `.url()` and reject.
-  NEXT_PUBLIC_SUPABASE_URL: emptyAsUndefined(z.string().url()),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: emptyAsUndefined(z.string().min(1)),
+  // `.optional()` alone would still run through `.min(1)` and reject.
+  GOOGLE_CLIENT_ID: emptyAsUndefined(z.string().min(1)),
+  GOOGLE_CLIENT_SECRET: emptyAsUndefined(z.string().min(1)),
 
   /** base64 of 32 random bytes — `openssl rand -base64 32` */
   APP_ENCRYPTION_KEY: z.string().min(32),
@@ -42,7 +43,7 @@ const serverSchema = z.object({
   INSTAGRAM_APP_SECRET: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
 
-  /** Dev-only: sign in as this email without Supabase (ignored unless NODE_ENV=development). */
+  /** Dev-only: sign in as this email without Google (ignored unless NODE_ENV=development). */
   DEV_AUTH_EMAIL: z.string().optional(),
 
   /** Dodo Payments */
@@ -78,21 +79,22 @@ export function getEnv(): ServerEnv {
     throw new Error(`Invalid environment configuration:\n${issues}\n\nSee .env.example`);
   }
 
-  // Supabase is the auth provider, so it is required unless the development
-  // sign-in bypass is standing in for it. `devAuthEmail()` is itself gated on
-  // NODE_ENV === "development", so a production deploy can never reach this
-  // branch and skip the check.
+  // Google is the auth provider, so its credentials are required unless the
+  // development sign-in bypass is standing in for them. `devAuthEmail()` is
+  // itself gated on NODE_ENV === "development", so a production deploy can never
+  // reach this branch and skip the check.
   // Read NODE_ENV from the PARSED data, not process.env: the worker runs under
   // plain `tsx` with NODE_ENV unset, where the schema's "development" default
   // applies. Reading the raw value there made this guard reject a process that
-  // never touches Supabase at all.
+  // never signs anybody in at all.
   const usingDevAuth =
     parsed.data.NODE_ENV === "development" && Boolean(parsed.data.DEV_AUTH_EMAIL?.trim());
-  if (!usingDevAuth && (!parsed.data.NEXT_PUBLIC_SUPABASE_URL || !parsed.data.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
+  if (!usingDevAuth && (!parsed.data.GOOGLE_CLIENT_ID || !parsed.data.GOOGLE_CLIENT_SECRET)) {
     throw new Error(
       "Invalid environment configuration:\n" +
-        "  - NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required for Google sign-in.\n" +
-        "    (In local development you can set DEV_AUTH_EMAIL instead to skip Supabase.)\n\nSee .env.example",
+        "  - GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for Google sign-in.\n" +
+        "    Google Cloud Console -> APIs & Services -> Credentials -> OAuth client ID (Web application).\n" +
+        "    (In local development you can set DEV_AUTH_EMAIL instead to skip Google.)\n\nSee .env.example",
     );
   }
 

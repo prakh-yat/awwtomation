@@ -24,7 +24,7 @@ Branding is pure black & white; the product name lives in `lib/brand.ts`.
 
 ## Stack
 
-Next.js 15 (App Router) · React 19 · TypeScript · Tailwind + shadcn-style UI · Prisma 6 + Postgres (Supabase) · Supabase Auth (Google) · Postgres-backed job queue + worker · React Flow · Recharts.
+Next.js 15 (App Router) · React 19 · TypeScript · Tailwind + shadcn-style UI · Prisma 6 + Postgres · Google OAuth (PKCE, in-app) · Postgres-backed job queue + worker · React Flow · Recharts.
 
 ## Quick start
 
@@ -40,9 +40,9 @@ npm run dev                 # http://localhost:3000 — signed in as DEV_AUTH_EM
 npm run worker              # terminal 2 — sends the DMs
 ```
 
-With real Supabase + Meta credentials, drop `DEV_AUTH_EMAIL`, point `DATABASE_URL`/`DIRECT_URL` at Supabase and use `npx prisma migrate deploy`. `npm run check-env` prints every variable (masked) and flags missing ones.
+With real Google + Meta credentials, drop `DEV_AUTH_EMAIL`, point `DATABASE_URL`/`DIRECT_URL` at your Postgres and use `npx prisma migrate deploy`. `npm run check-env` prints every variable (masked) and flags missing ones.
 
-Full setup (Supabase, Meta app, webhooks, going live): **[docs/SETUP.md](docs/SETUP.md)**.
+Full setup (Google sign-in, Meta app, webhooks, going live): **[docs/SETUP.md](docs/SETUP.md)**.
 Deploying (Vercel + Railway worker, Docker Compose on a VPS, Railway all-in-one): **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 Billing with Dodo Payments: **[docs/BILLING.md](docs/BILLING.md)**.
 Meta App Review pack: **[docs/META_APP_REVIEW.md](docs/META_APP_REVIEW.md)**.
@@ -53,7 +53,7 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | Variable | Required | Notes |
 |---|---|---|
 | `NEXT_PUBLIC_APP_URL` | yes | Public https URL. OAuth redirect + webhook URLs derive from it. |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase project (Google provider enabled in the dashboard). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | yes | Google Cloud OAuth client (Web application). Authorized redirect URI: `<NEXT_PUBLIC_APP_URL>/auth/callback`. |
 | `DATABASE_URL`, `DIRECT_URL` | yes | Pooled (6543) and direct (5432) Postgres URLs. |
 | `APP_ENCRYPTION_KEY` | yes | `openssl rand -base64 32` — encrypts Meta tokens. |
 | `CRON_SECRET` | yes | Protects `/api/cron/*`. |
@@ -63,7 +63,7 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | `META_GRAPH_API_VERSION` | no | Defaults to `v25.0`. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | Invites work as links without email. |
 | `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them every organization stays on FREE. |
-| `DEV_AUTH_EMAIL` | dev only | Sign in as this email without Supabase. Ignored unless `NODE_ENV=development`. |
+| `DEV_AUTH_EMAIL` | dev only | Sign in as this email without Google. Ignored unless `NODE_ENV=development`. |
 
 `NEXT_PUBLIC_*` values are inlined at build time — change them and rebuild.
 
