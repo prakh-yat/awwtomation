@@ -45,7 +45,7 @@ export default async function WorkspacesSettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Workspaces"
+        title="Settings"
       />
       <WorkspacesList
         workspaces={workspaces}

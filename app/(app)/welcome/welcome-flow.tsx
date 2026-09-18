@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import type { PlanTier } from "@prisma/client";
 import { ArrowRight, Check, ChevronLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,31 +10,41 @@ import { LogoMark, Wordmark } from "@/components/ui/logo";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { toast } from "@/components/ui/sonner";
 import type { MetaConfigured } from "@/components/channels/connect-buttons";
+import { formatUsd, intervalSuffix, PLAN_ORDER, PLANS, planPriceCents, type BillingIntervalId } from "@/lib/billing/plans";
 import { isAnswered, PROFILE_QUESTIONS, USAGE_QUESTIONS, type Answers, type Question } from "@/lib/onboarding/questions";
 import { cn } from "@/lib/utils";
 
 import { finishOnboarding, saveAnswers } from "./actions";
 import { WelcomeArt, type ArtName } from "./welcome-art";
 
-type Step = { kind: "question"; question: Question } | { kind: "connect" };
+type Step = { kind: "question"; question: Question } | { kind: "connect" } | { kind: "plan" };
 
 const CONNECT_STEP: Step = { kind: "connect" };
+const PLAN_STEP: Step = { kind: "plan" };
 
-function buildSteps(): Step[] {
+function buildSteps(withPlan: boolean): Step[] {
   return [
     ...PROFILE_QUESTIONS.map((question) => ({ kind: "question" as const, question })),
     CONNECT_STEP,
     ...USAGE_QUESTIONS.map((question) => ({ kind: "question" as const, question })),
+    ...(withPlan ? [PLAN_STEP] : []),
   ];
 }
 
 function artFor(step: Step, index: number, total: number): ArtName {
   if (step.kind === "connect") return "connect";
+  if (step.kind === "plan") return "finish";
   if (index >= total - 1) return "finish";
   return step.question.stage === "profile" ? "start" : "strategy";
 }
 
 function heroFor(step: Step, connectedLabel: string | null): { title: string; body?: string } {
+  if (step.kind === "plan") {
+    return {
+      title: "Pick a plan",
+      body: "Free is a real plan, not a trial. Move up when you outgrow it, and cancel from Settings whenever.",
+    };
+  }
   if (step.kind === "connect") {
     return {
       title: "Connect your first account",
@@ -88,6 +99,110 @@ function OptionRow({
   );
 }
 
+function PlanStep({
+  plan,
+  interval,
+  billingConfigured,
+  onPlan,
+  onInterval,
+}: {
+  plan: PlanTier | null;
+  interval: BillingIntervalId;
+  billingConfigured: boolean;
+  onPlan: (tier: PlanTier) => void;
+  onInterval: (next: BillingIntervalId) => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="font-display text-[28px] leading-none">Pick a plan</h1>
+        <div className="flex gap-1 rounded-full bg-secondary p-1">
+          {(["MONTHLY", "ANNUAL"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onInterval(value)}
+              aria-pressed={interval === value}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                interval === value ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {value === "MONTHLY" ? "Monthly" : "Annual"}
+              {value === "ANNUAL" ? <span className="ml-1.5 text-[11px] opacity-70">2 months free</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!billingConfigured ? (
+        <p className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[13px]">
+          Card payments are not switched on yet, so only the free plan can be started here. You can upgrade from Settings
+          later.
+        </p>
+      ) : null}
+
+      <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+        {PLAN_ORDER.map((tier) => {
+          const limits = PLANS[tier];
+          const selected = plan === tier;
+          const disabled = tier !== "FREE" && !billingConfigured;
+          const cents = planPriceCents(tier, interval);
+          return (
+            <li key={tier}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={disabled}
+                onClick={() => onPlan(tier)}
+                className={cn(
+                  "flex h-full w-full flex-col rounded-2xl border px-5 py-4 text-left transition-colors",
+                  "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                  selected ? "border-foreground bg-secondary/50" : "border-border hover:border-foreground/40",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold">{limits.label}</p>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">{limits.description}</p>
+                  </div>
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+                      selected ? "border-foreground bg-foreground text-background" : "border-border",
+                    )}
+                  >
+                    {selected ? <span className="h-2 w-2 rounded-full bg-background" /> : null}
+                  </span>
+                </div>
+
+                <p className="mt-4 font-display text-[26px] leading-none">
+                  {cents === 0 ? "Free" : formatUsd(cents)}
+                  {cents === 0 ? null : (
+                    <span className="ml-1 font-sans text-[13px] font-normal text-muted-foreground">{intervalSuffix(interval)}</span>
+                  )}
+                </p>
+
+                <ul className="mt-4 space-y-1.5 text-[13px] text-muted-foreground">
+                  {limits.features.slice(0, 4).map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 export interface WelcomeFlowProps {
   initialAnswers: Answers;
   hasChannel: boolean;
@@ -96,6 +211,13 @@ export interface WelcomeFlowProps {
   configured: MetaConfigured;
   /** Where the connect buttons point, keyed by platform. */
   connectHrefs: { instagram: string; facebook: string };
+  /**
+   * Whether to end on the plan step. Owners without a subscription choose the
+   * organization's plan here; an invited member has no business doing that.
+   */
+  showPlanStep: boolean;
+  /** False when card payments are not configured, which disables the paid cards. */
+  billingConfigured: boolean;
 }
 
 /**
@@ -106,12 +228,22 @@ export interface WelcomeFlowProps {
  * usage questions follow it, because every one of them asks about "this
  * account" or "the channel you connected" and would be guesswork before then.
  */
-export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, configured, connectHrefs }: WelcomeFlowProps) {
+export function WelcomeFlow({
+  initialAnswers,
+  hasChannel,
+  connectedLabel,
+  configured,
+  connectHrefs,
+  showPlanStep,
+  billingConfigured,
+}: WelcomeFlowProps) {
   const router = useRouter();
-  const steps = React.useMemo(buildSteps, []);
+  const steps = React.useMemo(() => buildSteps(showPlanStep), [showPlanStep]);
   const connectIndex = steps.findIndex((s) => s.kind === "connect");
 
   const [answers, setAnswers] = React.useState<Answers>(initialAnswers);
+  const [plan, setPlan] = React.useState<PlanTier | null>(null);
+  const [interval, setInterval] = React.useState<BillingIntervalId>("MONTHLY");
   const [pending, startTransition] = React.useTransition();
 
   // Resume where the flow actually is: at the connect step until a channel
@@ -130,7 +262,8 @@ export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, config
   const isLast = index === total - 1;
   const hero = heroFor(step, connectedLabel);
 
-  const canAdvance = step.kind === "connect" ? hasChannel : isAnswered(step.question, answers);
+  const canAdvance =
+    step.kind === "connect" ? hasChannel : step.kind === "plan" ? plan !== null : isAnswered(step.question, answers);
 
   function toggle(question: Question, value: string) {
     setAnswers((prev) => {
@@ -141,13 +274,20 @@ export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, config
     });
   }
 
+  /** Where finishing lands: checkout for a paid plan, the dashboard otherwise. */
+  function destination(): string {
+    if (!showPlanStep || plan === null || plan === "FREE") return "/dashboard";
+    return `/checkout?tier=${plan.toLowerCase()}&interval=${interval.toLowerCase()}`;
+  }
+
   function goNext() {
     const snapshot = answers;
     if (isLast) {
+      const target = destination();
       startTransition(async () => {
         try {
           await finishOnboarding(snapshot);
-          router.replace("/dashboard");
+          router.replace(target);
         } catch {
           toast.error("Could not save your answers. Please try again.");
         }
@@ -279,9 +419,17 @@ export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, config
                 </p>
               ) : null}
             </>
+          ) : step.kind === "plan" ? (
+            <PlanStep
+              plan={plan}
+              interval={interval}
+              billingConfigured={billingConfigured}
+              onPlan={setPlan}
+              onInterval={setInterval}
+            />
           ) : (
             <>
-              <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em]">{step.question.title}</h1>
+              <h1 className="font-display text-[28px] leading-none">{step.question.title}</h1>
               {step.question.subtitle ? <p className="mt-2 text-[15px] text-muted-foreground">{step.question.subtitle}</p> : null}
 
               <ul
@@ -290,16 +438,17 @@ export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, config
                 className="mt-8 space-y-2.5"
               >
                 {step.question.options.map((option) => {
-                  const value = answers[step.question.id];
+                  const question = step.question;
+                  const value = answers[question.id];
                   const selected =
-                    step.question.kind === "single" ? value === option.value : Array.isArray(value) && value.includes(option.value);
+                    question.kind === "single" ? value === option.value : Array.isArray(value) && value.includes(option.value);
                   return (
                     <OptionRow
                       key={option.value}
                       option={option}
                       selected={selected}
-                      multi={step.question.kind === "multi"}
-                      onToggle={() => toggle(step.question, option.value)}
+                      multi={question.kind === "multi"}
+                      onToggle={() => toggle(question, option.value)}
                     />
                   );
                 })}
@@ -326,7 +475,7 @@ export function WelcomeFlow({ initialAnswers, hasChannel, connectedLabel, config
             <span />
           )}
           <Button onClick={goNext} disabled={!canAdvance} loading={pending}>
-            {isLast ? "Finish" : "Next"}
+            {!isLast ? "Next" : destination().startsWith("/checkout") ? "Continue to checkout" : "Start using Awwtomation"}
           </Button>
         </footer>
       </section>

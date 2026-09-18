@@ -20,7 +20,7 @@ export default async function PipelinesPage() {
       <PageHeader
         backHref="/contacts"
         backLabel="Contacts"
-        title="Pipelines"
+        title="Contacts"
       />
       <PipelinesManager initialPipelines={pipelines} canManage={canManage} />
     </>

@@ -408,34 +408,6 @@ const runGiveaway: AutomationTemplate = {
   },
 };
 
-const growYoutube: AutomationTemplate = {
-  id: "ig-grow-youtube",
-  name: "Grow your YouTube",
-  description: "Get YouTube subscribers through Instagram DMs.",
-  platform: "INSTAGRAM",
-  goal: "Drive traffic",
-  triggerType: "COMMENT",
-  matchMode: "CONTAINS",
-  keywords: ["video", "watch", "youtube"],
-  followGate: false,
-  publicReplyEnabled: true,
-  publicReplies: ["Sent you the video", "Check your DMs"],
-  flow: {
-    nodes: [
-      TRIGGER,
-      node("message-1", 0, STEP_Y, {
-        type: "send_message",
-        message: {
-          text: "The full version is on YouTube. Here it is, {{first_name|there}}.",
-          buttons: [{ type: "web_url", title: "Watch on YouTube", url: LINK.youtube }],
-        },
-      }),
-      node("tag-1", 0, STEP_Y * 2, { type: "add_tag", tag: "youtube" }),
-    ],
-    edges: chain("trigger", "message-1", "tag-1"),
-  },
-};
-
 const routeDmQuestions: AutomationTemplate = {
   id: "ig-route-dm-questions",
   name: "Recognize questions in DM",
@@ -588,34 +560,6 @@ const couponsInStories: AutomationTemplate = {
       }),
     ],
     edges: chain("trigger", "tag-1", "message-1"),
-  },
-};
-
-const instagramToWhatsapp: AutomationTemplate = {
-  id: "ig-instagram-to-whatsapp",
-  name: "Go from Instagram to WhatsApp",
-  description: "Move Instagram followers into a WhatsApp conversation.",
-  platform: "INSTAGRAM",
-  goal: "Drive traffic",
-  triggerType: "COMMENT",
-  matchMode: "CONTAINS",
-  keywords: ["chat", "whatsapp", "talk"],
-  followGate: false,
-  publicReplyEnabled: true,
-  publicReplies: ["Sent you the link", "Check your DMs"],
-  flow: {
-    nodes: [
-      TRIGGER,
-      node("message-1", 0, STEP_Y, {
-        type: "send_message",
-        message: {
-          text: "Easier on WhatsApp, {{first_name|there}}. Tap below and we can carry on there.",
-          buttons: [{ type: "web_url", title: "Chat on WhatsApp", url: LINK.whatsapp }],
-        },
-      }),
-      node("tag-1", 0, STEP_Y * 2, { type: "add_tag", tag: "whatsapp" }),
-    ],
-    edges: chain("trigger", "message-1", "tag-1"),
   },
 };
 
@@ -818,46 +762,6 @@ const dmYourCourse: AutomationTemplate = {
   },
 };
 
-const growSmsList: AutomationTemplate = {
-  id: "ig-grow-sms-list",
-  name: "Grow an SMS list",
-  description: "Did we just become text friends? Get Instagram followers onto your SMS list.",
-  platform: "INSTAGRAM",
-  goal: "Capture leads",
-  triggerType: "COMMENT",
-  matchMode: "CONTAINS",
-  keywords: ["text", "sms", "alerts"],
-  followGate: false,
-  publicReplyEnabled: true,
-  publicReplies: ["Sent you a DM", "Check your messages"],
-  flow: {
-    nodes: [
-      TRIGGER,
-      node("message-1", 0, STEP_Y, {
-        type: "send_message",
-        message: {
-          text: "Drops go out by text first, {{first_name|there}}. Want on the list?",
-          buttons: [{ type: "postback", title: "Add me", payload: "btn:0" }],
-        },
-      }),
-      node("ask-phone", 0, STEP_Y * 2, {
-        type: "ask_question",
-        prompt: { text: "What number should I text?" },
-        saveTo: "phone",
-        validation: "phone",
-        retryPrompt: "That does not look like a phone number. Could you type it again?",
-        maxRetries: 2,
-      }),
-      node("tag-1", 0, STEP_Y * 3, { type: "add_tag", tag: "sms" }),
-      node("message-2", 0, STEP_Y * 4, {
-        type: "send_message",
-        message: { text: "You are on the list. Reply STOP to any text to come off it." },
-      }),
-    ],
-    edges: [edge("trigger", "message-1"), edge("message-1", "ask-phone", "btn:0"), ...chain("ask-phone", "tag-1", "message-2")],
-  },
-};
-
 const dmsDuringIgLive: AutomationTemplate = {
   id: "ig-dms-during-live",
   name: "Trigger DMs during IG Live",
@@ -942,6 +846,67 @@ const faqFromStoryReplies: AutomationTemplate = {
   },
 };
 
+const welcomeFirstDm: AutomationTemplate = {
+  id: "ig-welcome-first-dm",
+  name: "Welcome a first DM",
+  description: "Greet someone the first time they message, and set expectations on replies.",
+  platform: "INSTAGRAM",
+  goal: "Engage your audience",
+  triggerType: "DM",
+  matchMode: "CONTAINS",
+  keywords: ["hi", "hello", "hey"],
+  followGate: false,
+  publicReplyEnabled: false,
+  publicReplies: [],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("message-1", 0, STEP_Y, {
+        type: "send_message",
+        message: {
+          text: "Hi {{first_name|there}}, thanks for the message. We read every DM and usually reply within a few hours.",
+          buttons: [{ type: "web_url", title: "Have a look around", url: LINK.site }],
+        },
+      }),
+      node("tag-1", 0, STEP_Y * 2, { type: "add_tag", tag: "new dm" }),
+    ],
+    edges: chain("trigger", "message-1", "tag-1"),
+  },
+};
+
+const waitlistFromComments: AutomationTemplate = {
+  id: "ig-waitlist-from-comments",
+  name: "Build a waitlist from comments",
+  description: "Turn a comment into a name on the list before the thing is even out.",
+  platform: "INSTAGRAM",
+  goal: "Capture leads",
+  triggerType: "COMMENT",
+  matchMode: "CONTAINS",
+  keywords: ["waitlist", "notify", "me"],
+  followGate: false,
+  publicReplyEnabled: true,
+  publicReplies: ["You are on the list", "Added, check your DMs"],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("ask-email", 0, STEP_Y, {
+        type: "ask_question",
+        prompt: { text: "Adding you now, {{first_name|there}}. Where should the launch note go?" },
+        saveTo: "email",
+        validation: "email",
+        retryPrompt: "That does not look like an email address. Could you type it again?",
+        maxRetries: 2,
+      }),
+      node("tag-1", 0, STEP_Y * 2, { type: "add_tag", tag: "waitlist" }),
+      node("message-1", 0, STEP_Y * 3, {
+        type: "send_message",
+        message: { text: "You are on the list. You will hear from us before anyone else does." },
+      }),
+    ],
+    edges: chain("trigger", "ask-email", "tag-1", "message-1"),
+  },
+};
+
 export const INSTAGRAM_TEMPLATES: readonly AutomationTemplate[] = [
   autoDmLinks,
   leadsFromStories,
@@ -954,18 +919,17 @@ export const INSTAGRAM_TEMPLATES: readonly AutomationTemplate[] = [
   followFirstThenFreebie,
   growEmailList,
   runGiveaway,
-  growYoutube,
   routeDmQuestions,
   gamifyLive,
   collabsFromStoryReplies,
   couponsInStories,
-  instagramToWhatsapp,
   offersDuringLive,
   sellFromReelComments,
   commentsToRsvp,
   qualifyWithQuiz,
   dmYourCourse,
-  growSmsList,
   dmsDuringIgLive,
   faqFromStoryReplies,
+  welcomeFirstDm,
+  waitlistFromComments,
 ];

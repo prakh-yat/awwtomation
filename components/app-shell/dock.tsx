@@ -39,7 +39,14 @@ const LABEL_SCALE = 1.18;
 
 type Slot =
   | { kind: "divider" }
-  | { kind: "item"; key: string; label: string; render: (scale: number) => React.ReactNode };
+  | {
+      kind: "item";
+      key: string;
+      label: string;
+      render: (scale: number) => React.ReactNode;
+      /** Decorative: does not magnify, does not get a label bubble. */
+      fixed?: boolean;
+    };
 
 /** Smooth falloff: MAX_SCALE under the pointer, easing back to 1 at RADIUS. */
 function scaleFor(distance: number): number {
@@ -142,17 +149,19 @@ export function Dock(props: ShellProps) {
   const slots = React.useMemo<Slot[]>(() => {
     const list: Slot[] = [
       {
+        // The mark, not a link: the dock is for navigating, and a logo that
+        // silently means "dashboard" is a guess the Dashboard row already covers.
         kind: "item",
         key: "brand",
-        label: "Dashboard",
+        label: "",
+        fixed: true,
         render: () => (
-          <Link
-            href="/dashboard"
-            aria-label="Dashboard"
-            className="flex h-full w-full items-center justify-center rounded-[14px] bg-foreground text-background outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <span
+            aria-hidden
+            className="flex h-full w-full items-center justify-center rounded-[16px] bg-foreground text-background"
           >
             <LogoMark size={22} className="text-background" />
-          </Link>
+          </span>
         ),
       },
       { kind: "divider" },
@@ -277,7 +286,8 @@ export function Dock(props: ShellProps) {
     let focus = -1;
     let best = LABEL_SCALE;
     for (let i = 0; i < slots.length; i += 1) {
-      if (slots[i].kind !== "item") continue;
+      const slot = slots[i];
+      if (slot.kind !== "item" || slot.fixed) continue;
       const centre = topRef.current + (geometry.offsets[i] + SLOT / 2) * fit;
       const scale = scaleFor(Math.abs(pointerY - centre));
       scales[i] = scale;

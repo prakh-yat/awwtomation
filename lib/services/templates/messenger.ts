@@ -330,46 +330,6 @@ const eventRsvp: AutomationTemplate = {
   },
 };
 
-const growSmsList: AutomationTemplate = {
-  id: "fb-grow-sms-list",
-  name: "Grow an SMS list",
-  description: "Ask for a number in Messenger and save it on the contact.",
-  platform: "MESSENGER",
-  goal: "Capture leads",
-  triggerType: "DM",
-  matchMode: "CONTAINS",
-  keywords: ["text", "sms", "alerts"],
-  followGate: false,
-  publicReplyEnabled: false,
-  publicReplies: [],
-  flow: {
-    nodes: [
-      TRIGGER,
-      node("message-1", 0, STEP_Y, {
-        type: "send_message",
-        message: {
-          text: "Offers go out by text first, {{first_name|there}}. Want on the list?",
-          buttons: [{ type: "postback", title: "Add me", payload: "btn:0" }],
-        },
-      }),
-      node("ask-phone", 0, STEP_Y * 2, {
-        type: "ask_question",
-        prompt: { text: "What number should we text?" },
-        saveTo: "phone",
-        validation: "phone",
-        retryPrompt: "That does not look like a phone number. Could you type it again?",
-        maxRetries: 2,
-      }),
-      node("tag-1", 0, STEP_Y * 3, { type: "add_tag", tag: "sms" }),
-      node("message-2", 0, STEP_Y * 4, {
-        type: "send_message",
-        message: { text: "You are on the list. Reply STOP to any text to come off it." },
-      }),
-    ],
-    edges: [edge("trigger", "message-1"), edge("message-1", "ask-phone", "btn:0"), ...chain("ask-phone", "tag-1", "message-2")],
-  },
-};
-
 const welcomeNewConversations: AutomationTemplate = {
   id: "fb-welcome-new-conversations",
   name: "Welcome new conversations",
@@ -426,6 +386,44 @@ const sendCoupon: AutomationTemplate = {
   },
 };
 
+const outsideOpeningHours: AutomationTemplate = {
+  id: "fb-outside-opening-hours",
+  name: "Reply outside opening hours",
+  description: "Answer the messages that land overnight, and say when a human will pick them up.",
+  platform: "MESSENGER",
+  goal: "Engage your audience",
+  triggerType: "DM",
+  matchMode: "ANY",
+  keywords: [],
+  followGate: false,
+  publicReplyEnabled: false,
+  publicReplies: [],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("message-1", 0, STEP_Y, {
+        type: "send_message",
+        message: {
+          text: "Thanks {{first_name|there}}, we are closed right now. Someone picks this up when we open at 9am.",
+          quickReplies: [
+            { title: "That is fine", payload: "qr:0" },
+            { title: "It is urgent", payload: "qr:1" },
+          ],
+        },
+      }),
+      node("message-urgent", BRANCH_X, STEP_Y * 2, {
+        type: "send_message",
+        message: {
+          text: "Understood. Leave the details here and we will start with yours in the morning.",
+          buttons: [{ type: "web_url", title: "Or book a time", url: LINK.booking }],
+        },
+      }),
+      node("tag-1", BRANCH_X, STEP_Y * 3, { type: "add_tag", tag: "urgent" }),
+    ],
+    edges: [edge("trigger", "message-1"), edge("message-1", "message-urgent", "qr:1"), edge("message-urgent", "tag-1")],
+  },
+};
+
 export const MESSENGER_TEMPLATES: readonly AutomationTemplate[] = [
   autoReplyToComments,
   respondToEveryMessage,
@@ -436,7 +434,7 @@ export const MESSENGER_TEMPLATES: readonly AutomationTemplate[] = [
   runGiveaway,
   productLineup,
   eventRsvp,
-  growSmsList,
   welcomeNewConversations,
   sendCoupon,
+  outsideOpeningHours,
 ];

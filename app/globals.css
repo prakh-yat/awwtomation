@@ -1,3 +1,7 @@
+/* Self-hosted brand faces. Archivo 900 is the display cut, Figtree the body. */
+@import "@fontsource-variable/archivo/index.css";
+@import "@fontsource-variable/figtree/index.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,51 +10,73 @@
   :root {
     color-scheme: light;
 
-    /* Awwtomation palette: white surfaces, charcoal ink (#18181B), cool-gray neutrals with a lavender (#C1C1D7) undertone. */
+    /*
+     * Brand palette, taken from the marketing site (Downloads/awwtomation):
+     * ink on paper, a fog grey for surfaces, and a set of flat accents that
+     * only ever appear as whole blocks, never as gradients.
+     *
+     *   ink #0f0f0f   paper #ffffff   fog #f5f5f5   mute #6b6b6b
+     *   yellow #fff200   magenta #fb0df7   purple #7b34ce   indigo #3c42c4
+     *   green #007257   orange #ff4c00   lavender #d8bee3   sky #96dae3
+     *   blue #2b60f8   sage #edf2ee
+     */
     --background: 0 0% 100%;
-    --foreground: 240 6% 10%;
+    --foreground: 0 0% 6%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 6% 10%;
+    --card-foreground: 0 0% 6%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 6% 10%;
+    --popover-foreground: 0 0% 6%;
 
-    --primary: 240 6% 10%;
+    --primary: 0 0% 6%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 14% 96%;
-    --secondary-foreground: 240 6% 12%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 6%;
 
-    --muted: 240 14% 96%;
-    --muted-foreground: 240 5% 42%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 42%;
 
-    --accent: 240 22% 93%;
-    --accent-foreground: 240 6% 10%;
+    --accent: 0 0% 94%;
+    --accent-foreground: 0 0% 6%;
 
+    /* Danger stays red: the site has no red, but orange here would read as a
+       warning rather than a destructive action. */
     --destructive: 0 72% 46%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 60% 34%;
+    --success: 166 100% 22%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 40%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 18 100% 50%;
+    --warning-foreground: 0 0% 6%;
 
-    --border: 240 10% 90%;
-    --input: 240 10% 87%;
-    --ring: 240 6% 10%;
+    --border: 0 0% 89%;
+    --input: 0 0% 85%;
+    /* Magenta focus, as on the site. */
+    --ring: 301 96% 52%;
 
-    /* Brand lavender (#C1C1D7) — used for the mark's depth layer, focus/selection tints and secondary chart series. */
-    --brand-lavender: 240 22% 80%;
+    /* Flat accents, for blocks and chart series. */
+    --brand-yellow: 57 100% 50%;
+    --brand-magenta: 301 96% 52%;
+    --brand-purple: 268 61% 51%;
+    --brand-indigo: 237 54% 50%;
+    --brand-blue: 224 94% 57%;
+    --brand-green: 166 100% 22%;
+    --brand-orange: 18 100% 50%;
+    --brand-lavender: 282 40% 82%;
+    --brand-sky: 187 58% 74%;
+    --brand-sage: 132 16% 94%;
+    --brand-fog: 0 0% 96%;
 
-    --radius: 0.625rem;
+    --radius: 0.875rem;
 
-    --sidebar-background: 240 18% 97.5%;
-    --sidebar-foreground: 240 5% 22%;
-    --sidebar-accent: 240 22% 92%;
-    --sidebar-accent-foreground: 240 6% 10%;
-    --sidebar-border: 240 10% 90%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-accent: 0 0% 94%;
+    --sidebar-accent-foreground: 0 0% 6%;
+    --sidebar-border: 0 0% 89%;
   }
 
   * {
@@ -65,12 +91,33 @@
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "cv11", "ss01", "ss03";
   }
 
   ::selection {
-    background: hsl(240 22% 80%);
-    color: hsl(240 6% 10%);
+    background: hsl(var(--brand-yellow));
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer components {
+  /*
+   * Display type, matching the site: Archivo at its heaviest, set tight.
+   * Reserved for page titles and the big numbers on a report; body copy stays
+   * in Figtree, which is what makes the two read as one brand.
+   */
+  .font-display {
+    font-family: theme("fontFamily.display");
+    font-weight: 900;
+    letter-spacing: -0.03em;
+  }
+
+  /* Small uppercase mono label, as used for section eyebrows on the site. */
+  .brand-label {
+    font-family: theme("fontFamily.mono");
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
   }
 }
 

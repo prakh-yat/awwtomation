@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
-import { GeistSans } from "geist/font/sans";
 
 import { Toaster } from "@/components/ui/sonner";
 import { brand } from "@/lib/brand";
@@ -32,14 +31,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#18181B",
+  themeColor: "#0F0F0F",
   width: "device-width",
   initialScale: 1,
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={cn(GeistSans.variable, GeistMono.variable)} suppressHydrationWarning>
+    <html lang="en" className={cn(GeistMono.variable)} suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
         {children}
         <Toaster />

@@ -63,7 +63,7 @@ export default async function TeamSettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Team"
+        title="Settings"
         actions={invite}
       />
       <div className="space-y-8">

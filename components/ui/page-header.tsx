@@ -76,7 +76,7 @@ function PageHeader({ title, description, actions, backHref, backLabel = "Back",
       ) : null}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <h1 className="shrink-0 text-[22px] font-semibold leading-tight tracking-tight">{title}</h1>
+        <h1 className="font-display shrink-0 text-[26px] leading-none">{title}</h1>
         <SectionTabs />
         {actions ? (
           // Full width below sm so it wraps onto its own line instead of

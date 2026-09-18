@@ -75,7 +75,7 @@ export default async function BillingSettingsPage({ searchParams }: { searchPara
 
   return (
     <div>
-      <PageHeader title="Billing" />
+      <PageHeader title="Settings" />
       <div className="space-y-8">
       {queryError ? (
         <div role="alert" className="flex items-start gap-2.5 rounded-md border border-warning/30 bg-warning/5 p-3 text-[13px]">

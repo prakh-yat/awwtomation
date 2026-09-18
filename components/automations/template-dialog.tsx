@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowRight, PenLine, Search, X, Zap } from "lucide-react";
+import { ArrowRight, PenLine, Search, X } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
 import { STEP_INFO } from "@/components/automations/builder/step-catalog";
@@ -79,14 +79,18 @@ function TemplateCard({
         "disabled:pointer-events-none disabled:opacity-60",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[15px] font-semibold leading-snug">{template.name}</p>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 brand-label text-muted-foreground">
+          <PlatformIcon platform={template.platform === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={12} />
+          {platformLabel(template.platform)}
+        </span>
         {template.popular ? (
           <Badge variant="warning" className="shrink-0">
             Popular
           </Badge>
         ) : null}
       </div>
+      <p className="mt-2 text-[15px] font-semibold leading-snug">{template.name}</p>
       <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{template.description}</p>
 
       <div className="mt-4 flex-1" />
@@ -95,10 +99,7 @@ function TemplateCard({
         <StepChain template={template} />
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-          <Zap className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-          <span className="truncate">{template.triggerLabel}</span>
-        </span>
+        <span className="min-w-0 truncate text-muted-foreground">{template.triggerLabel}</span>
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium">
           {pending ? "Creating" : "Use template"}
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -298,9 +299,12 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
 
           <div className="grid min-h-0 flex-1 md:grid-cols-[216px_1fr]">
             <aside className="hidden min-h-0 flex-col overflow-y-auto border-r px-3 py-4 md:flex">
-              {available.size > 1 ? (
-                <div className="mb-4 flex gap-1 rounded-lg bg-secondary p-1">
-                  {(["INSTAGRAM", "MESSENGER"] as const).map((p) => (
+              <p className="mb-1 px-3 brand-label text-muted-foreground">Channel</p>
+              <div className="mb-5 space-y-0.5">
+                {(["INSTAGRAM", "MESSENGER"] as const).map((p) => {
+                  const active = platform === p;
+                  const count = templates.filter((t) => t.platform === p).length;
+                  return (
                     <button
                       key={p}
                       type="button"
@@ -308,17 +312,22 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
                         setPlatform(p);
                         setFilter(ALL);
                       }}
+                      aria-pressed={active}
                       className={cn(
-                        "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                        platform === p ? "bg-background font-medium text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
+                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                        active ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                       )}
                     >
-                      <PlatformIcon platform={p === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={14} />
-                      {platformLabel(p)}
+                      <PlatformIcon platform={p === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={15} />
+                      <span className="flex-1 truncate">{platformLabel(p)}</span>
+                      <span className={cn("tabular-nums", active ? "text-background/70" : "text-muted-foreground")}>{count}</span>
+                      {available.size > 0 && !available.has(p) ? (
+                        <span className="sr-only">No {platformLabel(p)} account connected</span>
+                      ) : null}
                     </button>
-                  ))}
-                </div>
-              ) : null}
+                  );
+                })}
+              </div>
 
               {railButton("All templates", ALL)}
 
@@ -330,6 +339,14 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
             </aside>
 
             <div className="min-h-0 overflow-y-auto px-5 py-5">
+              <div className="mb-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="font-display text-[19px] leading-none">{platformLabel(platform)} templates</h2>
+                <p className="text-[13px] text-muted-foreground">
+                  {visible.length} {visible.length === 1 ? "flow" : "flows"} for a connected{" "}
+                  {platform === "INSTAGRAM" ? "Instagram account" : "Facebook Page"}
+                </p>
+              </div>
+
               {visible.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center gap-1 py-16 text-center">
                   <p className="text-sm font-medium">No templates match that</p>
