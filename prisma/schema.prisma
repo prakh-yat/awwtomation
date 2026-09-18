@@ -38,6 +38,24 @@ enum ChannelStatus {
   ERROR
 }
 
+/// Which API shape a bring-your-own-key provider speaks.
+enum AiProviderKind {
+  /// Anything that serves POST /v1/chat/completions: OpenAI, Groq, OpenRouter,
+  /// DeepSeek, Together, Mistral, vLLM, LM Studio, Ollama behind a proxy.
+  OPENAI_COMPATIBLE
+  /// Anthropic Messages API.
+  ANTHROPIC
+  /// Google Generative Language API.
+  GOOGLE
+}
+
+enum AiProviderStatus {
+  ACTIVE
+  /// The last call was refused for a reason the key owner has to fix.
+  INVALID_KEY
+  ERROR
+}
+
 enum AutomationStatus {
   DRAFT
   ACTIVE
@@ -290,6 +308,8 @@ model Workspace {
   pipelines       Pipeline[]
   pipelineEntries PipelineEntry[]
   jobs            Job[]
+  aiProviders     AiProvider[]
+  aiAgents        AiAgent[]
   auditLogs       AuditLog[]
 
   @@index([organizationId])
@@ -802,4 +822,84 @@ model AuditLog {
   user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+}
+
+// ───────────────────────── AI (bring your own key) ─────────────────────────
+
+/// A model provider the workspace pays for directly.
+///
+/// The key is theirs: it is encrypted at rest with APP_ENCRYPTION_KEY, only
+/// ever decrypted inside the worker or a server action, and never returned to
+/// the browser. Nothing about the model call is billed by us, which is why the
+/// workspace picks the provider, the endpoint and the model itself.
+model AiProvider {
+  id          String           @id @default(cuid())
+  workspaceId String
+  label       String
+  kind        AiProviderKind
+  /// AES-256-GCM (lib/crypto.ts).
+  apiKeyEnc   String
+  /// Last four characters of the key, so the UI can show which one is saved.
+  keyHint     String
+  /// Overrides the provider default. Required for self-hosted endpoints.
+  baseUrl     String?
+  /// Model id as the provider spells it, e.g. "gpt-4o-mini", "claude-haiku-4-5", "gemini-2.0-flash".
+  model       String
+  status      AiProviderStatus @default(ACTIVE)
+  lastError   String?
+  lastUsedAt  DateTime?
+  /// True for the provider new agents are created against.
+  isDefault   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agents    AiAgent[]
+
+  @@index([workspaceId])
+}
+
+/// A configured assistant: the prompt, the rules and the model settings.
+///
+/// Everything a reply is made of lives here and is editable, so the behaviour
+/// of the bot is entirely the workspace's to decide. `systemPrompt` is theirs
+/// verbatim; `guardrails` is appended after it so a hard rule cannot be talked
+/// out of by the prompt above it.
+model AiAgent {
+  id           String  @id @default(cuid())
+  workspaceId  String
+  providerId   String?
+  name         String
+  /// The whole persona, in the workspace's own words.
+  systemPrompt String
+  /// Facts pasted in verbatim: prices, hours, policies, links.
+  knowledge    String?
+  /// Rules appended after the prompt, such as "never quote a price".
+  guardrails   String?
+  /// Sent when the model call fails, so a contact is never left on silence.
+  fallbackReply String?
+  /// Link buttons the agent is allowed to attach, as [{ title, url }].
+  ///
+  /// The model names one by its title and we supply the URL, so it can make a
+  /// reply interactive without ever inventing a link.
+  buttons      Json?
+  temperature  Float   @default(0.6)
+  maxTokens    Int     @default(400)
+  /// How many of the conversation's most recent messages are sent as context.
+  historyLimit Int     @default(20)
+  isDefault    Boolean @default(false)
+
+  /// Lifetime counters, so the workspace can see what their key is spending.
+  repliesSent      Int @default(0)
+  promptTokens     Int @default(0)
+  completionTokens Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider  AiProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([providerId])
 }

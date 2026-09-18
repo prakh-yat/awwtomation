@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeFlowErrors, normalizeHandle, validateFlow } from "@/lib/automation/flow-types";
 import type { AutomationDetail, ChannelOption, UpdateAutomationResult } from "@/lib/services/automations";
+import type { AgentOption } from "@/lib/services/ai";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ export type AutomationBuilderProps = {
   automation: AutomationDetail;
   channels: ChannelOption[];
   pipelines: PipelineSummary[];
+  agents: AgentOption[];
 };
 
 function handleFor(channel: ChannelOption | undefined): string {
@@ -47,7 +49,7 @@ function handleFor(channel: ChannelOption | undefined): string {
 
 const CONTACT_LABEL: Record<AutomationDetail["triggerType"], string> = { COMMENT: "Their comment", DM: "Their message", STORY_REPLY: "Their story reply" };
 
-export function AutomationBuilder({ automation, channels, pipelines }: AutomationBuilderProps) {
+export function AutomationBuilder({ automation, channels, pipelines, agents }: AutomationBuilderProps) {
   const router = useRouter();
   const [state, dispatch] = React.useReducer(builderReducer, automation, initBuilderState);
   const [saving, setSaving] = React.useState(false);
@@ -100,10 +102,11 @@ export function AutomationBuilder({ automation, channels, pipelines }: Automatio
       keywords: settings.keywords,
       accountHandle,
       pipelines,
+      agents,
       connectedHandles,
       onAddAfter,
     }),
-    [nodeErrors, settings.triggerType, settings.matchMode, settings.keywords, accountHandle, pipelines, connectedHandles, onAddAfter],
+    [nodeErrors, settings.triggerType, settings.matchMode, settings.keywords, accountHandle, pipelines, agents, connectedHandles, onAddAfter],
   );
 
   const save = React.useCallback(async (): Promise<AutomationDetail | null> => {
@@ -352,6 +355,7 @@ export function AutomationBuilder({ automation, channels, pipelines }: Automatio
             contactText={contactText}
             contactLabel={CONTACT_LABEL[settings.triggerType]}
             pipelines={pipelines}
+            agents={agents}
           />
         </aside>
       </div>

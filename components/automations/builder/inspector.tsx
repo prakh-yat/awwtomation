@@ -20,8 +20,11 @@ import {
   SAVE_TO_KEY_RE,
   type AnswerValidation,
   type FlowNodeData,
+  DEFAULT_AI_TURNS,
+  MAX_AI_TURNS,
 } from "@/lib/automation/flow-types";
 import type { OutboundButton, OutboundMessage, OutboundQuickReply } from "@/lib/meta/types";
+import type { AgentOption } from "@/lib/services/ai";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
@@ -571,6 +574,91 @@ const PIPELINE_STEP_HINT: Record<PipelineStepData["type"], string> = {
   remove_from_pipeline: "Nothing happens for contacts who aren't in this pipeline.",
 };
 
+function AiReplyEditor({
+  id,
+  data,
+  agents,
+  update,
+}: {
+  id: string;
+  data: Extract<FlowNodeData, { type: "ai_reply" }>;
+  agents: AgentOption[];
+  update: (next: FlowNodeData) => void;
+}) {
+  const turns = data.maxTurns ?? DEFAULT_AI_TURNS;
+
+  if (agents.length === 0) {
+    return (
+      <p className="rounded-lg border bg-secondary/40 px-3 py-2.5 text-[13px] text-muted-foreground">
+        This workspace has no AI agents yet.{" "}
+        <Link href="/ai" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+          Create one
+        </Link>{" "}
+        and it will appear here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor={`${id}-agent`}>Agent</Label>
+        <Select value={data.agentId ?? ""} onValueChange={(agentId) => update({ ...data, agentId })}>
+          <SelectTrigger id={`${id}-agent`}>
+            <SelectValue placeholder="Pick an agent" />
+          </SelectTrigger>
+          <SelectContent>
+            {agents.map((agent) => (
+              <SelectItem key={agent.id} value={agent.id}>
+                {agent.name}
+                {agent.isDefault ? " (default)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[12px] text-muted-foreground">
+          Its prompt, rules and model live under{" "}
+          <Link href="/ai" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+            AI
+          </Link>
+          .
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`${id}-instruction`}>Extra instruction for this step</Label>
+        <Textarea
+          id={`${id}-instruction`}
+          rows={3}
+          value={data.instruction ?? ""}
+          onChange={(e) => update({ ...data, instruction: e.target.value })}
+          placeholder="Optional. For example: only talk about the autumn collection, and get their size."
+        />
+        <p className="text-[12px] text-muted-foreground">Added to the agent&apos;s prompt here only, so one agent can play several parts.</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`${id}-turns`}>Replies before moving on</Label>
+        <Input
+          id={`${id}-turns`}
+          type="number"
+          min={1}
+          max={MAX_AI_TURNS}
+          value={turns}
+          onChange={(e) => {
+            const next = Number(e.target.value);
+            update({ ...data, maxTurns: Number.isFinite(next) ? Math.min(Math.max(Math.round(next), 1), MAX_AI_TURNS) : DEFAULT_AI_TURNS });
+          }}
+        />
+        <p className="text-[12px] text-muted-foreground">
+          Each reply costs a DM from your plan and tokens from your own API key. The flow leaves through <strong>Done</strong> when the
+          agent finishes or the count runs out, and through <strong>Needs a human</strong> when it says it cannot help.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function PipelineStepEditor({ id, data, pipelines, update }: { id: string; data: PipelineStepData; pipelines: PipelineSummary[]; update: (next: FlowNodeData) => void }) {
   const pipeline = pipelines.find((p) => p.id === data.pipelineId);
   const needsStage = data.type !== "remove_from_pipeline";
@@ -689,9 +777,21 @@ export type InspectorProps = {
   contactText: string | null;
   contactLabel: string;
   pipelines: PipelineSummary[];
+  agents: AgentOption[];
 };
 
-export function Inspector({ node, errors, dispatch, accountHandle, accountAvatarUrl, conversation, contactText, contactLabel, pipelines }: InspectorProps) {
+export function Inspector({
+  node,
+  errors,
+  dispatch,
+  accountHandle,
+  accountAvatarUrl,
+  conversation,
+  contactText,
+  contactLabel,
+  pipelines,
+  agents,
+}: InspectorProps) {
   const update = React.useCallback(
     (data: FlowNodeData, handleRemap?: Record<string, string | null>) => {
       if (node) dispatch({ type: "updateNodeData", id: node.id, data, handleRemap });
@@ -753,6 +853,8 @@ export function Inspector({ node, errors, dispatch, accountHandle, accountAvatar
             <MessageEditor id={node.id} data={node.data} update={update} />
           ) : node.data.type === "ask_question" ? (
             <AskQuestionEditor key={node.id} id={node.id} data={node.data} update={update} />
+          ) : node.data.type === "ai_reply" ? (
+            <AiReplyEditor key={node.id} id={node.id} data={node.data} agents={agents} update={update} />
           ) : node.data.type === "delay" ? (
             <DelayEditor id={node.id} seconds={node.data.seconds} update={update} />
           ) : node.data.type === "condition_follow" ? (

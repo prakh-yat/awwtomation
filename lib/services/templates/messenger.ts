@@ -5,7 +5,7 @@
  * there is no follow gate, so nothing here branches on whether the person
  * follows the account.
  */
-import { BRANCH_X, chain, edge, LINK, node, STEP_Y, TRIGGER, type AutomationTemplate } from "./kit";
+import { AGENT_PLACEHOLDER, BRANCH_X, chain, edge, LINK, node, STEP_Y, TRIGGER, type AutomationTemplate } from "./kit";
 
 const autoReplyToComments: AutomationTemplate = {
   id: "fb-auto-reply-to-comments",
@@ -424,6 +424,41 @@ const outsideOpeningHours: AutomationTemplate = {
   },
 };
 
+const aiSupport: AutomationTemplate = {
+  id: "fb-ai-support",
+  name: "Let AI answer support messages",
+  description: "Your agent handles the everyday questions and passes anything it should not decide to a person.",
+  platform: "MESSENGER",
+  goal: "Engage your audience",
+  triggerType: "DM",
+  matchMode: "ANY",
+  keywords: [],
+  followGate: false,
+  publicReplyEnabled: false,
+  publicReplies: [],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("ai-1", 0, STEP_Y, { type: "ai_reply", agentId: AGENT_PLACEHOLDER, maxTurns: 6 }),
+      node("tag-done", -BRANCH_X, STEP_Y * 2, { type: "add_tag", tag: "answered by ai" }),
+      node("tag-human", BRANCH_X, STEP_Y * 2, { type: "add_tag", tag: "needs a human" }),
+      node("message-human", BRANCH_X, STEP_Y * 3, {
+        type: "send_message",
+        message: {
+          text: "Passing this to the team so you get a proper answer. They will reply here.",
+          buttons: [{ type: "web_url", title: "Book a call instead", url: LINK.booking }],
+        },
+      }),
+    ],
+    edges: [
+      edge("trigger", "ai-1"),
+      edge("ai-1", "tag-done", "next"),
+      edge("ai-1", "tag-human", "handoff"),
+      edge("tag-human", "message-human"),
+    ],
+  },
+};
+
 export const MESSENGER_TEMPLATES: readonly AutomationTemplate[] = [
   autoReplyToComments,
   respondToEveryMessage,
@@ -437,4 +472,5 @@ export const MESSENGER_TEMPLATES: readonly AutomationTemplate[] = [
   welcomeNewConversations,
   sendCoupon,
   outsideOpeningHours,
+  aiSupport,
 ];

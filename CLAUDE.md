@@ -42,6 +42,27 @@ the pointer reaches the left edge of the window, magnifying under the cursor.
 Below `md` the same navigation is the drawer behind the header. There is no
 persistent sidebar; pages get the full width.
 
+## AI
+
+Replies are generated with the workspace's own provider key, not ours. There is
+no shared key, no proxy and no per-message charge: `lib/ai/providers.ts` speaks
+three request shapes (OpenAI-compatible, Anthropic, Google) and the workspace
+supplies the endpoint, the model and the key. Keys are encrypted with
+`APP_ENCRYPTION_KEY`, decrypted only in `lib/services/ai.ts`, and never leave
+the server: `toProviderView` returns a four character hint instead.
+
+An agent (`AiAgent`) is a prompt, a knowledge block, guardrails, a fallback
+reply and a list of link buttons. The workspace's words go in first, verbatim;
+what we append is only what the model cannot know (that it is writing a DM, the
+length limit, the two markers). A reply may name one of the agent's own buttons
+with `[[BUTTON:Label]]`, which we resolve to the configured URL, so an
+interactive reply can never carry a link nobody approved. `[[HANDOFF]]` takes
+the flow's handover branch and `[[DONE]]` ends the conversation.
+
+A custom endpoint is user input that the server then fetches, so `checkBaseUrl`
+refuses link-local, private and metadata addresses in every environment, and
+allows loopback only in development.
+
 ## Checks
 
 ```bash

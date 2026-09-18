@@ -7,7 +7,7 @@
 import { applyEdgeChanges, applyNodeChanges, MarkerType, type Connection, type Edge, type EdgeChange, type Node, type NodeChange } from "@xyflow/react";
 import type { AutomationStatus, MatchMode, TriggerType } from "@prisma/client";
 
-import { normalizeHandle, renderTemplate, type FlowGraph, type FlowNodeData, type FlowNodeType } from "@/lib/automation/flow-types";
+import { DEFAULT_AI_TURNS, normalizeHandle, renderTemplate, type FlowGraph, type FlowNodeData, type FlowNodeType } from "@/lib/automation/flow-types";
 import type { OutboundMessage } from "@/lib/meta/types";
 import type { AutomationDetail, MediaSummary } from "@/lib/services/automations";
 
@@ -288,6 +288,8 @@ export function newNodeData(type: AddableNodeType): FlowNodeData {
       return { type, message: { text: "" } };
     case "ask_question":
       return { type, prompt: { text: "" }, saveTo: "email", validation: "email", maxRetries: 2 };
+    case "ai_reply":
+      return { type, maxTurns: DEFAULT_AI_TURNS };
     case "condition_follow":
       return { type, retryPrompt: "" };
     case "delay":
@@ -318,6 +320,7 @@ export function prefilledNodeData(type: AddableNodeType, pipelines: ReadonlyArra
 const ID_PREFIX: Record<AddableNodeType, string> = {
   send_message: "message",
   ask_question: "ask",
+  ai_reply: "ai",
   condition_follow: "follow",
   delay: "delay",
   add_tag: "tag",

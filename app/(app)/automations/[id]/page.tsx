@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { AutomationBuilder } from "@/components/automations/builder/builder";
 import { getAutomation, listChannelOptions } from "@/lib/services/automations";
+import { listAgentOptions } from "@/lib/services/ai";
 import { listPipelines } from "@/lib/services/pipelines";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 
@@ -22,10 +23,11 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 export default async function AutomationBuilderPage({ params }: { params: Params }) {
   const ctx = await requireWorkspaceContext();
   const { id } = await params;
-  const [automation, channels, pipelines] = await Promise.all([
+  const [automation, channels, pipelines, agents] = await Promise.all([
     loadAutomation(ctx.workspace.id, id),
     listChannelOptions(ctx.workspace.id),
     listPipelines(ctx.workspace.id),
+    listAgentOptions(ctx.workspace.id),
   ]);
   if (!automation) notFound();
 
@@ -33,7 +35,7 @@ export default async function AutomationBuilderPage({ params }: { params: Params
   return (
     <>
       <h1 className="sr-only">{automation.name}</h1>
-      <AutomationBuilder key={automation.id} automation={automation} channels={channels} pipelines={pipelines} />
+      <AutomationBuilder key={automation.id} automation={automation} channels={channels} pipelines={pipelines} agents={agents} />
     </>
   );
 }

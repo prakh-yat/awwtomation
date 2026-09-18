@@ -48,6 +48,7 @@ import {
 import { enqueue } from "@/lib/queue";
 import { removeContactsFromPipeline, setContactsStage } from "@/lib/services/pipelines";
 import {
+  DEFAULT_AI_TURNS,
   DEFAULT_ASK_RETRIES,
   DEFAULT_ASK_RETRY_PROMPT,
   firstNodeAfterTrigger,
@@ -59,6 +60,8 @@ import {
   type FlowGraph,
   type FlowNodeData,
 } from "./flow-types";
+import { resolveAgent, runAgent } from "@/lib/services/ai";
+
 import { findMatchingAutomations } from "./matcher";
 import { attachPostbackPayloads, contactTemplateVars, RATE_LIMIT_MAX_DEFER_MS, recordDeliveryLog, sendToContact, type SendToContactResult } from "./send";
 
@@ -355,6 +358,48 @@ function inboundPreview(event: NormalizedMessageEvent): string {
   if (event.storyReply) return "[story reply]";
   if (event.attachments?.length) return "[attachment]";
   return "";
+}
+
+/** How the account refers to itself in a prompt: the handle if it has one, else the name. */
+function accountHandleFor(channel: Channel): string {
+  const username = channel.username?.trim();
+  if (username) return `@${username.replace(/^@/, "")}`;
+  return channel.name?.trim() || "this account";
+}
+
+/**
+ * The conversation so far, oldest first, as chat turns.
+ *
+ * Read straight from the messages we already store, so an agent picking up a
+ * thread mid-way sees what the contact and the account have actually said,
+ * including anything a human typed from the Inbox. Attachments have no text and
+ * are dropped rather than sent as empty turns.
+ */
+async function conversationHistory(
+  channel: Channel,
+  contact: Contact,
+  limit: number,
+): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { channelId_contactId: { channelId: channel.id, contactId: contact.id } },
+    select: { id: true },
+  });
+  if (!conversation) return [];
+
+  const rows = await prisma.message.findMany({
+    where: { conversationId: conversation.id, text: { not: null } },
+    orderBy: { createdAt: "desc" },
+    take: Math.max(2, Math.min(limit, 50)),
+    select: { direction: true, text: true },
+  });
+
+  return rows
+    .reverse()
+    .map((row) => ({
+      role: row.direction === MessageDirection.INBOUND ? ("user" as const) : ("assistant" as const),
+      content: (row.text ?? "").trim(),
+    }))
+    .filter((m) => m.content.length > 0);
 }
 
 type ActiveSessionWithFlow = FlowSession & { automation: Automation };
@@ -900,6 +945,101 @@ export async function executeFlowStep(job: Job): Promise<void> {
           return;
         }
         await setSession(session.id, { currentNodeId: node.id, context: { ...run.context, awaiting: { nodeId: node.id, attempts: 0 } } });
+        return;
+      }
+
+      case "ai_reply": {
+        const data = node.data;
+        const maxTurns = data.maxTurns ?? DEFAULT_AI_TURNS;
+        const awaiting = run.context.awaiting;
+        const resuming = Boolean(answer && awaiting?.nodeId === node.id);
+        const turnsUsed = resuming ? (awaiting?.attempts ?? 0) : 0;
+
+        // Out of turns: the flow carries on without another model call.
+        if (resuming && turnsUsed >= maxTurns) {
+          answer = undefined;
+          run.context = { ...run.context, awaiting: undefined };
+          nodeId = nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
+        const agent = await resolveAgent(channel.workspaceId, data.agentId);
+        if (!agent) {
+          // Nothing configured: say nothing rather than something wrong, and
+          // let the handover branch (or the rest of the flow) take over.
+          logger.warn("flow.ai_no_agent", { sessionId: session.id, nodeId: node.id, agentId: data.agentId });
+          answer = undefined;
+          run.context = { ...run.context, awaiting: undefined, lastError: "ai_no_agent" };
+          nodeId = nextNodeId(flow, node.id, "handoff") ?? nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
+        const history = await conversationHistory(channel, run.contact, agent.historyLimit);
+        // The message that got us here is not in the history yet on the first
+        // visit, because a comment or a story reply is not a conversation message.
+        const latest = resuming ? answer?.text?.trim() : run.context.triggerText?.trim();
+        const turns =
+          latest && history[history.length - 1]?.content !== latest
+            ? [...history, { role: "user" as const, content: latest }]
+            : history;
+
+        const outcome = await runAgent({
+          workspaceId: channel.workspaceId,
+          agent: data.instruction?.trim() ? { ...agent, systemPrompt: `${agent.systemPrompt}\n\n## For this step only\n${data.instruction.trim()}` } : agent,
+          context: {
+            accountHandle: accountHandleFor(channel),
+            platform: channel.platform,
+            contactName: run.contact.name,
+            trigger: run.context.triggerText ?? null,
+          },
+          history: turns.length > 0 ? turns : [{ role: "user", content: "Hello" }],
+        });
+
+        answer = undefined;
+        // A reply with buttons is an ordinary interactive message; a plain one
+        // is just text. The agent decides which by naming a button or not.
+        const reply: OutboundMessage = outcome.ok ? outcome.message : { text: outcome.fallback };
+        const result = await sendToContact({
+          channel,
+          contact: run.contact,
+          message: reply,
+          vars: templateVars(run.contact, run.context),
+          automationId: automation.id,
+          viaPrivateReplyCommentId: viaPrivateReply,
+        });
+        if (result.retryable) {
+          await deferForRateLimit(run, node.id, result, viaPrivateReply);
+          return;
+        }
+        viaPrivateReply = undefined;
+        if (result.status !== DeliveryStatus.SENT) {
+          await setSession(session.id, { currentNodeId: node.id, status: FlowSessionStatus.EXPIRED, context: { ...run.context, lastError: result.error } });
+          return;
+        }
+
+        // A failed model call is a handover: the contact got the fallback, and
+        // a person should see the thread.
+        if (!outcome.ok) {
+          run.context = { ...run.context, awaiting: undefined, lastError: `ai_${outcome.reason}` };
+          nodeId = nextNodeId(flow, node.id, "handoff") ?? nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
+        if (outcome.handoff) {
+          run.context = { ...run.context, awaiting: undefined };
+          nodeId = nextNodeId(flow, node.id, "handoff") ?? nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
+        const used = turnsUsed + 1;
+        if (outcome.done || used >= maxTurns) {
+          run.context = { ...run.context, awaiting: undefined };
+          nodeId = nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
+        // Park: the contact's next message comes back as `payload.answer`.
+        await setSession(session.id, { currentNodeId: node.id, context: { ...run.context, awaiting: { nodeId: node.id, attempts: used } } });
         return;
       }
 

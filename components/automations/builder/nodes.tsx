@@ -6,8 +6,9 @@ import type { MatchMode, TriggerType } from "@prisma/client";
 import { AlertCircle, ArrowRight, ExternalLink, ImageIcon, MousePointerClick, Plus } from "lucide-react";
 
 import { StageDot } from "@/components/pipelines/stage-badge";
-import { askQuestionFieldLabel, type FlowNodeData } from "@/lib/automation/flow-types";
+import { askQuestionFieldLabel, DEFAULT_AI_TURNS, type FlowNodeData } from "@/lib/automation/flow-types";
 import { stageColorClasses } from "@/lib/pipelines/colors";
+import type { AgentOption } from "@/lib/services/ai";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,8 @@ export type BuilderNodeContextValue = {
   /** `${nodeId}::${handle}` for every handle that already has a connection. */
   connectedHandles: Set<string>;
   onAddAfter: (nodeId: string, handle: string, type: AddableNodeType) => void;
+  /** The workspace's AI agents, for the AI reply node's summary line. */
+  agents: AgentOption[];
 };
 
 export const BuilderNodeContext = React.createContext<BuilderNodeContextValue>({
@@ -37,6 +40,7 @@ export const BuilderNodeContext = React.createContext<BuilderNodeContextValue>({
   pipelines: [],
   connectedHandles: new Set(),
   onAddAfter: () => undefined,
+  agents: [],
 });
 
 // ───────────────────────── Shared shell ─────────────────────────
@@ -140,6 +144,7 @@ type DataOf<T extends FlowNodeData["type"]> = Extract<FlowNodeData, { type: T }>
 export type TriggerNodeType = Node<DataOf<"trigger">, "trigger">;
 export type MessageNodeType = Node<DataOf<"send_message">, "send_message">;
 export type AskQuestionNodeType = Node<DataOf<"ask_question">, "ask_question">;
+export type AiReplyNodeType = Node<DataOf<"ai_reply">, "ai_reply">;
 export type FollowNodeType = Node<DataOf<"condition_follow">, "condition_follow">;
 export type DelayNodeType = Node<DataOf<"delay">, "delay">;
 export type AddTagNodeType = Node<DataOf<"add_tag">, "add_tag">;
@@ -297,6 +302,44 @@ export function AskQuestionNode({ id, data, selected }: NodeProps<AskQuestionNod
   );
 }
 
+export function AiReplyNode({ id, data, selected }: NodeProps<AiReplyNodeType>) {
+  const { agents } = React.useContext(BuilderNodeContext);
+  const agent = agents.find((a) => a.id === data.agentId);
+  const turns = data.maxTurns ?? DEFAULT_AI_TURNS;
+
+  return (
+    <div className="relative">
+      <NodeShell
+        id={id}
+        type="ai_reply"
+        selected={selected}
+        footer={
+          <div className="relative grid grid-cols-2 border-t text-center text-[11px] font-medium">
+            <span className="border-r py-2 text-foreground">Done</span>
+            <span className="py-2 text-muted-foreground">Needs a human</span>
+            <Handle type="source" position={Position.Bottom} id="next" style={{ left: "25%" }} className={SOURCE_HANDLE} />
+            <Handle type="source" position={Position.Bottom} id="handoff" style={{ left: "75%" }} className={SOURCE_HANDLE} />
+          </div>
+        }
+      >
+        <Handle type="target" position={Position.Top} className={TARGET_HANDLE} />
+        {agent ? (
+          <p className="text-[12px] text-muted-foreground">
+            <span className="font-medium text-foreground">{agent.name}</span> answers, up to {turns} {turns === 1 ? "time" : "times"}
+          </p>
+        ) : (
+          <Placeholder>Pick an AI agent</Placeholder>
+        )}
+        {data.instruction?.trim() ? (
+          <p className="mt-1.5 line-clamp-2 text-[11px] italic text-muted-foreground">{data.instruction.trim()}</p>
+        ) : null}
+      </NodeShell>
+      <AddAfter nodeId={id} handle="next" left="25%" label="Add a step for when it is done" />
+      <AddAfter nodeId={id} handle="handoff" left="75%" label="Add a step for a handover" />
+    </div>
+  );
+}
+
 export function FollowConditionNode({ id, selected }: NodeProps<FollowNodeType>) {
   const { accountHandle } = React.useContext(BuilderNodeContext);
   return (
@@ -436,6 +479,7 @@ export const nodeTypes: NodeTypes = {
   trigger: TriggerNode,
   send_message: MessageNode,
   ask_question: AskQuestionNode,
+  ai_reply: AiReplyNode,
   condition_follow: FollowConditionNode,
   delay: DelayNode,
   add_tag: AddTagNode,

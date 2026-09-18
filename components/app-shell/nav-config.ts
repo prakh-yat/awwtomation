@@ -7,6 +7,7 @@ import {
   Megaphone,
   Plug,
   ScrollText,
+  Sparkles,
   Users,
   Workflow,
   type LucideIcon,
@@ -33,6 +34,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Automations", href: "/automations", icon: Workflow },
+  { label: "AI", href: "/ai", icon: Sparkles },
   { label: "Inbox", href: "/inbox", icon: Inbox },
   { label: "Contacts", href: "/contacts", icon: Users },
   { label: "Broadcasts", href: "/broadcasts", icon: Megaphone },
@@ -84,6 +86,10 @@ const SECTION_TABS: Record<string, readonly SectionTab[]> = {
   "/automations": [
     { label: "Automations", href: "/automations", exact: true },
     { label: "Templates", href: "/automations?templates=1" },
+  ],
+  "/ai": [
+    { label: "Agents", href: "/ai", exact: true },
+    { label: "Providers", href: "/ai/providers" },
   ],
   "/contacts": [
     { label: "Contacts", href: "/contacts", exact: true },

@@ -8,6 +8,7 @@ export type FlowNodeType =
   | "trigger"
   | "send_message"
   | "ask_question"
+  | "ai_reply"
   | "condition_follow"
   | "delay"
   | "add_tag"
@@ -30,6 +31,16 @@ export type FlowNodeData =
    * Only a "next" handle; a wrong answer re-asks with `retryPrompt` up to `maxRetries` times.
    */
   | { type: "ask_question"; prompt: OutboundMessage; saveTo: string; validation?: AnswerValidation; retryPrompt?: string; maxRetries?: number }
+  /**
+   * Hands the conversation to one of the workspace's AI agents.
+   *
+   * The agent answers, then the node waits for the contact's reply and answers
+   * again, up to `maxTurns` times. It leaves through "next" when the agent says
+   * the conversation is finished or the turns run out, and through "handoff"
+   * when the agent says it cannot help. `instruction` is added to the agent's
+   * prompt for this node only, so one agent can play several parts in a flow.
+   */
+  | { type: "ai_reply"; agentId?: string; instruction?: string; maxTurns?: number }
   /** yes/no handles. `retryPrompt` is sent (with a "check again" button) when there is no "no" edge. */
   | { type: "condition_follow"; retryPrompt?: string }
   | { type: "delay"; seconds: number }
@@ -49,6 +60,9 @@ export type FlowEdge = { id: string; source: string; target: string; sourceHandl
 export type FlowGraph = { nodes: FlowNode[]; edges: FlowEdge[] };
 
 export const MAX_DELAY_SECONDS = 7 * 24 * 3600;
+/** How many times one AI node will answer before the flow moves on. */
+export const MAX_AI_TURNS = 12;
+export const DEFAULT_AI_TURNS = 4;
 export const MAX_TAG_LENGTH = 64;
 export const MAX_FLOW_NODES = 100;
 
@@ -123,6 +137,7 @@ const flowNodeTypeSchema = z.enum([
   "trigger",
   "send_message",
   "ask_question",
+  "ai_reply",
   "condition_follow",
   "delay",
   "add_tag",
@@ -145,6 +160,12 @@ const flowNodeDataSchema = z.discriminatedUnion("type", [
     validation: answerValidationSchema.optional(),
     retryPrompt: z.string().max(4000).optional(),
     maxRetries: z.number().int().min(0).max(MAX_ASK_RETRIES).optional(),
+  }),
+  z.object({
+    type: z.literal("ai_reply"),
+    agentId: z.string().max(64).optional(),
+    instruction: z.string().max(4000).optional(),
+    maxTurns: z.number().int().min(1).max(MAX_AI_TURNS).optional(),
   }),
   z.object({ type: z.literal("condition_follow"), retryPrompt: z.string().max(4000).optional() }),
   z.object({ type: z.literal("delay"), seconds: z.number().int().min(1).max(MAX_DELAY_SECONDS) }),
@@ -253,6 +274,7 @@ const HANDLES_BY_TYPE: Record<FlowNodeType, (node: FlowNode) => string[]> = {
   },
   // Quick replies on a question are suggested answers, not branches: the answer always continues via "next".
   ask_question: () => ["next"],
+  ai_reply: () => ["next", "handoff"],
   condition_follow: () => ["yes", "no"],
   delay: () => ["next"],
   add_tag: () => ["next"],
@@ -330,6 +352,12 @@ export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; error
       if (!data.saveTo.trim()) errors.push(`"${node.id}" needs a field name to save the answer in.`);
       else if (!SAVE_TO_KEY_RE.test(data.saveTo)) errors.push(`The field name in "${node.id}" can only use lowercase letters, numbers and underscores (up to 32).`);
       if (data.retryPrompt && utf8Bytes(data.retryPrompt) > MAX_TEXT_BYTES) errors.push(`The retry message in "${node.id}" is too long.`);
+    } else if (data.type === "ai_reply") {
+      if (!data.agentId) errors.push(`"${node.id}" needs an AI agent. Pick one, or create one under AI.`);
+      const turns = data.maxTurns ?? DEFAULT_AI_TURNS;
+      if (!Number.isInteger(turns) || turns < 1 || turns > MAX_AI_TURNS) {
+        errors.push(`"${node.id}" can answer between 1 and ${MAX_AI_TURNS} times.`);
+      }
     } else if (data.type === "delay") {
       if (!Number.isInteger(data.seconds) || data.seconds < 1 || data.seconds > MAX_DELAY_SECONDS) {
         errors.push(`"${node.id}" must wait between 1 second and 7 days.`);
@@ -373,6 +401,7 @@ const STEP_NAMES: Record<FlowNodeType, string> = {
   trigger: "Trigger",
   send_message: "Message",
   ask_question: "Question",
+  ai_reply: "AI reply",
   condition_follow: "Follow check",
   delay: "Delay",
   add_tag: "Add tag",

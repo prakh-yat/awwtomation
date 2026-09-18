@@ -5,7 +5,7 @@
  * whole graph. Links and copy are placeholders the user edits in the builder,
  * so nothing here should read as final marketing text.
  */
-import { ACCOUNT_PLACEHOLDER, BRANCH_X, chain, edge, LINK, node, STEP_Y, TRIGGER, type AutomationTemplate } from "./kit";
+import { ACCOUNT_PLACEHOLDER, AGENT_PLACEHOLDER, BRANCH_X, chain, edge, LINK, node, STEP_Y, TRIGGER, type AutomationTemplate } from "./kit";
 
 const autoDmLinks: AutomationTemplate = {
   id: "ig-auto-dm-links",
@@ -907,6 +907,73 @@ const waitlistFromComments: AutomationTemplate = {
   },
 };
 
+const aiConversations: AutomationTemplate = {
+  id: "ig-ai-conversations",
+  name: "Let AI handle the conversation",
+  description: "Your agent answers in your own words, collects what you need and hands over when it cannot help.",
+  platform: "INSTAGRAM",
+  goal: "Engage your audience",
+  triggerType: "DM",
+  matchMode: "ANY",
+  keywords: [],
+  followGate: false,
+  popular: true,
+  publicReplyEnabled: false,
+  publicReplies: [],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("ai-1", 0, STEP_Y, { type: "ai_reply", agentId: AGENT_PLACEHOLDER, maxTurns: 6 }),
+      node("tag-done", -BRANCH_X, STEP_Y * 2, { type: "add_tag", tag: "answered by ai" }),
+      node("tag-human", BRANCH_X, STEP_Y * 2, { type: "add_tag", tag: "needs a human" }),
+      node("message-human", BRANCH_X, STEP_Y * 3, {
+        type: "send_message",
+        message: { text: "Let me get someone from the team on this. They will reply here shortly." },
+      }),
+    ],
+    edges: [
+      edge("trigger", "ai-1"),
+      edge("ai-1", "tag-done", "next"),
+      edge("ai-1", "tag-human", "handoff"),
+      edge("tag-human", "message-human"),
+    ],
+  },
+};
+
+const aiQuestionsFromComments: AutomationTemplate = {
+  id: "ig-ai-questions-from-comments",
+  name: "Answer comment questions with AI",
+  description: "A question under a post becomes a real answer in the DM, written by your agent.",
+  platform: "INSTAGRAM",
+  goal: "Sell more",
+  triggerType: "COMMENT",
+  matchMode: "ANY",
+  keywords: [],
+  followGate: false,
+  publicReplyEnabled: true,
+  publicReplies: ["Just answered you in the DMs", "Sent you a message"],
+  flow: {
+    nodes: [
+      TRIGGER,
+      node("ai-1", 0, STEP_Y, {
+        type: "ai_reply",
+        agentId: AGENT_PLACEHOLDER,
+        instruction: "They asked this under a post. Answer the question, then offer the link if it helps.",
+        maxTurns: 4,
+      }),
+      node("tag-human", BRANCH_X, STEP_Y * 2, { type: "add_tag", tag: "needs a human" }),
+      node("message-human", BRANCH_X, STEP_Y * 3, {
+        type: "send_message",
+        message: {
+          text: "I want to get this right, so I am passing you to the team. They will reply here.",
+          buttons: [{ type: "web_url", title: "Meanwhile, the FAQ", url: LINK.site }],
+        },
+      }),
+    ],
+    edges: [edge("trigger", "ai-1"), edge("ai-1", "tag-human", "handoff"), edge("tag-human", "message-human")],
+  },
+};
+
 export const INSTAGRAM_TEMPLATES: readonly AutomationTemplate[] = [
   autoDmLinks,
   leadsFromStories,
@@ -932,4 +999,6 @@ export const INSTAGRAM_TEMPLATES: readonly AutomationTemplate[] = [
   faqFromStoryReplies,
   welcomeFirstDm,
   waitlistFromComments,
+  aiConversations,
+  aiQuestionsFromComments,
 ];

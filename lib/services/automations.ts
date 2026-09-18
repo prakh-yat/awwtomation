@@ -535,7 +535,11 @@ export async function createAutomation(workspaceId: string, input: AutomationCre
 
   const template = input.templateId ? getTemplate(input.templateId) : null;
   if (input.templateId && !template) throw new ApiError(404, "Template not found", "TEMPLATE_NOT_FOUND");
-  const base = template ? instantiateTemplate(template, { accountHandle: channelHandle(channel) }) : null;
+  // An AI step in a template has no agent id until it lands in a workspace.
+  const defaultAgent = template ? await prisma.aiAgent.findFirst({ where: { workspaceId, isDefault: true }, select: { id: true } }) : null;
+  const base = template
+    ? instantiateTemplate(template, { accountHandle: channelHandle(channel), defaultAgentId: defaultAgent?.id ?? null })
+    : null;
 
   const flow = input.flow ?? base?.flow ?? emptyFlow();
   const created = await prisma.automation.create({

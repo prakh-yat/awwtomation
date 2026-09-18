@@ -90,6 +90,14 @@ export const TRIGGER = node("trigger", 0, 0, { type: "trigger" });
  */
 export const ACCOUNT_PLACEHOLDER = "{{account}}";
 
+/**
+ * Template-only placeholder for an AI agent. Replaced with the workspace's
+ * default agent when the template is instantiated, or with an empty string when
+ * there is none, so the builder asks for one instead of the automation silently
+ * pointing at nothing.
+ */
+export const AGENT_PLACEHOLDER = "{{agent}}";
+
 /** A straight line of steps: trigger to the first node, then one after another. */
 export function chain(...ids: string[]): FlowEdge[] {
   const edges: FlowEdge[] = [];

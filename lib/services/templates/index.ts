@@ -19,7 +19,15 @@ import {
 } from "@/lib/automation/flow-types";
 
 import { INSTAGRAM_TEMPLATES } from "./instagram";
-import { ACCOUNT_PLACEHOLDER, triggerLabel, type AutomationTemplate, type TemplatePlatform, type TemplateStep, type TemplateSummary } from "./kit";
+import {
+  ACCOUNT_PLACEHOLDER,
+  AGENT_PLACEHOLDER,
+  triggerLabel,
+  type AutomationTemplate,
+  type TemplatePlatform,
+  type TemplateStep,
+  type TemplateSummary,
+} from "./kit";
 import { MESSENGER_TEMPLATES } from "./messenger";
 
 export { TEMPLATE_GOALS, triggerLabel, triggerLabelsFor } from "./kit";
@@ -37,7 +45,10 @@ for (const template of AUTOMATION_TEMPLATES) {
   if (!parsed.success) {
     throw new Error(`Template "${template.id}" has an invalid flow shape: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
   }
-  const result = validateFlow(template.flow);
+  // The agent id is filled in per workspace, so the boot check runs against a
+  // stand-in rather than rejecting every AI template for having no agent.
+  const checkable = flowGraphSchema.parse(JSON.parse(JSON.stringify(template.flow).split(AGENT_PLACEHOLDER).join("boot-check-agent")));
+  const result = validateFlow(checkable);
   if (!result.ok) {
     throw new Error(`Template "${template.id}" fails validateFlow: ${result.errors.join("; ")}`);
   }
@@ -82,6 +93,8 @@ export function stepLabel(data: FlowNodeData, triggerType: TriggerType): string 
       return "Message";
     case "ask_question":
       return `Ask for ${askQuestionFieldLabel(data.saveTo).toLowerCase()}`;
+    case "ai_reply":
+      return "AI reply";
     case "condition_follow":
       return "Follow gate";
     case "delay":
@@ -139,9 +152,16 @@ export function listTemplateSummaries(): TemplateSummary[] {
  * Done on the JSON string so nested message/button/prompt fields are all
  * covered without a hand-written deep walk; the handle is JSON-escaped first.
  */
-export function instantiateTemplate(template: AutomationTemplate, opts: { accountHandle: string }): AutomationTemplate {
+export function instantiateTemplate(
+  template: AutomationTemplate,
+  opts: { accountHandle: string; defaultAgentId?: string | null },
+): AutomationTemplate {
   const escaped = JSON.stringify(opts.accountHandle).slice(1, -1);
-  const json = JSON.stringify(template.flow).split(ACCOUNT_PLACEHOLDER).join(escaped);
+  const json = JSON.stringify(template.flow)
+    .split(ACCOUNT_PLACEHOLDER)
+    .join(escaped)
+    .split(AGENT_PLACEHOLDER)
+    .join(opts.defaultAgentId ?? "");
   const flow = flowGraphSchema.parse(JSON.parse(json));
   return { ...template, flow };
 }

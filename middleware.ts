@@ -10,6 +10,7 @@ import { sanitizeNextPath } from "@/lib/utils";
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/automations",
+  "/ai",
   "/inbox",
   "/contacts",
   "/broadcasts",
@@ -18,6 +19,7 @@ const PROTECTED_PREFIXES = [
   "/logs",
   "/settings",
   "/onboarding",
+  "/welcome",
   "/checkout",
   "/organizations",
   "/usage",

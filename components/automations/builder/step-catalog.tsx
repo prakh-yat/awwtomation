@@ -7,6 +7,7 @@ import {
   CirclePlus,
   HelpCircle,
   MessageSquare,
+  Sparkles,
   Tag,
   TagIcon,
   Timer,
@@ -30,6 +31,7 @@ export const STEP_INFO: Record<FlowNodeType, StepInfo> = {
   trigger: { label: "Trigger", hint: "Starts the automation", icon: Zap, kind: "trigger" },
   send_message: { label: "Send message", hint: "Text, buttons or an image", icon: MessageSquare, kind: "send" },
   ask_question: { label: "Ask a question", hint: "Saves their answer to the contact", icon: HelpCircle, kind: "send" },
+  ai_reply: { label: "AI reply", hint: "Your agent answers in your own words", icon: Sparkles, kind: "send" },
   condition_follow: { label: "Follow gate", hint: "Continues only if they follow you", icon: UserCheck, kind: "logic" },
   delay: { label: "Delay", hint: "Waits before the next step", icon: Timer, kind: "logic" },
   add_tag: { label: "Add tag", hint: "Tags the contact", icon: Tag, kind: "contact" },
@@ -41,7 +43,7 @@ export const STEP_INFO: Record<FlowNodeType, StepInfo> = {
 
 const COLUMNS: Array<Array<{ label: string; types: AddableNodeType[] }>> = [
   [
-    { label: "Send", types: ["send_message", "ask_question"] },
+    { label: "Send", types: ["send_message", "ask_question", "ai_reply"] },
     { label: "Wait and branch", types: ["condition_follow", "delay"] },
   ],
   [{ label: "Update the contact", types: ["add_tag", "remove_tag", "add_to_pipeline", "move_stage", "remove_from_pipeline"] }],

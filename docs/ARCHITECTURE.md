@@ -27,6 +27,7 @@ Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`)
 - Next.js 15 App Router, React 19, TypeScript strict. **Node runtime for all route handlers** (`export const runtime = "nodejs"` where Prisma/crypto is used).
 - Tailwind 3.4 + shadcn-style components in `components/ui/*` (Radix primitives, `cva`, `cn` from `@/lib/utils`).
 - Prisma 6 + Postgres. Schema is FINAL at `prisma/schema.prisma`: read it. If you truly need a schema change, make it additive and note it in your final report.
+- AI replies are bring-your-own-key: `lib/ai/*` (providers, prompt assembly, marker parsing), `lib/services/ai.ts` (CRUD, `runAgent`), the `ai_reply` flow node, and `/ai` for agents and providers. No shared key and no model cost to us.
 - Google OAuth 2.0 + PKCE, implemented in-app (`lib/auth/*`). Our own `User` row mirrors the Google identity (`authId` = `google:<sub>`; the column is still physically named `supabaseId`, see the `@map` in the schema).
 - Postgres-backed job queue (`Job` model) + `worker/index.ts` (run with `npm run worker`). No Redis.
 - `@xyflow/react` for the flow builder. `recharts` for charts. `sonner` for toasts. `lucide-react` icons. `zod` validation. `date-fns`.
@@ -213,7 +214,7 @@ export async function executeFlowStep(job: Job): Promise<void>;
 `lib/automation/reconcile.ts`: `reconcileChannel(job)`, polling safety net: for each ACTIVE COMMENT automation on the channel, fetch recent comments on its media (or last 10 media if all), and feed unseen ones through `handleIncomingEvent` (dedupe makes this safe).
 
 ### lib/services/* (server-side data access; every function takes workspaceId first)
-`channels.ts`, `automations.ts`, `contacts.ts`, `pipelines.ts` (pipelines, stages and contact moves; every move writes an AuditLog `contact.stage_changed` or `contact.pipeline_removed`), `segments.ts`, `inbox.ts`, `broadcasts.ts`, `analytics.ts`, `links.ts`, `logs.ts`, `workspaces.ts`, `onboarding.ts`, `templates/` (36 static flow templates: 24 Instagram, 12 Messenger, every one native to the platform it names, each tagged with a goal and a trigger for the gallery filters). Organization-level services take `organizationId` first: `organizations.ts` (create, switch, rename, delete, members, ownership, invitations), `billing.ts`, `usage-history.ts`. `audit.ts` exports `recordAudit`.
+`channels.ts`, `automations.ts`, `contacts.ts`, `pipelines.ts` (pipelines, stages and contact moves; every move writes an AuditLog `contact.stage_changed` or `contact.pipeline_removed`), `segments.ts`, `inbox.ts`, `broadcasts.ts`, `analytics.ts`, `links.ts`, `logs.ts`, `workspaces.ts`, `onboarding.ts`, `ai.ts` (providers and agents; keys encrypted at rest and never serialised to the client), `templates/` (36 static flow templates: 24 Instagram, 12 Messenger, every one native to the platform it names, each tagged with a goal and a trigger for the gallery filters). Organization-level services take `organizationId` first: `organizations.ts` (create, switch, rename, delete, members, ownership, invitations), `billing.ts`, `usage-history.ts`. `audit.ts` exports `recordAudit`.
 
 ## 6. Meta rules the code must respect
 
