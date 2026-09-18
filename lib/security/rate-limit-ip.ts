@@ -73,7 +73,7 @@ export function checkRateLimit(bucket: string, key: string, limit: number, windo
  * Best-effort client address. `x-forwarded-for` is only trustworthy behind a
  * proxy that overwrites it (Vercel, Railway, Cloudflare do); on a bare
  * `next start` a client could spoof it, which merely lets them dodge their
- * own limit — never gain access.
+ * own limit: never gain access.
  */
 export function clientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();

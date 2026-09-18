@@ -33,8 +33,8 @@ export interface CheckoutClientProps {
 /**
  * The whole checkout body (form + order summary) lives in one client
  * component so the interval toggle can update both price and form without a
- * server round-trip. The card itself is collected by Dodo's overlay — we
- * never see it — so this form only gathers what the invoice needs.
+ * server round-trip. The card itself is collected by Dodo's overlay: we
+ * never see it: so this form only gathers what the invoice needs.
  */
 export function CheckoutClient({ tier, initialInterval, email, defaultName, organizationName, mode }: CheckoutClientProps) {
   const [interval, setInterval] = React.useState<BillingIntervalId>(initialInterval);
@@ -85,7 +85,7 @@ export function CheckoutClient({ tier, initialInterval, email, defaultName, orga
             setNotice({ kind: "error", title: "That checkout link expired.", body: "Start again to get a fresh one." });
             break;
           default:
-            // checkout.redirect etc. — the SDK navigates to our success page on its own.
+            // checkout.redirect etc.: the SDK navigates to our success page on its own.
             break;
         }
       },
@@ -131,7 +131,7 @@ export function CheckoutClient({ tier, initialInterval, email, defaultName, orga
     try {
       await openOverlay(session);
     } catch {
-      // Overlay unavailable (script blocked, old browser) — the hosted page works everywhere.
+      // Overlay unavailable (script blocked, old browser): the hosted page works everywhere.
       window.location.assign(session.checkoutUrl);
     }
   }

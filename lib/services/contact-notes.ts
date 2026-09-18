@@ -1,5 +1,5 @@
 /**
- * Contact notes — free-text CRM notes, newest first. `Contact.notesCount` is
+ * Contact notes: free-text CRM notes, newest first. `Contact.notesCount` is
  * kept in step inside the same transaction so list rows never need a join.
  * Every function takes `workspaceId` first and scopes each query by it.
  *
@@ -45,7 +45,7 @@ export type ContactNoteSummary = {
   author: NoteAuthor | null;
 };
 
-/** Who is asking — needed because editing is limited to the author or an admin. */
+/** Who is asking: needed because editing is limited to the author or an admin. */
 export type NoteActor = { id: string; role: WorkspaceRole };
 
 const noteSelect = {

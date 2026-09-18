@@ -57,7 +57,6 @@ export default async function SelectPagesPage() {
         backHref="/channels"
         backLabel="Channels"
         title="Choose Facebook Pages"
-        description="Pick the Pages to automate. Each Page is added as its own account, with its own automations and inbox."
       />
 
       {loadError ? (

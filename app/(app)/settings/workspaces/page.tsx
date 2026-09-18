@@ -46,7 +46,6 @@ export default async function WorkspacesSettingsPage() {
     <div>
       <PageHeader
         title="Workspaces"
-        description={`Keep each brand or client in ${ctx.organization.name} separate. Every workspace has its own accounts, contacts and automations.`}
       />
       <WorkspacesList
         workspaces={workspaces}

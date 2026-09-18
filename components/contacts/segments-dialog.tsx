@@ -22,7 +22,7 @@ export interface SegmentFormDialogProps {
   mode: "create" | "rename";
   initialName?: string;
   initialDescription?: string | null;
-  /** Live count of the filters being saved (create mode) — shown so the user knows what they're naming. */
+  /** Live count of the filters being saved (create mode): shown so the user knows what they're naming. */
   count?: number | null;
   /** Human summary of the filters (create mode). */
   summary?: string;

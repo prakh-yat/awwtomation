@@ -21,7 +21,7 @@ const serverSchema = z.object({
   DIRECT_URL: z.string().optional(),
 
   // Google sign-in. Optional at the schema level, then required below unless the
-  // dev sign-in bypass is active — local development with DEV_AUTH_EMAIL never
+  // dev sign-in bypass is active: local development with DEV_AUTH_EMAIL never
   // talks to Google, and demanding credentials there produced a boot error for a
   // dependency the process genuinely does not use. The same applies to the
   // worker, which has no HTTP surface at all.
@@ -30,7 +30,7 @@ const serverSchema = z.object({
   GOOGLE_CLIENT_ID: emptyAsUndefined(z.string().min(1)),
   GOOGLE_CLIENT_SECRET: emptyAsUndefined(z.string().min(1)),
 
-  /** base64 of 32 random bytes — `openssl rand -base64 32` */
+  /** base64 of 32 random bytes: `openssl rand -base64 32` */
   APP_ENCRYPTION_KEY: z.string().min(32),
   CRON_SECRET: z.string().min(8).optional(),
 

@@ -256,7 +256,6 @@ export function LogsView({ initialItems, initialCursor, initialStats, initialFil
     <>
       <PageHeader
         title="Logs"
-        description="Every message your automations and broadcasts sent, and the ones that were held back, with the reason."
         actions={
           <>
             <SkipHelpPopover />

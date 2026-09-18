@@ -1,11 +1,11 @@
 /**
- * Channels service — connected Instagram professional accounts and Facebook
+ * Channels service: connected Instagram professional accounts and Facebook
  * Pages. Owns the OAuth completion, token storage, webhook subscription,
  * media cache (post picker) and the Meta deauthorize / data-deletion hooks.
  *
  * Every read/write of tenant data is scoped by `workspaceId`; the only
  * unscoped entry points are `syncChannelMedia` (worker job keyed by channel
- * id) and the Meta callbacks (keyed by Meta's user id — no session exists).
+ * id) and the Meta callbacks (keyed by Meta's user id: no session exists).
  */
 import {
   ChannelPlatform,
@@ -49,7 +49,7 @@ import { ApiError } from "@/lib/workspace/api";
 // ───────────────────────── Constants ─────────────────────────
 
 const DAY_MS = 24 * 3600 * 1000;
-/** Mirrors lib/meta/tokens TOKEN_REFRESH_WINDOW_DAYS — the UI warns when fewer days remain. */
+/** Mirrors lib/meta/tokens TOKEN_REFRESH_WINDOW_DAYS: the UI warns when fewer days remain. */
 export const TOKEN_WARNING_DAYS = 10;
 /** Instagram media pages fetched per sync (50 items each). */
 const MEDIA_SYNC_PAGES = 2;
@@ -99,7 +99,7 @@ export type ChannelSummary = {
   health: ChannelHealth;
 };
 
-/** Shape returned by GET /api/channels/[id]/media — consumed by the automations post picker. */
+/** Shape returned by GET /api/channels/[id]/media: consumed by the automations post picker. */
 export type MediaSummary = {
   id: string;
   externalId: string;
@@ -235,7 +235,7 @@ function errorText(err: unknown): string {
 
 // ───────────────────────── Reads ─────────────────────────
 
-/** Sent DMs per channel over the last 7 days (private replies, messages, broadcasts — not public comment replies). */
+/** Sent DMs per channel over the last 7 days (private replies, messages, broadcasts: not public comment replies). */
 async function dmCountsLast7d(workspaceId: string): Promise<Map<string, number>> {
   const grouped = await prisma.deliveryLog.groupBy({
     by: ["channelId"],
@@ -255,7 +255,7 @@ export async function listChannels(workspaceId: string): Promise<ChannelSummary[
     prisma.channel.findMany({
       where: { workspaceId },
       include: { _count: { select: { automations: true, contacts: true } } },
-      // Enum order is ACTIVE, TOKEN_EXPIRED, DISCONNECTED, ERROR — healthy channels first.
+      // Enum order is ACTIVE, TOKEN_EXPIRED, DISCONNECTED, ERROR: healthy channels first.
       orderBy: [{ status: "asc" }, { createdAt: "asc" }],
     }),
     dmCountsLast7d(workspaceId),
@@ -289,7 +289,7 @@ async function requireSummary(workspaceId: string, id: string): Promise<ChannelS
 /**
  * Whether the connect button should be offered. Lenient on purpose: a
  * workspace at its channel limit may still *reconnect* an existing account
- * (which consumes no new slot) — the authoritative check happens once we know
+ * (which consumes no new slot): the authoritative check happens once we know
  * which account came back from Meta (`assertChannelSlots`).
  */
 export async function canStartConnect(workspaceId: string, platform: ChannelPlatform): Promise<boolean> {
@@ -359,7 +359,7 @@ async function resolveClaim(workspaceId: string, platform: ChannelPlatform, exte
 
 /**
  * Subscribes the app to the account's webhooks. A failure is recorded on the
- * channel (visible in the health row) but never fails the connect — polling
+ * channel (visible in the health row) but never fails the connect: polling
  * reconciliation still picks up comments, and the user can hit Refresh.
  */
 async function subscribeWebhooks(channel: Pick<Channel, "id" | "platform" | "externalId">, token: string): Promise<boolean> {
@@ -390,7 +390,7 @@ async function markWorkspaceOnboarded(workspaceId: string): Promise<void> {
   await prisma.workspace.updateMany({ where: { id: workspaceId, onboardedAt: null }, data: { onboardedAt: new Date() } });
 }
 
-/** One SYNC_MEDIA job per channel per minute — enough to absorb double clicks without starving a real re-sync. */
+/** One SYNC_MEDIA job per channel per minute: enough to absorb double clicks without starving a real re-sync. */
 async function queueMediaSync(channel: Pick<Channel, "id" | "workspaceId">): Promise<void> {
   const minute = Math.floor(Date.now() / 60_000);
   await enqueue({
@@ -468,7 +468,7 @@ export async function beginFacebookConnect(input: {
 
 /**
  * The picker session lives in a signed cookie. Only the user token is stored
- * (encrypted, ~500 bytes) — the page list is re-fetched, because a full page
+ * (encrypted, ~500 bytes): the page list is re-fetched, because a full page
  * list with tokens and picture URLs blows past the 4 KB cookie limit.
  */
 export function createFacebookConnectSession(input: { workspaceId: string; userId: string; userToken: string }): string {
@@ -678,7 +678,7 @@ const EMPTY_PURGE_COUNTS: Omit<PurgeCounts, "jobs" | "webhookReceipts"> = {
 };
 
 /**
- * Raw webhook receipts (`WebhookEvent`) carry no channel foreign key — they
+ * Raw webhook receipts (`WebhookEvent`) carry no channel foreign key: they
  * exist only to de-duplicate Meta redeliveries. Prisma can't LIKE-match
  * inside jsonb, so the envelopes are matched on their text form for every
  * id that could name this account: the account/Page id itself (message
@@ -968,7 +968,7 @@ export async function refreshChannel(workspaceId: string, id: string): Promise<C
  * professional account id we store as `externalId`; for a Facebook Page
  * with a linked Instagram account it may be `linkedInstagramId`. Facebook
  * *person* ids aren't stored (only Page ids are), so a Facebook
- * deauthorization by a person can't be mapped — the Page token simply fails
+ * deauthorization by a person can't be mapped: the Page token simply fails
  * with error 190 on next use and flips to TOKEN_EXPIRED.
  */
 function channelsForMetaUser(metaUserId: string, includeDisconnected: boolean) {
@@ -1014,8 +1014,8 @@ const DATA_DELETION_AUDIT_ACTION = "meta.data_deletion";
 
 /**
  * Meta "Data deletion request callback". The id identifies the *business*
- * user who authorized us, so every channel it maps to is purged outright —
- * the same full cascade as "Delete channel & data" — in whichever workspace
+ * user who authorized us, so every channel it maps to is purged outright:
+ * the same full cascade as "Delete channel & data": in whichever workspace
  * holds it. The confirmation code Meta shows the user is stored on the
  * global audit row so /data-deletion?code= can report the outcome.
  */

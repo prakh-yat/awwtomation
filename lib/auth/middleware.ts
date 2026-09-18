@@ -20,7 +20,7 @@ function forwardedHeaders(request: NextRequest): Headers {
  * Verifies the session cookie on every matched request and slides its expiry
  * for people who keep using the app.
  *
- * This is pure signature checking — no database, no network — so it stays cheap
+ * This is pure signature checking, no database, no network, so it stays cheap
  * enough to run on every page view in the Edge runtime. The page layer
  * (`getCurrentUser`) is what actually loads the user row.
  */

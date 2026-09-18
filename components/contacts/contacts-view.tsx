@@ -666,7 +666,7 @@ function ContactsView({
 
   return (
     <>
-      <PageHeader title="Contacts" description="Everyone who commented, messaged or replied to a story, and anyone you add yourself." actions={headerActions} />
+      <PageHeader title="Contacts" actions={headerActions} />
 
       {workspaceEmpty ? (
         <EmptyState
@@ -1017,7 +1017,7 @@ function ContactsView({
                                       {formatRelative(item.lastInteractionAt)}
                                     </time>
                                   ) : (
-                                    "—"
+                                    "–"
                                   )}
                                 </TableCell>
                                 <TableCell>

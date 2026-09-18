@@ -42,7 +42,7 @@ function nonceCookieOptions() {
   };
 }
 
-/** The exact redirect URI registered with Meta — must match byte-for-byte between start and callback. */
+/** The exact redirect URI registered with Meta: must match byte-for-byte between start and callback. */
 export function callbackUri(platform: ChannelPlatform): string {
   return appUrl(`/api/meta/${platform.toLowerCase()}/callback`);
 }

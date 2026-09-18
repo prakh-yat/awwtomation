@@ -7,7 +7,7 @@ import { cn, initials } from "@/lib/utils";
 export interface MessagePreviewProps {
   message: OutboundMessage;
   platform?: ChannelPlatform;
-  /** Shown in the chat header — usually the channel's @username or page name. */
+  /** Shown in the chat header: usually the channel's @username or page name. */
   senderName?: string;
   senderAvatarUrl?: string | null;
   className?: string;

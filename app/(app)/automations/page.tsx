@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { AutomationStatus } from "@prisma/client";
-import { LayoutTemplate } from "lucide-react";
 
 import { AutomationsTable } from "@/components/automations/automations-table";
 import { NewAutomationButton } from "@/components/automations/new-automation-button";
-import { Button } from "@/components/ui/button";
+import { TemplatesButton, TemplatesProvider } from "@/components/automations/templates-launcher";
 import { PageHeader } from "@/components/ui/page-header";
 import { countAutomations, countAutomationsByStatus, listAutomations, listChannelOptions } from "@/lib/services/automations";
 import { listTemplateSummaries } from "@/lib/services/templates";
@@ -38,22 +36,20 @@ export default async function AutomationsPage({ searchParams }: { searchParams: 
     countAutomationsByStatus(ctx.workspace.id, channelId || undefined),
   ]);
 
-  const firstActiveChannelId = channels.find((c) => c.status === "ACTIVE")?.id ?? null;
+  const activeChannels = channels.filter((c) => c.status === "ACTIVE");
+  const firstActiveChannelId = activeChannels[0]?.id ?? null;
 
   return (
-    <>
+    // The picker is mounted once here so the header button, the Templates tab
+    // (/automations?templates=1) and the empty state all drive the same dialog.
+    <TemplatesProvider templates={listTemplateSummaries()} channels={activeChannels} autoOpen={first(params.templates) === "1"}
+      autoTemplateId={first(params.template) || undefined}
+    >
       <PageHeader
         title="Automations"
-        description="Reply to comments, DMs and story replies automatically."
         actions={
           <>
-            {total > 0 ? (
-              <Button asChild variant="outline">
-                <Link href="/automations/templates">
-                  <LayoutTemplate /> Templates
-                </Link>
-              </Button>
-            ) : null}
+            <TemplatesButton />
             <NewAutomationButton channelId={firstActiveChannelId} />
           </>
         }
@@ -61,12 +57,11 @@ export default async function AutomationsPage({ searchParams }: { searchParams: 
       <AutomationsTable
         automations={automations}
         channels={channels}
-        templates={listTemplateSummaries()}
         filters={{ q, channelId, status: status ?? "" }}
         statusCounts={statusCounts}
         hasAny={total > 0}
         firstActiveChannelId={firstActiveChannelId}
       />
-    </>
+    </TemplatesProvider>
   );
 }

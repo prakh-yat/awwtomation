@@ -105,7 +105,7 @@ export function WorkspacesList({
       await send("/api/workspaces", "POST", { name });
       toast.success(`Created ${name}`);
       setCreateOpen(false);
-      router.push("/channels?onboarding=1");
+      router.push("/welcome");
       router.refresh();
     } catch (err) {
       toast.error(clientErrorMessage(err, "Couldn't create the workspace."));

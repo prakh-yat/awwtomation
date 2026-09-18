@@ -13,7 +13,7 @@ const inviteSchema = z.object({
 
 /**
  * Creates an invite link into the active organization. The email is not sent by
- * us — the admin shares `inviteUrl`.
+ * us: the admin shares `inviteUrl`.
  */
 export const POST = withWorkspace(
   async (req, ctx) => {

@@ -5,11 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AutomationStatus, TriggerType } from "@prisma/client";
 import { formatDistanceToNowStrict } from "date-fns";
-import { BarChart3, Copy, MessageCircle, MessageSquare, MoreHorizontal, Pencil, Search, Sparkles, Trash2 } from "lucide-react";
+import { BarChart3, Copy, LayoutTemplate, MessageCircle, MessageSquare, MoreHorizontal, Pencil, Search, Sparkles, Trash2 } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
-import { TriggerBadge } from "@/components/automations/badges";
 import { NewAutomationButton } from "@/components/automations/new-automation-button";
+import { useOpenTemplates } from "@/components/automations/templates-launcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -28,13 +28,11 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AutomationDetail, AutomationListItem, ChannelOption } from "@/lib/services/automations";
-import type { TemplateSummary } from "@/lib/services/templates";
 import { cn, formatNumber } from "@/lib/utils";
 
 export type AutomationsTableProps = {
   automations: AutomationListItem[];
   channels: ChannelOption[];
-  templates: TemplateSummary[];
   filters: { q: string; channelId: string; status: string };
   /** Per-status totals for the tabs (within the channel filter, ignoring search). */
   statusCounts: Record<AutomationStatus, number>;
@@ -64,7 +62,7 @@ function handle(channel: Pick<ChannelOption, "username" | "name" | "platform">):
   return channel.name ?? (channel.platform === "INSTAGRAM" ? "Instagram account" : "Facebook Page");
 }
 
-/** "Comment on any post", "Any DM", "Story reply" — what starts the automation, in words. */
+/** "Comment on any post", "Any DM", "Story reply": what starts the automation, in words. */
 function triggerText(item: AutomationListItem): string {
   const any = item.matchMode === "ANY";
   const posts = item.postCount === 1 ? "1 post" : `${item.postCount} posts`;
@@ -106,7 +104,8 @@ function TriggerLine({ item }: { item: AutomationListItem }) {
   );
 }
 
-export function AutomationsTable({ automations, channels, templates, filters, statusCounts, hasAny, firstActiveChannelId }: AutomationsTableProps) {
+export function AutomationsTable({ automations, channels, filters, statusCounts, hasAny, firstActiveChannelId }: AutomationsTableProps) {
+  const openTemplates = useOpenTemplates();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -137,7 +136,7 @@ export function AutomationsTable({ automations, channels, templates, filters, st
   }, [search, filters.q, setParam]);
 
   React.useEffect(() => {
-    // Server data caught up with the optimistic state — drop the overrides.
+    // Server data caught up with the optimistic state: drop the overrides.
     setStatusOverride({});
   }, [automations]);
 
@@ -187,37 +186,20 @@ export function AutomationsTable({ automations, channels, templates, filters, st
 
   if (!hasAny) {
     return (
-      <div className="space-y-8">
-        <div className="rounded-lg border bg-card px-6 py-10 text-center shadow-card">
-          <h2 className="text-base font-semibold tracking-tight">No automations yet</h2>
-          <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-            An automation replies for you when someone comments a keyword, sends a DM or answers your story. Start from a template below or build one yourself.
-          </p>
-          <NewAutomationButton channelId={firstActiveChannelId} label="Start from scratch" className="mt-5" />
+      <div className="rounded-lg border bg-card px-6 py-12 text-center shadow-card">
+        <h2 className="text-base font-semibold tracking-tight">No automations yet</h2>
+        <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
+          An automation replies for you when someone comments a keyword, sends a DM or answers your story. Start from a
+          template, or build one yourself.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          {openTemplates ? (
+            <Button onClick={openTemplates}>
+              <LayoutTemplate /> Browse templates
+            </Button>
+          ) : null}
+          <NewAutomationButton channelId={firstActiveChannelId} label="Start from scratch" variant="outline" />
         </div>
-
-        {templates.length > 0 ? (
-          <section aria-labelledby="templates-heading">
-            <h2 id="templates-heading" className="mb-3 text-sm font-medium">
-              Templates
-            </h2>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {templates.map((t) => (
-                <Link
-                  key={t.id}
-                  href={`/automations/templates?template=${encodeURIComponent(t.id)}`}
-                  className="group flex flex-col rounded-lg border bg-card p-4 shadow-card outline-none transition-colors hover:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium">{t.name}</p>
-                    <TriggerBadge trigger={t.triggerType} className="shrink-0" />
-                  </div>
-                  <p className="mt-1.5 line-clamp-3 text-[13px] text-muted-foreground">{t.description}</p>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
       </div>
     );
   }

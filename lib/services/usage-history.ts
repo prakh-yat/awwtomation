@@ -5,7 +5,7 @@
  * The live counter (`Organization.dmsSentThisPeriod`, reserved atomically by
  * lib/billing/usage.ts) is the number the plan limit is enforced against, so
  * the current period always reports it. Past months are rebuilt from
- * DeliveryLog rows with status SENT — the same events that reserve quota —
+ * DeliveryLog rows with status SENT: the same events that reserve quota:
  * which can differ from the historical counter by a handful of sends that
  * reserved quota and then failed at Meta. Periods are UTC calendar months,
  * matching `currentPeriodStart()`.
@@ -25,7 +25,7 @@ const DAY_MS = 24 * 3600 * 1000;
 export type UsageMonth = {
   /** YYYY-MM (UTC). */
   month: string;
-  /** "Sep 2026" — pre-rendered so the client chart needs no date parsing. */
+  /** "Sep 2026": pre-rendered so the client chart needs no date parsing. */
   label: string;
   /** SENT private replies + messages + broadcasts (what the plan meters). */
   dmsSent: number;
@@ -36,7 +36,7 @@ export type UsageMonth = {
   publicReplies: number;
   /** The current plan's monthly limit; historical plan changes are not tracked. */
   limit: number;
-  /** dmsSent / limit — above 1 means the month went over the current limit. */
+  /** dmsSent / limit: above 1 means the month went over the current limit. */
   overagePct: number;
   isCurrent: boolean;
 };

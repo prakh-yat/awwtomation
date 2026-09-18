@@ -1,5 +1,5 @@
 /**
- * Contacts — everyone who ever commented, messaged or tapped a button on a
+ * Contacts: everyone who ever commented, messaged or tapped a button on a
  * connected account, plus CRM-only records added by hand or by CSV import.
  * Every function takes `workspaceId` first and scopes each query by it;
  * contact ids from the client are never trusted alone.
@@ -68,7 +68,7 @@ export const CONTACT_MAX_NAME_LENGTH = 120;
 export const CONTACT_MAX_EMAIL_LENGTH = 254;
 export const CONTACT_MAX_PHONE_LENGTH = 32;
 export const CONTACT_MAX_USERNAME_LENGTH = 64;
-/** Export ceiling — beyond this, a CSV in one response is the wrong tool. */
+/** Export ceiling: beyond this, a CSV in one response is the wrong tool. */
 export const CONTACT_EXPORT_MAX_ROWS = 50_000;
 /** Timeline rows on the profile page after merging every source. */
 export const CONTACT_TIMELINE_MAX = 150;
@@ -84,13 +84,13 @@ const DM_KINDS: DeliveryKind[] = [DeliveryKind.PRIVATE_REPLY, DeliveryKind.MESSA
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?\d{7,15}$/;
 
-/** Lower-cased, trimmed email — or null when the input isn't one. */
+/** Lower-cased, trimmed email: or null when the input isn't one. */
 export function normalizeEmail(raw: string | null | undefined): string | null {
   const value = raw?.trim().toLowerCase() ?? "";
   return value && value.length <= CONTACT_MAX_EMAIL_LENGTH && EMAIL_RE.test(value) ? value : null;
 }
 
-/** Digits with an optional leading "+" (7–15 digits, per E.164) — or null when the input isn't a phone number. */
+/** Digits with an optional leading "+" (7–15 digits, per E.164): or null when the input isn't a phone number. */
 export function normalizePhone(raw: string | null | undefined): string | null {
   const value = (raw ?? "").replace(/[\s().-]/g, "");
   return value && PHONE_RE.test(value) ? value : null;
@@ -161,7 +161,7 @@ export const bulkTagsSchema = z
 export type BulkTagsInput = z.infer<typeof bulkTagsSchema>;
 
 /**
- * POST /api/contacts/bulk — every key is optional but at least one action must be present.
+ * POST /api/contacts/bulk: every key is optional but at least one action must be present.
  * `pipelineId` + `stageId` put the contacts at that stage (adding them to the pipeline where needed);
  * `removeFromPipelineId` takes them out of a pipeline.
  */
@@ -196,7 +196,7 @@ export const renameTagSchema = z
 
 export const deleteTagSchema = z.object({ tag: tagSchema }).strict();
 
-/** POST /api/contacts — a CRM-only record; it becomes messageable once the person interacts (see `adoptManualContact`). */
+/** POST /api/contacts: a CRM-only record; it becomes messageable once the person interacts (see `adoptManualContact`). */
 export const createManualContactSchema = z
   .object({
     channelId: z.string().min(1).max(64),
@@ -228,7 +228,7 @@ const tagListFromQuery = z
  * `?q=&channelId=&platform=&tags=a,b&tagMode=all&excludeTags=c&follower=true&lastInteractionDays=7&excludeOptedOut=true&optedOut=false
  *   &pipelineId=&stageId=&ownerId=me|<id>|unassigned&source=&hasEmail=&hasPhone=&messageable=&page=&pageSize=&sort=`
  * Same vocabulary as `segmentFiltersSchema` plus the legacy tri-state `follower` param. `ownerId=me` is
- * resolved to the caller's id by the route handler (`resolveOwnerFilter`) — segments only ever store real ids.
+ * resolved to the caller's id by the route handler (`resolveOwnerFilter`): segments only ever store real ids.
  */
 export const contactListQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
@@ -277,7 +277,7 @@ export type ListContactsOptions = ContactListFilters & {
   sort?: ContactSort;
 };
 
-/** Canonical filter shape for a list request — the same object a segment would store. */
+/** Canonical filter shape for a list request: the same object a segment would store. */
 export function toSegmentFilters(filters: ContactListFilters): SegmentFilters {
   return compactSegmentFilters({
     q: filters.q,
@@ -346,7 +346,7 @@ export type ContactListItem = {
   email: string | null;
   phone: string | null;
   source: ContactSource;
-  /** False for CRM-only records (no Meta id) — they cannot be DMed until the person interacts. */
+  /** False for CRM-only records (no Meta id): they cannot be DMed until the person interacts. */
   messageable: boolean;
   lastContactedAt: string | null;
   notesCount: number;
@@ -419,7 +419,7 @@ export type ContactStageChange = {
 export type ContactTimelineKind = "note" | "message_in" | "message_out" | "dm" | "public_reply" | "automation" | "click" | "stage";
 export type ContactTimelineTone = "ok" | "warn" | "error" | "neutral";
 
-/** JSON-safe (ISO dates) — rendered by a client component with filter chips. */
+/** JSON-safe (ISO dates): rendered by a client component with filter chips. */
 export type ContactTimelineEvent = {
   id: string;
   at: string;
@@ -519,7 +519,7 @@ function orderBy(sort: ContactSort): Prisma.ContactOrderByWithRelationInput[] {
 
 // ───────────────────────── Filters ─────────────────────────
 
-/** Single source of truth for filter evaluation is `buildContactWhere` (segments.ts) — never add predicates here. */
+/** Single source of truth for filter evaluation is `buildContactWhere` (segments.ts): never add predicates here. */
 function buildWhere(workspaceId: string, filters: ContactListFilters): Prisma.ContactWhereInput {
   return buildContactWhere(workspaceId, toSegmentFilters(filters));
 }
@@ -662,7 +662,7 @@ export async function contactStats(workspaceId: string): Promise<ContactStats> {
 
 /**
  * Distinct tags with usage counts. Runs as a single `unnest` aggregate in
- * Postgres — Prisma has no array-aggregate API, and pulling every contact's
+ * Postgres: Prisma has no array-aggregate API, and pulling every contact's
  * tag array into Node would not scale past a few tens of thousands of rows.
  */
 export async function listTags(workspaceId: string): Promise<ContactTagCount[]> {
@@ -679,7 +679,7 @@ export async function listTags(workspaceId: string): Promise<ContactTagCount[]> 
 /**
  * Channels for the filter dropdown. Lives here (not in the channels lane)
  * because the contacts page must not depend on another lane's service; it is
- * intentionally minimal — no tokens, no counts.
+ * intentionally minimal: no tokens, no counts.
  */
 export async function listContactChannels(workspaceId: string): Promise<ContactChannelSummary[]> {
   return prisma.channel.findMany({
@@ -699,7 +699,7 @@ export async function listOwners(workspaceId: string): Promise<ContactOwner[]> {
   return rows.map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email, avatarUrl: m.user.avatarUrl, role: m.role }));
 }
 
-/** Throws 422 unless `userId` belongs to the workspace's organization — owner ids from the client can't probe elsewhere. */
+/** Throws 422 unless `userId` belongs to the workspace's organization: owner ids from the client can't probe elsewhere. */
 async function requireOwner(workspaceId: string, userId: string): Promise<void> {
   const member = await prisma.organizationMember.findFirst({
     where: { userId, organization: { workspaces: { some: { id: workspaceId } } } },
@@ -1183,7 +1183,7 @@ function unionTags(a: string[], b: string[]): string[] {
  * - pipelines: the CRM record's places move over, except where the webhook contact is already in that pipeline;
  * - tags: union (webhook order first); customFields: CRM as base, webhook keys win;
  * - notes are re-pointed and `notesCount` summed; `lastContactedAt` keeps the later date.
- * Never throws — a failed merge must not break webhook processing. Returns
+ * Never throws: a failed merge must not break webhook processing. Returns
  * the merged contact, or null when there was nothing to adopt.
  */
 export async function adoptManualContact(channelId: string, username: string, webhookContactId: string): Promise<Contact | null> {

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ id: string }> };
 
-/** generateMetadata and the page both need the broadcast — fetch it once per request. */
+/** generateMetadata and the page both need the broadcast: fetch it once per request. */
 const loadBroadcast = cache((workspaceId: string, id: string) => getBroadcast(workspaceId, id));
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

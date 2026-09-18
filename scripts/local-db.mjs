@@ -1,5 +1,5 @@
 /**
- * Embedded Postgres for local development — no Docker, no Homebrew.
+ * Embedded Postgres for local development: no Docker, no Homebrew.
  *
  *   npm run db:local          # starts Postgres on 127.0.0.1:5433 (data in .local-db/)
  *

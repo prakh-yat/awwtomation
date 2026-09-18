@@ -4,7 +4,7 @@ import type { WindowState } from "@/lib/services/inbox";
  * Client-side mirror of `windowState()` in lib/services/inbox.ts so the badge
  * and composer can flip the moment a window expires instead of waiting for
  * the next poll. The constants intentionally match lib/automation/send.ts
- * (which can't be imported here — it pulls in Prisma).
+ * (which can't be imported here: it pulls in Prisma).
  */
 export const STANDARD_WINDOW_MS = 24 * 3600 * 1000;
 export const HUMAN_AGENT_WINDOW_MS = 7 * 24 * 3600 * 1000;

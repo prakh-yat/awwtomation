@@ -14,7 +14,7 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
-/** Alias of GET /api/channels/[id]/media — identical response shape. */
+/** Alias of GET /api/channels/[id]/media: identical response shape. */
 export const GET = withWorkspace<Params>(async (req, ctx, { params }) => {
   const { channelId } = await params;
   const query = parseQuery(req, querySchema);

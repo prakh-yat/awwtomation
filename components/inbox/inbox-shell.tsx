@@ -346,7 +346,7 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
     setItems((prev) => {
       const idx = prev.findIndex((c) => c.id === fresh.id);
       if (idx === -1) return prev;
-      // Closing hides the row from every filter except "Closed" (and vice versa) — drop it rather than show a stale row.
+      // Closing hides the row from every filter except "Closed" (and vice versa): drop it rather than show a stale row.
       const visible = filter === "closed" ? fresh.status === "CLOSED" : fresh.status === "OPEN";
       if (!visible) return prev.filter((c) => c.id !== fresh.id);
       const next = prev.slice();

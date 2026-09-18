@@ -19,6 +19,6 @@ export function minusDays(key: string, days: number): string {
 
 /** "37%" or "4.2%" below ten percent; a dash when there's nothing to divide. */
 export function formatRate(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
   return `${(value * 100).toFixed(value > 0 && value < 0.1 ? 1 : 0)}%`;
 }

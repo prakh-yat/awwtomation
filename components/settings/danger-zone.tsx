@@ -34,11 +34,11 @@ export type TransferCandidate = {
 export interface DangerZoneProps {
   organization: { id: string; name: string };
   workspace: { id: string; name: string };
-  /** Workspaces in the organization — its last one can't be deleted on its own. */
+  /** Workspaces in the organization: its last one can't be deleted on its own. */
   workspaceCount: number;
   role: WorkspaceRole;
   currentUserId: string;
-  /** Number of OWNER members — the last owner can neither leave nor be demoted. */
+  /** Number of OWNER members: the last owner can neither leave nor be demoted. */
   ownerCount: number;
   /** Members the owner may hand the organization to (everyone but themselves). Empty for non-owners. */
   transferCandidates: TransferCandidate[];

@@ -61,7 +61,7 @@ export function effectivePlan(ws: BillingFields, now = new Date()): PlanTier {
       case "ON_HOLD":
         return inGracePeriod(ws, now) ? tier : "FREE";
       default:
-        // NONE (pending first payment), CANCELLED, EXPIRED — nothing is granted.
+        // NONE (pending first payment), CANCELLED, EXPIRED: nothing is granted.
         return "FREE";
     }
   }

@@ -18,12 +18,10 @@ export function UsageMeter({
   usage,
   collapsed,
   onNavigate,
-  railBind,
 }: {
   usage: ShellUsage;
   collapsed: boolean;
   onNavigate?: () => void;
-  railBind?: Record<string, unknown>;
 }) {
   const ratio = usage.limit > 0 ? Math.min(usage.used / usage.limit, 1) : 0;
   const pct = Math.round(ratio * 100);
@@ -39,7 +37,6 @@ export function UsageMeter({
         href="/usage"
         onClick={onNavigate}
         aria-label={summary}
-        {...railBind}
         className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
       >
         <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden>

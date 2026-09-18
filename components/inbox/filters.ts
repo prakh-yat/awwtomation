@@ -10,7 +10,7 @@ export const INBOX_FILTERS: ReadonlyArray<{ id: InboxFilter; label: string; coun
   { id: "closed", label: "Closed" },
 ];
 
-/** Sentinel for "no channel filter" — Radix Select can't represent an empty value. */
+/** Sentinel for "no channel filter": Radix Select can't represent an empty value. */
 export const ALL_CHANNELS = "__all__";
 
 // Mirrors DEFAULT_LIST_LIMIT / MAX_LIST_LIMIT in lib/services/inbox.ts (server-only module).

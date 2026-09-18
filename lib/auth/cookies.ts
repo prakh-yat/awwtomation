@@ -5,7 +5,7 @@
  */
 import { SESSION_TTL_SECONDS } from "@/lib/auth/token";
 
-/** The signed session — see lib/auth/token.ts for the payload. */
+/** The signed session: see lib/auth/token.ts for the payload. */
 export const SESSION_COOKIE = "aww_session";
 
 /**

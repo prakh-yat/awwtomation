@@ -1,4 +1,4 @@
-// Awwtomation — multi-tenant Instagram & Facebook comment-to-DM automation platform.
+// Awwtomation: multi-tenant Instagram & Facebook comment-to-DM automation platform.
 // Organizations are the billable tenant; every workspace-owned row carries workspaceId and all reads MUST be scoped by it.
 
 generator client {
@@ -266,7 +266,13 @@ model Workspace {
   name           String
   slug           String    @unique
   timezone       String    @default("Asia/Kathmandu")
+  /// Set the moment the first channel is connected.
   onboardedAt    DateTime?
+  /// Answers to the welcome questionnaire, keyed by question id. Single-choice
+  /// answers are strings, multi-choice answers are arrays of strings.
+  onboardingAnswers Json?
+  /// Set when the questionnaire is finished or skipped, so it is only asked once.
+  onboardingCompletedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -366,7 +372,7 @@ model Automation {
   excludeKeywords    String[]         @default([])
   /// External media ids this automation listens on. Empty = all posts.
   mediaIds           String[]         @default([])
-  /// Flow graph: { nodes: FlowNode[], edges: FlowEdge[] } — see lib/automation/flow-types.ts
+  /// Flow graph: { nodes: FlowNode[], edges: FlowEdge[] }, see lib/automation/flow-types.ts
   flow               Json
   publicReplyEnabled Boolean          @default(false)
   /// One is picked at random per comment so replies don't look robotic.
@@ -539,7 +545,7 @@ model Conversation {
   contactId          String
   externalId         String?
   status             ConversationStatus @default(OPEN)
-  /// Last INBOUND message time — the 24h messaging window is measured from this.
+  /// Last INBOUND message time: the 24h messaging window is measured from this.
   lastInboundAt      DateTime?
   lastMessageAt      DateTime?
   lastMessagePreview String?
@@ -565,7 +571,7 @@ model Message {
   /// Meta message id (mid). Unique for idempotent webhook ingestion.
   externalId     String?          @unique
   text           String?
-  /// Attachments, buttons, story refs, postback payloads — see lib/meta/types.ts
+  /// Attachments, buttons, story refs, postback payloads: see lib/meta/types.ts
   payload        Json?
   /// Set when a human sent it from the Inbox.
   sentByUserId   String?
@@ -586,7 +592,7 @@ model Broadcast {
   workspaceId  String
   channelId    String
   name         String
-  /// OutboundMessage shape — see lib/meta/types.ts
+  /// OutboundMessage shape: see lib/meta/types.ts
   message      Json
   /// { tags: string[], excludeTags: string[], onlyFollowers?: boolean }
   audience     Json            @default("{}")
@@ -649,7 +655,7 @@ model Payment {
 
 /// A saved contact filter. Filters JSON: { tags?: string[]; excludeTags?: string[];
 /// onlyFollowers?: boolean; channelId?: string; lastInteractionDays?: number;
-/// excludeOptedOut?: boolean; q?: string } — evaluated by lib/services/contacts.ts.
+/// excludeOptedOut?: boolean; q?: string }, evaluated by lib/services/contacts.ts.
 model Segment {
   id          String   @id @default(cuid())
   workspaceId String

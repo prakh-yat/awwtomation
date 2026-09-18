@@ -9,7 +9,7 @@ type Params = { id: string };
 
 /**
  * POST /api/automations/[id]/test { text, mediaId?, overrides? } → AutomationTestResult
- * Dry run only — nothing is sent, no DeliveryLog is written.
+ * Dry run only: nothing is sent, no DeliveryLog is written.
  */
 export const POST = withWorkspace<Params>(async (req, ctx, { params }) => {
   const { id } = await params;

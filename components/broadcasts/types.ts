@@ -9,7 +9,7 @@ import type { ChannelPlatform, ChannelStatus } from "@prisma/client";
 export type { AudienceEstimate, BroadcastAudience, BroadcastRow, BroadcastStats } from "@/lib/services/broadcasts";
 export type { SegmentSummary } from "@/lib/services/segments";
 
-// Mirrors lib/meta/messages.ts — keep in sync.
+// Mirrors lib/meta/messages.ts: keep in sync.
 export const TEXT_MAX_BYTES = 1000;
 export const TEXT_WITH_BUTTONS_MAX_CHARS = 640;
 export const MAX_BUTTONS = 3;
@@ -26,7 +26,7 @@ export type ChannelOption = {
 
 export type TagOption = { tag: string; count: number };
 
-/** Editable button shape — broadcasts only support links. */
+/** Editable button shape: broadcasts only support links. */
 export type DraftButton = { title: string; url: string };
 
 export type DraftMessage = { text: string; buttons: DraftButton[]; imageUrl: string };

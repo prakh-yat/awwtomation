@@ -148,7 +148,7 @@ export async function processBatch(workerId: string, limit: number): Promise<Bat
 
 export type QueueStats = Record<JobStatus, number> & { due: number };
 
-/** Counts by status plus how many PENDING jobs are due now — for the worker heartbeat and admin health. */
+/** Counts by status plus how many PENDING jobs are due now: for the worker heartbeat and admin health. */
 export async function getQueueStats(): Promise<QueueStats> {
   const [grouped, due] = await Promise.all([
     prisma.job.groupBy({ by: ["status"], _count: { _all: true } }),

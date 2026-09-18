@@ -214,7 +214,7 @@ export function ImportContactsDialog({
                           </Select>
                         </td>
                         <td className="hidden max-w-[200px] truncate px-3 py-2 text-muted-foreground sm:table-cell" title={sample}>
-                          {sample || "—"}
+                          {sample || "–"}
                         </td>
                       </tr>
                     );

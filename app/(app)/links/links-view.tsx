@@ -124,7 +124,7 @@ export function LinksView({ initialItems, timezone }: LinksViewProps) {
 
   return (
     <>
-      <PageHeader title="Links" description="Short links for your DMs and broadcasts. Every tap is counted." actions={newLinkButton} />
+      <PageHeader title="Links" actions={newLinkButton} />
 
       <div className="space-y-6">
         {items.length > 0 ? (
@@ -239,7 +239,7 @@ export function LinksView({ initialItems, timezone }: LinksViewProps) {
                               {link.label}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground/60">—</span>
+                            <span className="text-muted-foreground/60">–</span>
                           )}
                         </TableCell>
                         <TableCell className="max-w-[260px]">

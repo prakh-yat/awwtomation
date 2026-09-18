@@ -1,6 +1,6 @@
 # Awwtomation
 
-Multi-tenant comment-to-DM automation for Instagram and Facebook — a self-hostable ManyChat alternative built on the official Meta APIs.
+Multi-tenant comment-to-DM automation for Instagram and Facebook: a self-hostable ManyChat alternative built on the official Meta APIs.
 
 Someone comments `LINK` on a reel → they get a DM with your link a second later. Add a public reply, gate the link behind a follow, continue the conversation with buttons, track every click, and run it for as many client accounts as your plan allows.
 
@@ -12,12 +12,12 @@ Someone comments `LINK` on a reel → they get a DM with your link a second late
 | **Automations** | Keyword / any-comment / DM / story-reply triggers on specific posts or all posts. Visual flow builder (React Flow): Trigger → Message (up to 3 buttons) → Ask a question → Follow gate → Delay → Tag → Add to pipeline / Move stage / Remove from pipeline. New automations open on an empty canvas; templates are one click away. Public reply variants. Once-per-contact. Templates. Per-automation analytics. |
 | **Inbox** | Unified Instagram + Messenger live chat. 24-hour window indicator, human-agent 7-day mode, assignment, automated-message badges, link buttons. |
 | **Contacts (CRM)** | Everyone who interacted, plus people added by hand or CSV import. Paginated list. **Pipelines**: as many as you need per workspace, each with its own coloured stages; view all contacts or one pipeline (stage tabs, list or drag-and-drop board). Owners, notes, tags, custom fields, follower status, opt-out, activity timeline, bulk stage/owner/tag changes, CSV import (into a pipeline) and export. **Segments**: saved filters (account, tags all/any, pipeline and stage, owner, source, followers, last activity, opt-out) that broadcasts can target. |
-| **Broadcasts** | Send to a tagged audience — only contacts inside Meta's 24h window are eligible, and the UI shows the live count. Scheduling. |
-| **Channels** | Connect Instagram professional accounts (Instagram Login) and Facebook Pages (Facebook Login). Token health, webhook status, post cache. *Disconnect* keeps history; **Delete channel & data** (owner only) purges the channel and everything under it — the same cascade Meta's data-deletion callback runs. |
+| **Broadcasts** | Send to a tagged audience: only contacts inside Meta's 24h window are eligible, and the UI shows the live count. Scheduling. |
+| **Channels** | Connect Instagram professional accounts (Instagram Login) and Facebook Pages (Facebook Login). Token health, webhook status, post cache. *Disconnect* keeps history; **Delete channel & data** (owner only) purges the channel and everything under it: the same cascade Meta's data-deletion callback runs. |
 | **Tracked links** | `/l/{slug}` redirects with click attribution to contact + automation. |
 | **Logs** | Every send, skip and failure with a plain-English reason (the raw Meta response stays in the database and server logs). |
 | **Organizations, workspaces & team** | An organization is the billable account: it holds the plan, the team (Owner / Admin / Member) and any number of workspaces (brands or clients). Switch or create organizations from the account menu, switch workspaces from the sidebar. Invite links. |
-| **Plans & usage** | FREE / STARTER / PRO / AGENCY with DM, channel, automation and seat caps enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation) — see [docs/BILLING.md](docs/BILLING.md). |
+| **Plans & usage** | FREE / STARTER / PRO / AGENCY with DM, channel, automation and seat caps enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation): see [docs/BILLING.md](docs/BILLING.md). |
 | **Marketing site** | Landing, pricing, privacy, terms, data-deletion (required for Meta App Review). |
 
 Branding is pure black & white; the product name lives in `lib/brand.ts`.
@@ -33,11 +33,11 @@ Local, no accounts needed (embedded Postgres + dev sign-in bypass):
 ```bash
 cp .env.example .env        # keep the "Local development" block: DATABASE_URL on 127.0.0.1:5433 + DEV_AUTH_EMAIL=you@example.com
 npm install
-npm run db:local            # terminal 1 — embedded Postgres (PGlite), data in .local-db/
+npm run db:local            # terminal 1, embedded Postgres (PGlite), data in .local-db/
 npx prisma db push          # create the tables
 npm run db:seed             # demo organizations and workspaces with channels, contacts, pipelines, logs, analytics
-npm run dev                 # http://localhost:3000 — signed in as DEV_AUTH_EMAIL
-npm run worker              # terminal 2 — sends the DMs
+npm run dev                 # http://localhost:3000, signed in as DEV_AUTH_EMAIL
+npm run worker              # terminal 2: sends the DMs
 ```
 
 With real Google + Meta credentials, drop `DEV_AUTH_EMAIL`, point `DATABASE_URL`/`DIRECT_URL` at your Postgres and use `npx prisma migrate deploy`. `npm run check-env` prints every variable (masked) and flags missing ones.
@@ -55,7 +55,7 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | `NEXT_PUBLIC_APP_URL` | yes | Public https URL. OAuth redirect + webhook URLs derive from it. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | yes | Google Cloud OAuth client (Web application). Authorized redirect URI: `<NEXT_PUBLIC_APP_URL>/auth/callback`. |
 | `DATABASE_URL`, `DIRECT_URL` | yes | Pooled (6543) and direct (5432) Postgres URLs. |
-| `APP_ENCRYPTION_KEY` | yes | `openssl rand -base64 32` — encrypts Meta tokens. |
+| `APP_ENCRYPTION_KEY` | yes | `openssl rand -base64 32`: encrypts Meta tokens. |
 | `CRON_SECRET` | yes | Protects `/api/cron/*`. |
 | `META_APP_ID`, `META_APP_SECRET` | for Facebook + webhooks | Facebook app credentials. |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | for Instagram | Instagram Login product credentials (different from the app id). |
@@ -65,7 +65,7 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them every organization stays on FREE. |
 | `DEV_AUTH_EMAIL` | dev only | Sign in as this email without Google. Ignored unless `NODE_ENV=development`. |
 
-`NEXT_PUBLIC_*` values are inlined at build time — change them and rebuild.
+`NEXT_PUBLIC_*` values are inlined at build time: change them and rebuild.
 
 ## How a comment becomes a DM
 

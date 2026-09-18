@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Prints which environment variables are set, masked, grouped by purpose —
+ * Prints which environment variables are set, masked, grouped by purpose:
  * run it on a fresh server before the first deploy, or when something 500s.
  *
  *   node scripts/check-env.mjs            # reads .env (if present) + process env
@@ -43,7 +43,7 @@ const GROUPS = [
   {
     group: "App",
     vars: [
-      { name: "NEXT_PUBLIC_APP_URL", level: "required", check: (v) => (/^https?:\/\//.test(v) ? (v.startsWith("http://") && process.env.NODE_ENV === "production" ? "http:// in production — Meta OAuth needs https" : null) : "must start with http(s)://") },
+      { name: "NEXT_PUBLIC_APP_URL", level: "required", check: (v) => (/^https?:\/\//.test(v) ? (v.startsWith("http://") && process.env.NODE_ENV === "production" ? "http:// in production, Meta OAuth needs https" : null) : "must start with http(s)://") },
       { name: "APP_ENCRYPTION_KEY", level: "required", check: (v) => (v.length >= 32 ? null : "must be at least 32 characters (openssl rand -base64 32)") },
       { name: "CRON_SECRET", level: "recommended", note: "protects /api/cron/*", check: (v) => (v.length >= 8 ? null : "must be at least 8 characters") },
       { name: "NODE_ENV", level: "optional" },
@@ -64,14 +64,14 @@ const GROUPS = [
     ],
   },
   {
-    group: "Meta — Instagram Login",
+    group: "Meta, Instagram Login",
     vars: [
       { name: "INSTAGRAM_APP_ID", level: "optional" },
       { name: "INSTAGRAM_APP_SECRET", level: "optional" },
     ],
   },
   {
-    group: "Meta — Facebook / Messenger",
+    group: "Meta, Facebook / Messenger",
     vars: [
       { name: "META_APP_ID", level: "optional" },
       { name: "META_APP_SECRET", level: "optional", note: "also signs webhooks" },
@@ -168,5 +168,5 @@ for (const r of rows) {
   console.log(r.problem ? `${line}\n           ${" ".repeat(width + 4)}^ ${r.problem}` : line);
 }
 console.log(`\nIntegrations: ${Object.entries(summary).map(([k, v]) => `${k}=${v ? "on" : "off"}`).join("  ")}`);
-console.log(`* required. ${missingRequired === 0 ? "All required variables are set." : `${missingRequired} required variable(s) missing — see .env.example.`}\n`);
+console.log(`* required. ${missingRequired === 0 ? "All required variables are set." : `${missingRequired} required variable(s) missing, see .env.example.`}\n`);
 process.exit(missingRequired === 0 ? 0 : 1);

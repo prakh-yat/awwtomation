@@ -1,6 +1,6 @@
 /**
  * Operator tool: put an organization on a plan without a subscription (a comped
- * client, a partner, a support fix). There is deliberately no page for this —
+ * client, a partner, a support fix). There is deliberately no page for this:
  * the app shows customers their own data only.
  *
  *   npx tsx scripts/set-plan.ts list                        # organizations and their plans

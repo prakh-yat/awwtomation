@@ -15,9 +15,9 @@ export const GET = withWorkspace<Params>(async (_req, ctx, { params }) => {
 });
 
 /**
- * DELETE /api/channels/[id] — disconnect (ADMIN+): keeps contacts, conversations
+ * DELETE /api/channels/[id]: disconnect (ADMIN+): keeps contacts, conversations
  * and automations; destroys the token. → { ok, channel }
- * DELETE /api/channels/[id]?purge=1 — delete channel & data (OWNER only): removes
+ * DELETE /api/channels/[id]?purge=1: delete channel & data (OWNER only): removes
  * the channel and everything cascading from it. → { ok, purged: true, id, counts }
  */
 export const DELETE = withWorkspace<Params>(

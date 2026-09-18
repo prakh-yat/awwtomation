@@ -89,29 +89,30 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
             </Badge>
           </span>
         }
-        description={
-          <span className="inline-flex flex-wrap items-center gap-x-2">
-            <span className="inline-flex items-center gap-1.5">
-              <PlatformIcon platform={row.channel.platform} size={14} />
-              {channelLabel(row.channel)}
-            </span>
-            <span aria-hidden>·</span>
-            {row.segmentName ? (
-              <Link
-                href={`/contacts?segment=${encodeURIComponent(row.audience.segmentId ?? "")}`}
-                className="inline-flex items-center gap-1 text-foreground underline-offset-4 hover:underline"
-                title={summarizeAudience(row.audience)}
-              >
-                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                {row.segmentName}
-              </Link>
-            ) : (
-              <span>{summarizeAudience(row.audience)}</span>
-            )}
-          </span>
-        }
         actions={<BroadcastActions row={row} variant="buttons" />}
       />
+
+      {/* Who it went to and from where. It used to sit in the page description,
+          which only the dashboard carries now. */}
+      <p className="-mt-3 mb-6 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <PlatformIcon platform={row.channel.platform} size={14} />
+          {channelLabel(row.channel)}
+        </span>
+        <span aria-hidden>·</span>
+        {row.segmentName ? (
+          <Link
+            href={`/contacts?segment=${encodeURIComponent(row.audience.segmentId ?? "")}`}
+            className="inline-flex items-center gap-1 text-foreground underline-offset-4 hover:underline"
+            title={summarizeAudience(row.audience)}
+          >
+            <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+            {row.segmentName}
+          </Link>
+        ) : (
+          <span>{summarizeAudience(row.audience)}</span>
+        )}
+      </p>
 
       {row.status === "FAILED" ? (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px]" role="alert">

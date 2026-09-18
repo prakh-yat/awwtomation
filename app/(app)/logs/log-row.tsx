@@ -60,7 +60,7 @@ function Detail({ label, children, className }: { label: string; children: React
 
 /**
  * Summary row plus an optional detail row spanning every column. Everything
- * shown here is the customer's own activity in their own words — no internal
+ * shown here is the customer's own activity in their own words: no internal
  * ids, raw platform errors or API payloads ever reach this component.
  */
 export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
@@ -131,7 +131,7 @@ export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
               {truncate(item.messagePreview, PREVIEW_MAX)}
             </span>
           ) : (
-            <span className="text-muted-foreground/50">—</span>
+            <span className="text-muted-foreground/50">–</span>
           )}
         </TableCell>
       </TableRow>
@@ -152,7 +152,7 @@ export function LogRow({ item, timezone, expanded, onToggle }: LogRowProps) {
                 <SourceLink item={item} />
               </Detail>
               <Detail label="Message" className="sm:col-span-2">
-                {item.messagePreview ? <span className="whitespace-pre-wrap">{item.messagePreview}</span> : "—"}
+                {item.messagePreview ? <span className="whitespace-pre-wrap">{item.messagePreview}</span> : "–"}
               </Detail>
               {item.reasonDetail ? (
                 <Detail label={item.status === "FAILED" ? "What went wrong" : "Why it wasn't sent"} className="sm:col-span-2">

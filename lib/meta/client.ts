@@ -28,7 +28,7 @@ export function graphUrl(host: string, path: string, params?: QueryParams, opts:
 }
 
 export type MetaFetchInit = RequestInit & {
-  /** Access token — appended as `access_token` unless the URL already carries one (paging.next does). */
+  /** Access token: appended as `access_token` unless the URL already carries one (paging.next does). */
   token?: string;
   /** Extra query params merged into the URL. */
   query?: QueryParams;
@@ -91,7 +91,7 @@ export function toMetaError(err: GraphErrorBody | null, status: number): MetaApi
   if (status === 429 || isRateLimitCode(code, subcode)) return new MetaRateLimitError(message, code, subcode, status, trace);
   if (isTokenCode(code)) return new MetaTokenError(message, code, subcode, status, trace);
   const generic = new MetaApiError(message, code, subcode, status, trace);
-  // Code 1 = "unknown error", 2 = "service temporarily unavailable" — both are Meta's own "try again".
+  // Code 1 = "unknown error", 2 = "service temporarily unavailable": both are Meta's own "try again".
   generic.isTransient = Boolean(err?.is_transient) || status >= 500 || code === 1 || code === 2;
   return generic;
 }
@@ -109,7 +109,7 @@ function logUsageHeaders(headers: Headers, path: string): void {
       const max = maxNumeric(parsed);
       if (max >= 80) logger.warn("meta.usage_high", { header: name, usage: parsed, path });
     } catch {
-      // Not JSON — ignore; this is telemetry only.
+      // Not JSON: ignore; this is telemetry only.
     }
   }
 }
@@ -118,7 +118,7 @@ function maxNumeric(value: unknown): number {
   if (typeof value === "number") return value;
   if (Array.isArray(value)) return Math.max(0, ...value.map(maxNumeric));
   if (isRecord(value)) {
-    // `estimated_time_to_regain_access` is minutes, not a percentage — skip it.
+    // `estimated_time_to_regain_access` is minutes, not a percentage: skip it.
     return Math.max(0, ...Object.entries(value).filter(([k]) => k !== "estimated_time_to_regain_access").map(([, v]) => maxNumeric(v)));
   }
   return 0;

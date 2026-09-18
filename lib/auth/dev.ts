@@ -2,7 +2,7 @@
  * Development-only sign-in bypass.
  *
  * Setting DEV_AUTH_EMAIL in `.env` makes every request act as that user
- * without Supabase — so the whole app (including the worker and the seed
+ * without Supabase: so the whole app (including the worker and the seed
  * data) runs locally with just the embedded Postgres from `npm run db:local`.
  *
  * It is hard-gated on NODE_ENV === "development": `next build` / `next start`

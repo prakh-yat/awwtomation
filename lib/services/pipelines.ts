@@ -1,5 +1,5 @@
 /**
- * Pipelines — the funnels contacts move through. A workspace can have several
+ * Pipelines: the funnels contacts move through. A workspace can have several
  * (sales, wholesale, support…); a contact can sit in any number of them at one
  * stage each, or in none. Stages carry a colour key from lib/pipelines/colors.ts.
  *

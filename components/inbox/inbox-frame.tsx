@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  *
  * The inbox is a full-bleed route (`isFullBleedPath`), so the app layout adds no
  * padding and the panes touch the sidebar and the viewport edges. Height is the
- * viewport minus the 3.5rem mobile topbar (`md:hidden` in the shell) — on
+ * viewport minus the 3.5rem mobile topbar (`md:hidden` in the shell), on
  * desktop the sidebar is sticky and <main> is not a scroll container, so a
  * 100dvh box with `overflow-hidden` leaves the document at exactly one viewport
  * tall: the panes scroll internally, nothing else does.

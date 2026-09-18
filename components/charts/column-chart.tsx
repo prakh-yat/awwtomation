@@ -31,7 +31,7 @@ function niceCeil(value: number): number {
 /**
  * Columns for a short ordered series such as months. Bars are capped at 24px and
  * rounded only at the data end. An optional reference line marks a limit on the
- * same axis — never a second scale.
+ * same axis: never a second scale.
  */
 export function ColumnChart({
   data,

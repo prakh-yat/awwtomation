@@ -446,7 +446,7 @@ async function dispatchWebhook(event: ParsedWebhook): Promise<boolean> {
       return markPaymentStatus(dispute.payment_id, won ? "SUCCEEDED" : "DISPUTED");
     }
     default:
-      // Payouts, license keys, credits… — recorded in BillingEvent for the audit trail, nothing to apply.
+      // Payouts, license keys, credits…: recorded in BillingEvent for the audit trail, nothing to apply.
       logger.info("billing.webhook_ignored", { type: event.type, payloadType: event.payloadType });
       return false;
   }
@@ -562,7 +562,7 @@ export async function reconcileCheckoutSession(
 
       if (subscriptionId) {
         const result = await syncSubscription(subscriptionId);
-        // The caller's organization must be the one the subscription resolved to — never activate a stranger's.
+        // The caller's organization must be the one the subscription resolved to: never activate a stranger's.
         if (result.applied && result.organizationId !== organizationId) {
           logger.warn("billing.reconcile_organization_mismatch", { organizationId, resolved: result.organizationId, subscriptionId });
           throw new ApiError(403, "That subscription belongs to a different organization", "FORBIDDEN");
@@ -758,7 +758,7 @@ export type BillingOverview = {
   hasCustomer: boolean;
   configured: boolean;
   mode: DodoMode;
-  /** Plan/interval pairs that can't be bought right now, e.g. "PRO_ANNUAL". Never env var names — this reaches the browser. */
+  /** Plan/interval pairs that can't be bought right now, e.g. "PRO_ANNUAL". Never env var names: this reaches the browser. */
   unavailablePlans: string[];
 };
 

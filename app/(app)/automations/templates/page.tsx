@@ -1,45 +1,17 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { Plug } from "lucide-react";
+import { redirect } from "next/navigation";
 
-import { TemplateGallery } from "@/components/automations/template-gallery";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { listChannelOptions } from "@/lib/services/automations";
-import { listTemplateSummaries } from "@/lib/services/templates";
-import { requireWorkspaceContext } from "@/lib/workspace/context";
-
-export const metadata: Metadata = { title: "Templates" };
-
-export default async function AutomationTemplatesPage() {
-  const ctx = await requireWorkspaceContext();
-  const channels = (await listChannelOptions(ctx.workspace.id)).filter((c) => c.status === "ACTIVE");
-
-  return (
-    <>
-      <PageHeader
-        title="Templates"
-        description="Start from a flow that already works, then change anything you like."
-        backHref="/automations"
-        backLabel="Automations"
-      />
-      {channels.length === 0 ? (
-        <EmptyState
-          icon={Plug}
-          title="Connect an account first"
-          description="Automations listen on a connected Instagram or Facebook account. Connect one, then come back here."
-          action={
-            <Button asChild>
-              <Link href="/channels">
-                <Plug /> Go to Channels
-              </Link>
-            </Button>
-          }
-        />
-      ) : (
-        <TemplateGallery templates={listTemplateSummaries()} channels={channels} />
-      )}
-    </>
-  );
+/**
+ * Templates used to be a page of its own. It is a dialog over the automations
+ * list now, so this route just opens it; links and bookmarks still work.
+ */
+export default async function AutomationTemplatesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const wanted = Array.isArray(params.template) ? params.template[0] : params.template;
+  const query = new URLSearchParams({ templates: "1" });
+  if (wanted) query.set("template", wanted);
+  redirect(`/automations?${query.toString()}`);
 }

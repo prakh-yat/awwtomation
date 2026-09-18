@@ -30,9 +30,9 @@ function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-/** "3h ago" — for table cells. Pair with `formatAbsolute` in a title attribute. */
+/** "3h ago": for table cells. Pair with `formatAbsolute` in a title attribute. */
 export function formatRelative(value: Date | string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "–";
   return formatDistanceToNowStrict(toDate(value), { addSuffix: true });
 }
 
@@ -52,7 +52,7 @@ export function formatAbsolute(value: Date | string | null | undefined, timeZone
 
 /** "Sep 6, 2026" in the workspace timezone. */
 export function formatDate(value: Date | string | null | undefined, timeZone: string): string {
-  if (!value) return "—";
+  if (!value) return "–";
   try {
     return new Intl.DateTimeFormat("en-US", { ...DATE_ONLY, timeZone }).format(toDate(value));
   } catch {

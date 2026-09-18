@@ -1,5 +1,5 @@
 /**
- * Google OAuth 2.0 / OpenID Connect — the app talks to Google directly.
+ * Google OAuth 2.0 / OpenID Connect: the app talks to Google directly.
  *
  * Authorization Code flow with PKCE. The only two secrets involved are
  * GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from a "Web application" OAuth
@@ -33,7 +33,7 @@ export function googleCredentials(): GoogleCredentials {
 
 /**
  * The one redirect URI, derived from a single source of truth so the authorize
- * request and the token exchange can never disagree — Google rejects the
+ * request and the token exchange can never disagree: Google rejects the
  * exchange with `redirect_uri_mismatch` if they do.
  */
 export function googleRedirectUri(origin: string): string {
@@ -110,7 +110,7 @@ export async function exchangeCodeForIdToken(options: {
   const payload = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok || payload.error || !payload.id_token) {
     // `error_description` names our own misconfiguration (bad secret, mismatched
-    // redirect URI) — worth logging, never worth showing the visitor.
+    // redirect URI): worth logging, never worth showing the visitor.
     logger.warn("auth.google.token_exchange_failed", {
       status: response.status,
       error: payload.error,
@@ -122,7 +122,7 @@ export async function exchangeCodeForIdToken(options: {
 }
 
 export type GoogleIdentity = {
-  /** Google's stable per-user id (`sub`) — never reused, never changes. */
+  /** Google's stable per-user id (`sub`): never reused, never changes. */
   subject: string;
   email: string;
   name: string | null;

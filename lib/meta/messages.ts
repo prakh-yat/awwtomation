@@ -102,7 +102,7 @@ type GraphSendResponse = { recipient_id?: string | number; message_id?: string; 
 
 /**
  * Send every payload of an OutboundMessage in order and return the last
- * message id. Used by both the Instagram and Messenger senders — only the URL
+ * message id. Used by both the Instagram and Messenger senders: only the URL
  * and the envelope (`recipient`, `messaging_type`, `tag`) differ.
  */
 export async function sendOutbound(opts: {

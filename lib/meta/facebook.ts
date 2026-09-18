@@ -120,7 +120,7 @@ export function sendMessengerMessage(pageToken: string, pageId: string, psid: st
   });
 }
 
-/** Facebook private replies are text only — buttons are flattened to "Title: url" lines. */
+/** Facebook private replies are text only: buttons are flattened to "Title: url" lines. */
 export async function sendFacebookPrivateReply(pageToken: string, commentId: string, message: OutboundMessage): Promise<SendResult> {
   const text = messageToPlainText(message);
   if (!text) throw new Error("Facebook private replies require text");

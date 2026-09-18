@@ -29,7 +29,7 @@ type Profile = { email: string; name: string | null; avatarUrl: string | null };
  * Insert on first sight; afterwards only write when something the provider told
  * us actually changed, so the common path stays read-only. The
  * email-uniqueness fallback re-links an existing person to a new `authId`
- * rather than crashing on the unique constraint — which is exactly what happens
+ * rather than crashing on the unique constraint: which is exactly what happens
  * the first time an account that was created under Supabase auth signs in
  * through Google directly.
  */
@@ -76,7 +76,7 @@ export async function createSession(userId: string): Promise<void> {
  * signature and expiry, then loads the row. Cached per request via `React.cache`.
  */
 export const getCurrentUser = cache(async (): Promise<User | null> => {
-  // Local development without Google credentials — see lib/auth/dev.ts for the gate.
+  // Local development without Google credentials: see lib/auth/dev.ts for the gate.
   const devEmail = devAuthEmail();
   if (devEmail) {
     return syncUser(`dev:${devEmail}`, {

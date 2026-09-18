@@ -49,12 +49,12 @@ function minusDays(key: string, days: number): string {
 }
 
 function pct(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
   return `${(value * 100).toFixed(value > 0 && value < 0.1 ? 1 : 0)}%`;
 }
 
 function minutes(value: number | null): string {
-  if (value === null) return "—";
+  if (value === null) return "–";
   if (value < 1) return "Under a minute";
   if (value < 60) return `${Math.round(value)} min`;
   const hours = value / 60;
@@ -104,7 +104,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
   const header = (
     <PageHeader
       title="Analytics"
-      description="How comments turn into conversations, clicks and customers."
     />
   );
 

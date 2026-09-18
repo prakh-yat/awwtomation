@@ -1,6 +1,6 @@
 # Awwtomation on a single Linux box: Postgres + web + worker (+ optional Caddy for HTTPS).
 #
-#   cp .env.example .env   # fill in — DATABASE_URL/DIRECT_URL are overridden below to use the bundled Postgres
+#   cp .env.example .env   # fill in: DATABASE_URL/DIRECT_URL are overridden below to use the bundled Postgres
 #   docker compose up -d --build
 #   docker compose --profile proxy up -d      # adds automatic HTTPS via Caddy (set APP_DOMAIN in .env)
 #   docker compose logs -f web worker

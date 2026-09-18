@@ -32,7 +32,7 @@ function redirectTo(destination: string): NextResponse {
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
-/** GET /l/{slug}?c=<contactId> — public, no session. Records the click then 302s to the destination. */
+/** GET /l/{slug}?c=<contactId>: public, no session. Records the click then 302s to the destination. */
 export async function GET(req: NextRequest, { params }: RouteContext): Promise<Response> {
   const limited = enforceIpRateLimit(req, "tracked_link", LINK_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   if (limited) return limited;

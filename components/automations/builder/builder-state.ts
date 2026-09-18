@@ -399,7 +399,7 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       const { source, target, sourceHandle } = action.connection;
       if (!source || !target || source === target) return state;
       const handle = normalizeHandle(sourceHandle);
-      // One edge per handle — the engine can't pick between two "next" targets.
+      // One edge per handle: the engine can't pick between two "next" targets.
       const edges = state.edges.filter((e) => !(e.source === source && normalizeHandle(e.sourceHandle) === handle));
       edges.push({ ...EDGE_DEFAULTS, id: `e-${source}-${handle}-${target}-${Math.random().toString(36).slice(2, 6)}`, source, target, sourceHandle: handle });
       return { ...state, edges };

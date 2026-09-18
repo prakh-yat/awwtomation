@@ -21,7 +21,7 @@ export function formatDateTime(iso: string, timeZone: string): string {
   return safeFormatter({ month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }, timeZone).format(new Date(iso));
 }
 
-/** "Mar 4" — for sparkline axis labels and tooltips, from a YYYY-MM-DD key. */
+/** "Mar 4": for sparkline axis labels and tooltips, from a YYYY-MM-DD key. */
 export function formatDayKey(dayKey: string): string {
   const [y, m, d] = dayKey.split("-").map(Number);
   if (!y || !m || !d) return dayKey;
@@ -40,7 +40,7 @@ export function displayDestination(url: string, maxPath = 28): string {
   }
 }
 
-/** Where the tap most likely came from, judged from the user agent — good enough for a glance, never for billing. */
+/** Where the tap most likely came from, judged from the user agent: good enough for a glance, never for billing. */
 export function describeUserAgent(userAgent: string | null): string {
   if (!userAgent) return "Unknown device";
   if (/instagram/i.test(userAgent)) return "Instagram app";

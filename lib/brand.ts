@@ -1,4 +1,4 @@
-/** Central brand config — the product name and copy live here, nowhere else. */
+/** Central brand config: the product name and copy live here, nowhere else. */
 export const brand = {
   /** Display name. The wordmark itself carries the trailing dot ("Awwtomation."). */
   name: "Awwtomation",

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Awwtomation — multi-stage build.
+# Awwtomation: multi-stage build.
 #
 #   docker build --target runner -t awwtomation-web \
 #     --build-arg NEXT_PUBLIC_APP_URL=https://app.example.com .
@@ -19,7 +19,7 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# ── deps: full install (dev deps included — the build and the worker need them)
+# ── deps: full install (dev deps included, the build and the worker need them)
 FROM base AS deps
 COPY package.json package-lock.json ./
 # postinstall runs `prisma generate`, which needs the schema present.

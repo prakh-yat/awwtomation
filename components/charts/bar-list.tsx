@@ -14,7 +14,7 @@ export type BarListItem = {
 };
 
 /**
- * Ranked list with a slim bar under each label — for "which ones did the most".
+ * Ranked list with a slim bar under each label: for "which ones did the most".
  * Every value is printed, so the bar only has to show proportion; one series,
  * one colour.
  */

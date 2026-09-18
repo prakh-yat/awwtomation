@@ -6,7 +6,7 @@
  * broadcast therefore targets everyone matching the audience filters, sends
  * to those inside the window right now, and records a SKIPPED_WINDOW delivery
  * log for the rest so the report explains every contact. The HUMAN_AGENT tag
- * (7 days) is reserved for human replies and is never used here — marketing
+ * (7 days) is reserved for human replies and is never used here: marketing
  * blasts under that tag are a policy violation.
  *
  * Every function takes `workspaceId` first and scopes each query by it.
@@ -79,9 +79,9 @@ export const broadcastAudienceSchema = z.object({
   lastInteractionDays: z.number().int().min(1).max(SEGMENT_MAX_LAST_INTERACTION_DAYS).nullable().default(null),
   /** Case-insensitive name/@username search, as on the contacts page. */
   q: z.string().trim().max(SEGMENT_MAX_QUERY_LENGTH).default(""),
-  /** Saved segment these filters were copied from — display only; the filters above are what gets sent. */
+  /** Saved segment these filters were copied from: display only; the filters above are what gets sent. */
   segmentId: z.string().min(1).max(64).nullable().default(null),
-  /** Always true — kept explicit so the stored audience documents the Meta constraint. */
+  /** Always true: kept explicit so the stored audience documents the Meta constraint. */
   onlyInWindow: z.literal(true).default(true),
 });
 
@@ -98,7 +98,7 @@ export const EMPTY_AUDIENCE: BroadcastAudience = {
   onlyInWindow: true,
 };
 
-/** The audience as segment filters — exactly what the contacts page would evaluate, minus channel scoping. */
+/** The audience as segment filters: exactly what the contacts page would evaluate, minus channel scoping. */
 export function audienceToSegmentFilters(audience: BroadcastAudience): SegmentFilters {
   return compactSegmentFilters({
     tags: audience.tags,
@@ -295,7 +295,7 @@ function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
-/** Tolerant read of the stored audience — older rows may lack keys. */
+/** Tolerant read of the stored audience: older rows may lack keys. */
 export function parseBroadcastAudience(json: Prisma.JsonValue | null | undefined): BroadcastAudience {
   const parsed = broadcastAudienceSchema.safeParse(json ?? {});
   return parsed.success ? parsed.data : EMPTY_AUDIENCE;
@@ -796,7 +796,7 @@ export async function sendBroadcastMessage(job: Job): Promise<void> {
     return;
   }
 
-  // Everything below is scoped by the broadcast's workspace — never by ids from the payload alone.
+  // Everything below is scoped by the broadcast's workspace: never by ids from the payload alone.
   const [channel, contact] = await Promise.all([
     prisma.channel.findFirst({ where: { id: broadcast.channelId, workspaceId: broadcast.workspaceId } }),
     prisma.contact.findFirst({ where: { id: contactId, workspaceId: broadcast.workspaceId, channelId: broadcast.channelId } }),
@@ -866,7 +866,7 @@ export async function sendBroadcastMessage(job: Job): Promise<void> {
       recipientExternalId: contact.externalId,
       recipientUsername: contact.username,
       messagePreview: messagePreview(message),
-      errorMessage: `Rate limited for ${Math.round(ageMs / 3_600_000)}h — giving up`,
+      errorMessage: `Rate limited for ${Math.round(ageMs / 3_600_000)}h, giving up`,
     });
     await bumpCounter(broadcastId, "skippedCount");
     return;
@@ -880,7 +880,7 @@ export async function sendBroadcastMessage(job: Job): Promise<void> {
 /**
  * SENDING broadcasts with no queued/running jobs left (jobs exhausted their
  * attempts) would otherwise never reach SENT. Any gap between processed and
- * target is attributed to `failedCount` — those jobs did fail.
+ * target is attributed to `failedCount`: those jobs did fail.
  */
 async function finalizeStuckBroadcasts(now: Date): Promise<string[]> {
   const candidates = await prisma.broadcast.findMany({
@@ -932,7 +932,7 @@ export async function processDueBroadcasts(now = new Date()): Promise<ProcessDue
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       failed.push({ id: b.id, error });
-      // Another tick claimed it first — nothing to do.
+      // Another tick claimed it first: nothing to do.
       if (err instanceof ApiError && err.code === "INVALID_STATE") continue;
       // Expected, permanent problems (plan downgrade, channel gone) mark it FAILED;
       // anything else (DB hiccup) stays SCHEDULED and is retried next tick.

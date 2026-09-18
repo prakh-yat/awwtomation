@@ -25,7 +25,7 @@ export function CreateOrganizationForm() {
     setError(null);
     try {
       await apiFetch("/api/organizations", { method: "POST", json: { name: clean } });
-      router.push("/channels?onboarding=1");
+      router.push("/welcome");
       router.refresh();
     } catch (err) {
       setError(errorMessage(err, "Couldn't create the organization."));

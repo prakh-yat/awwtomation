@@ -16,7 +16,7 @@
  *
  * Re-running replaces those organizations. Tokens are placeholders, so the demo
  * accounts can't actually send. It refuses to run against anything but a local
- * database unless SEED_ALLOW_REMOTE=1 — this data must never land in production.
+ * database unless SEED_ALLOW_REMOTE=1: this data must never land in production.
  */
 import "dotenv/config";
 
@@ -462,7 +462,7 @@ async function buildWorkspace(o: BuildOptions) {
     });
     contactMeta.push({ id, firstSeen, username, name: `${first} ${last}`, channelId: channel.id, platform: channel.platform, isFollower });
   }
-  // A handful added by hand or from a spreadsheet — they can't be messaged until they interact.
+  // A handful added by hand or from a spreadsheet: they can't be messaged until they interact.
   const manualCount = Math.round(o.contacts * 0.04);
   const manual: Array<{ id: string; at: Date; stage: "Lead" | "Customer" }> = [];
   for (let i = 0; i < manualCount; i++) {

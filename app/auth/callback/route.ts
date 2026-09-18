@@ -23,7 +23,7 @@ function loginRedirect(origin: string, error: string): NextResponse {
  * id_token, mirror the person into our DB, start their session, make sure they
  * have a workspace, then send them on to the sanitized `next` target.
  *
- * This URL — `<app origin>/auth/callback` — is what must be registered as an
+ * This URL, `<app origin>/auth/callback`, is what must be registered as an
  * Authorized redirect URI on the Google Cloud OAuth client.
  */
 export async function GET(request: NextRequest) {
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
   if (!code) return loginRedirect(origin, "missing_code");
 
   // No transaction cookie means a stale tab, a bookmarked callback URL, or a
-  // forged request — all of which must not produce a session.
+  // forged request: all of which must not produce a session.
   const state = params.get("state");
   if (!transaction || !state || !safeEqual(state, transaction.state)) {
     logger.warn("auth.callback.state_mismatch", { hasTransaction: Boolean(transaction), hasState: Boolean(state) });
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
   const next = sanitizeNextPath(transaction.next, "/dashboard");
 
-  // Someone arriving through an invite link is joining an existing team — don't
+  // Someone arriving through an invite link is joining an existing team: don't
   // saddle them with a personal organization they never asked for.
   const joiningViaInvite = next.startsWith("/invite/");
   if (!joiningViaInvite) {
@@ -83,8 +83,9 @@ export async function GET(request: NextRequest) {
       const { organization, workspace, created } = await ensureDefaultOrganization(user);
       if (!(await readActiveWorkspaceCookie())) await setActiveOrganizationCookies(organization.id, workspace.id);
       if (created && next === "/dashboard") {
-        // Fresh account: go straight to connecting a channel.
-        return NextResponse.redirect(new URL("/channels?onboarding=1", origin));
+        // Fresh account: go straight to the welcome questionnaire, which
+        // connects the first channel in the middle of it.
+        return NextResponse.redirect(new URL("/welcome", origin));
       }
     } catch (err) {
       logger.error("auth.callback.ensure_organization_failed", { userId: user.id, error: err });

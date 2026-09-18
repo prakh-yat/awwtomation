@@ -27,7 +27,7 @@ export function getWebhookSecret(): string | undefined {
   return secret ? secret : undefined;
 }
 
-/** True once an API key is present — the minimum for checkout to work. */
+/** True once an API key is present: the minimum for checkout to work. */
 export function isBillingConfigured(): boolean {
   return Boolean(getSecretKey());
 }
@@ -86,7 +86,7 @@ export function resolvePlanFromProductId(productId: string | null | undefined): 
   return null;
 }
 
-/** Env var names still unset — surfaced on the billing page for operators. */
+/** Env var names still unset: surfaced on the billing page for operators. */
 export function missingProductIds(): ProductEnvName[] {
   const missing: ProductEnvName[] = [];
   for (const tier of PURCHASABLE_PLANS) {

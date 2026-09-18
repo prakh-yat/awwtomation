@@ -70,7 +70,7 @@ export function PaymentHistory({ payments, hasSubscription }: { payments: Paymen
                     PDF
                   </a>
                 ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-xs text-muted-foreground">–</span>
                 )}
               </TableCell>
               ) : null}

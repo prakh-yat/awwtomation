@@ -51,7 +51,7 @@ function SegmentActionsMenu({ segment, onRename, onDelete, className }: { segmen
 
 /**
  * Left rail: "All contacts" plus every saved segment with its live count.
- * Desktop only — `SegmentsSelect` is the compact equivalent for narrow screens.
+ * Desktop only: `SegmentsSelect` is the compact equivalent for narrow screens.
  */
 function SegmentsRail({ segments, activeId, totalCount, onSelect, onRename, onDelete, pipelines, className }: SegmentsRailProps) {
   return (
@@ -122,7 +122,7 @@ function RailRow({
         active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
     >
-      {/* Subtle brand accent for the active row — the only place lavender appears on this page. */}
+      {/* Subtle brand accent for the active row: the only place lavender appears on this page. */}
       {active ? <span aria-hidden className="absolute left-0 top-1.5 h-5 w-0.5 rounded-full bg-lavender" /> : null}
       <span className={cn("shrink-0", active ? "text-foreground" : "text-muted-foreground")}>{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>

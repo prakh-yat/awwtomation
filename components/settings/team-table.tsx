@@ -27,7 +27,7 @@ export type TeamMember = {
   email: string;
   avatarUrl: string | null;
   role: WorkspaceRole;
-  /** ISO string — dates are serialised by the server page. */
+  /** ISO string: dates are serialised by the server page. */
   joinedAt: string;
 };
 

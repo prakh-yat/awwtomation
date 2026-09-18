@@ -3,7 +3,7 @@
  * flow graphs one interaction at a time.
  *
  * Execution model: a session pauses after every send (`currentNodeId` = the
- * node it is waiting on). It resumes only when the contact interacts —
+ * node it is waiting on). It resumes only when the contact interacts:
  * a button tap (`btn:${nodeId}:${i}`), a quick reply (`qr:${nodeId}:${i}`),
  * a follow re-check (`follow_check:${nodeId}`) or a plain reply ("next").
  * An "Ask a question" node parks the same way but marks `context.awaiting`;
@@ -124,7 +124,7 @@ export type UpsertContactInput = { externalId: string; username?: string; name?:
  * Contacts are keyed by (channelId, externalId). For Instagram the comment
  * `from.id` IS the IGSID later seen as `sender.id` on DMs, so comment and DM
  * activity land on one contact. For Facebook, a comment's `from.id` is an
- * app-scoped user id, not a PSID — it can only be reached through a private
+ * app-scoped user id, not a PSID: it can only be reached through a private
  * reply; when that person answers in Messenger their PSID creates a separate
  * Contact. We accept that split rather than guess at identity.
  */
@@ -246,7 +246,7 @@ export async function startFlowForContact(input: StartFlowInput): Promise<StartF
   if (existingJob) return { started: false, reason: "duplicate" };
 
   if (automation.oncePerContact) {
-    // "Once" means one successful delivery or one in-flight session — a failed attempt may be retried by a new trigger.
+    // "Once" means one successful delivery or one in-flight session: a failed attempt may be retried by a new trigger.
     const [sent, active] = await Promise.all([
       prisma.deliveryLog.findFirst({ where: { automationId: automation.id, contactId: contact.id, status: DeliveryStatus.SENT }, select: { id: true } }),
       prisma.flowSession.findFirst({ where: { automationId: automation.id, contactId: contact.id, status: FlowSessionStatus.ACTIVE }, select: { id: true } }),
@@ -431,11 +431,11 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
     payload: { attachments: event.attachments ?? null, storyReply: event.storyReply ?? null, quickReplyPayload: event.quickReplyPayload ?? null },
     createdAt: event.timestamp,
   });
-  if (!created) return; // redelivered webhook — never re-trigger
+  if (!created) return; // redelivered webhook: never re-trigger
 
   const sessions = await activeSessions(channel, contact);
 
-  // A pending question consumes this message as its answer — ahead of quick-reply routing and
+  // A pending question consumes this message as its answer: ahead of quick-reply routing and
   // keyword triggers, so a reply like "link@example.com" never also starts a "link" automation.
   const pending = sessions.find((s) => s.automation.status === AutomationStatus.ACTIVE && awaitingNodeId(s) !== null);
   if (pending) {
@@ -503,7 +503,7 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
 
 async function handlePostbackEvent(channel: Channel, event: NormalizedPostbackEvent): Promise<void> {
   const contact = await upsertContact(channel, { externalId: event.senderId, interactedAt: event.timestamp });
-  // A button tap is a standard interaction — it (re)opens the 24h window.
+  // A button tap is a standard interaction: it (re)opens the 24h window.
   const conversation = await touchConversation(channel, contact, {
     inboundAt: event.timestamp,
     lastMessageAt: event.timestamp,
@@ -636,7 +636,7 @@ async function resolveFollowStatus(channel: Channel, contact: Contact): Promise<
       return "token_error";
     }
     if (err instanceof MetaApiError && err.retryable) throw err;
-    // Profile lookups fail for users who never messaged the account — treat as "not verified" without persisting.
+    // Profile lookups fail for users who never messaged the account: treat as "not verified" without persisting.
     logger.warn("flow.follow_check_failed", { channelId: channel.id, contactId: contact.id, error: err instanceof Error ? err.message : String(err) });
     return { contact, isFollower: false };
   }
@@ -716,7 +716,7 @@ async function deferForRateLimit(
     commentExternalId: viaPrivateReplyCommentId,
     recipientExternalId: run.contact.externalId,
     recipientUsername: run.contact.username,
-    errorMessage: `Rate limited for ${Math.round(ageMs / 3_600_000)}h — giving up`,
+    errorMessage: `Rate limited for ${Math.round(ageMs / 3_600_000)}h, giving up`,
   });
   await setSession(run.session.id, { currentNodeId: nodeId, status: FlowSessionStatus.EXPIRED, context: { ...run.context, lastError: "rate_limit" } });
 }

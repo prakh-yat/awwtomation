@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 export default function ContactNotFound() {
   return (
     <>
-      <PageHeader backHref="/contacts" backLabel="Contacts" title="Contact not found" description="This contact doesn't exist in the current workspace, or it was deleted." />
+      <PageHeader backHref="/contacts" backLabel="Contacts" title="Contact not found" />
       <EmptyState
         icon={UserRoundX}
         title="Nothing here"

@@ -64,7 +64,6 @@ export default async function TeamSettingsPage() {
     <div>
       <PageHeader
         title="Team"
-        description={`People in ${ctx.organization.name}. Everyone here can open all ${ctx.workspaces.length === 1 ? "of its workspace" : `${ctx.workspaces.length} of its workspaces`}; their role decides what they can change.`}
         actions={invite}
       />
       <div className="space-y-8">

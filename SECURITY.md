@@ -47,8 +47,7 @@ OWNER only.
 non-GET/HEAD/OPTIONS request unless `Sec-Fetch-Site` is `same-origin`/`none` or
 the `Origin` host matches `NEXT_PUBLIC_APP_URL` / the request host
 (`lib/security/csrf.ts`). Server Actions are covered by Next.js' own origin check.
-All app cookies are `SameSite=Lax`, `Secure` in production, and `httpOnly`
-except `or_sidebar` (a UI preference written by the client).
+All app cookies are `SameSite=Lax`, `Secure` in production, and `httpOnly`.
 
 **Browser hardening.** `next.config.ts` sets on every response: a
 Content-Security-Policy (self + Graph API + Dodo checkout only;
@@ -79,7 +78,7 @@ additionally re-checks that the signed-in user is the one who started the flow
 and is ADMIN+ in that workspace. Error text forwarded to the UI is sanitised and
 capped.
 
-**Rate limits.** `lib/security/rate-limit-ip.ts` — in-memory sliding window,
+**Rate limits.** `lib/security/rate-limit-ip.ts`: in-memory sliding window,
 per instance: Meta webhooks 600/min/IP, tracked links 120/min/IP, OAuth starts
 20/min/IP, inbox sends 60/min/user, broadcast sends 10/min/user. Meta's own
 send quotas (750 private replies/hour/account) are enforced in Postgres by
@@ -123,7 +122,7 @@ confirmation code.
       or reconnect channels), `META_APP_SECRET`, `INSTAGRAM_APP_SECRET`,
       `META_WEBHOOK_VERIFY_TOKEN`, `CRON_SECRET`, `DODO_SECRET_KEY`,
       `DODO_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET` (rotating it
-      also invalidates nothing already signed in — rotate `APP_ENCRYPTION_KEY` to
+      also invalidates nothing already signed in: rotate `APP_ENCRYPTION_KEY` to
       force every session to end), and any database credentials.
 - [ ] Serve exclusively over HTTPS with `NEXT_PUBLIC_APP_URL` set to the public
       `https://` origin (cookies are `Secure`, HSTS preload is on, and the CSRF

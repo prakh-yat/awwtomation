@@ -2,7 +2,7 @@
  * Tiny fetch wrapper for the settings lane's client components. The
  * workspace/invitation routes all answer with `{ error, code }` on failure
  * (ARCHITECTURE §3), so one helper can turn any non-2xx into a typed error
- * that the UI can toast — and branch on `code` for plan-limit upsells.
+ * that the UI can toast: and branch on `code` for plan-limit upsells.
  */
 import { clientErrorMessage } from "@/lib/errors/customer-messages";
 

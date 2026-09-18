@@ -28,7 +28,8 @@ export interface UserMenuProps {
   side?: "top" | "right" | "bottom";
   /** Called after following a link, so the mobile drawer can close. */
   onNavigate?: () => void;
-  railBind?: Record<string, unknown>;
+  /** Told when the menu opens or closes, so the dock can stay out while it is up. */
+  onOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -44,19 +45,18 @@ export function UserMenu({
   collapsed = false,
   side = "right",
   onNavigate,
-  railBind,
+  onOpenChange,
   className,
 }: UserMenuProps) {
   const displayName = user.name?.trim() || user.email;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           aria-label={collapsed ? `Account menu for ${displayName}` : undefined}
-          {...railBind}
-          className={cn(
+            className={cn(
             "flex w-full items-center rounded-lg text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-sidebar-accent",
             collapsed ? "h-10 justify-center px-0" : "gap-2.5 px-2 py-2",
             className,

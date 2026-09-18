@@ -48,7 +48,7 @@ function sessionBadge(status: FlowSessionSummary["status"]): { label: string; va
 }
 
 function formatFieldValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "–";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   try {
@@ -242,7 +242,7 @@ function ContactPanel({ conversation, now, onTagsChange, className }: ContactPan
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted-foreground">Last active</dt>
-              <dd className="font-medium">{contact.lastInteractionAt ? relativeAgo(contact.lastInteractionAt, now) : "—"}</dd>
+              <dd className="font-medium">{contact.lastInteractionAt ? relativeAgo(contact.lastInteractionAt, now) : "–"}</dd>
             </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted-foreground">Status</dt>

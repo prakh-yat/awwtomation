@@ -48,7 +48,7 @@ let cachedKey: { secret: string; key: Promise<CryptoKey> } | null = null;
 
 function signingKey(): Promise<CryptoKey> {
   const secret = process.env.APP_ENCRYPTION_KEY;
-  if (!secret) throw new Error("APP_ENCRYPTION_KEY is not set — it signs the session cookie");
+  if (!secret) throw new Error("APP_ENCRYPTION_KEY is not set: it signs the session cookie");
   // Re-import if the secret was rotated in-process (tests); otherwise reuse.
   if (cachedKey?.secret === secret) return cachedKey.key;
   const key = crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
@@ -69,7 +69,7 @@ export async function signSession(userId: string, now = Math.floor(Date.now() / 
 
 /**
  * Returns the payload for a token that is both correctly signed and unexpired,
- * or null. Never throws on malformed input — a stale or hand-edited cookie is
+ * or null. Never throws on malformed input: a stale or hand-edited cookie is
  * an ordinary signed-out visitor, not an error.
  */
 export async function verifySession(

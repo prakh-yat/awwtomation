@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 512 * 1024;
 
 /**
- * POST /api/billing/webhook — public, authenticated by the Standard Webhooks
+ * POST /api/billing/webhook: public, authenticated by the Standard Webhooks
  * signature over the raw body (no session, no workspace context).
  * 200 for handled or duplicate events, 401 for bad signatures, 5xx when
  * processing failed so Dodo redelivers.

@@ -5,7 +5,8 @@ import { PageFrame } from "@/components/app-shell/page-frame";
 import { effectivePlan } from "@/lib/billing/entitlements";
 import { limitsFor } from "@/lib/billing/plans";
 import { currentPeriodStart, nextPeriodStart } from "@/lib/billing/usage";
-import { getRequestPathname, ONBOARDING_PATH, requireWorkspaceContext } from "@/lib/workspace/context";
+import { isBareShellPath } from "@/lib/workspace/request";
+import { getRequestPathname, requireWorkspaceContext } from "@/lib/workspace/context";
 
 export const metadata: Metadata = {
   // The product itself is never indexed; only the marketing pages are public.
@@ -13,12 +14,12 @@ export const metadata: Metadata = {
 };
 
 export default async function AppLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  // /onboarding lives under (app) but must render for users with no workspace
-  // yet — the guard below would redirect it to itself. Middleware already
-  // guarantees a signed-in user, and the page is a full-screen step, so it
-  // renders without the sidebar.
+  // /onboarding and /welcome live under (app) but take the whole window and
+  // have no dock: /onboarding must render for users with no workspace yet (the
+  // guard below would redirect it to itself), and /welcome is a full-screen
+  // step. Middleware already guarantees a signed-in user on both.
   const pathname = await getRequestPathname();
-  if (pathname === ONBOARDING_PATH) {
+  if (isBareShellPath(pathname)) {
     return <>{children}</>;
   }
 
@@ -26,7 +27,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   const { organization, workspace } = ctx;
   const plan = effectivePlan(organization);
 
-  // The sidebar meter reads straight off the organization row we already have —
+  // The sidebar meter reads straight off the organization row we already have:
   // no extra query per page. A count from a previous month hasn't been reset
   // yet (that happens on the next send), so it reads as zero.
   const stale = organization.usagePeriodStart < currentPeriodStart();

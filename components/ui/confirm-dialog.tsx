@@ -22,7 +22,7 @@ export interface ConfirmDialogProps {
   cancelLabel?: string;
   /** Styles the confirm button red; use for deletes and disconnects. */
   destructive?: boolean;
-  /** May return a promise — the dialog shows a spinner and closes on success. */
+  /** May return a promise: the dialog shows a spinner and closes on success. */
   onConfirm: () => void | Promise<void>;
   /** Optional controlled state, e.g. to open from a dropdown item. */
   open?: boolean;

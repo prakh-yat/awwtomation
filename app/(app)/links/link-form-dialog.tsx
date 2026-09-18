@@ -35,7 +35,7 @@ function isWebUrl(value: string): boolean {
 
 /**
  * Create and edit share one form. After a create the dialog stays open to
- * show the short URL with a copy button — that URL is the whole point, and
+ * show the short URL with a copy button: that URL is the whole point, and
  * making people hunt for it in the table afterwards would be unkind.
  */
 export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDialogProps) {

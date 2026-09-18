@@ -11,7 +11,7 @@ export const runtime = "nodejs";
  *
  * `from`/`to` are YYYY-MM-DD in the workspace timezone (inclusive). `stats`
  * (counts by status, ignoring the status filter) is computed for the first
- * page only — "Load more" requests carry a cursor and get `stats: null`.
+ * page only: "Load more" requests carry a cursor and get `stats: null`.
  */
 export const GET = withWorkspace(async (req, ctx) => {
   const query = parseQuery(req, deliveryLogQuerySchema);

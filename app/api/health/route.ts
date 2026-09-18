@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * read the status code. Anything more detailed belongs in the logs.
  *
  * 503 only when the database is unreachable. A stalled worker must not fail this
- * check — restarting the web container would not fix it.
+ * check: restarting the web container would not fix it.
  */
 export async function GET(): Promise<NextResponse> {
   try {

@@ -1,4 +1,4 @@
-# Render Blueprint — https://render.com/docs/blueprint-spec
+# Render Blueprint: https://render.com/docs/blueprint-spec
 # Dashboard → Blueprints → New Blueprint Instance → pick this repo. Render
 # creates every service below and prompts for the `sync: false` secrets once.
 #

@@ -7,7 +7,7 @@
  * variable isn't filled in yet. Exit code is 1 if anything required failed, so
  * it also works as a pre-deploy gate in CI.
  *
- * Nothing here writes data — it only reads, so it is safe to run any time.
+ * Nothing here writes data: it only reads, so it is safe to run any time.
  */
 import { createHmac, randomUUID } from "node:crypto";
 
@@ -34,7 +34,7 @@ function fail(label, why, fix) {
 }
 function skip(label, why) {
   skipped++;
-  console.log(`  ${c.dim("SKIP")}  ${c.dim(label)} ${c.dim(`— ${why}`)}`);
+  console.log(`  ${c.dim("SKIP")}  ${c.dim(label)} ${c.dim(`: ${why}`)}`);
 }
 function section(title) {
   console.log(`\n${c.bold(title)}`);
@@ -99,12 +99,12 @@ if (!has("GOOGLE_CLIENT_ID") || !has("GOOGLE_CLIENT_SECRET")) {
   if (env.GOOGLE_CLIENT_ID.endsWith(".apps.googleusercontent.com")) {
     pass("GOOGLE_CLIENT_ID", env.GOOGLE_CLIENT_ID);
   } else {
-    console.log(`  ${c.yellow("WARN")}  GOOGLE_CLIENT_ID does not end in .apps.googleusercontent.com — check you copied the client ID, not the project id.`);
+    console.log(`  ${c.yellow("WARN")}  GOOGLE_CLIENT_ID does not end in .apps.googleusercontent.com: check you copied the client ID, not the project id.`);
   }
 
   // Probe the token endpoint with a deliberately bogus authorization code.
   // Google answers "invalid_client" when the id/secret pair is wrong and
-  // "invalid_grant" when it is right but the code isn't — which is the pass.
+  // "invalid_grant" when it is right but the code isn't: which is the pass.
   const redirectUri = `${appUrl || "http://localhost:3000"}/auth/callback`;
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -166,7 +166,7 @@ if (!has("DATABASE_URL")) {
   }
 
   if (!has("DIRECT_URL")) {
-    console.log(`  ${c.yellow("WARN")}  DIRECT_URL not set — prisma migrate needs the direct (5432) URL.`);
+    console.log(`  ${c.yellow("WARN")}  DIRECT_URL not set: prisma migrate needs the direct (5432) URL.`);
   }
 }
 
@@ -277,7 +277,7 @@ if (!has("DODO_SECRET_KEY")) {
     if (res.ok) {
       pass(`Dodo API key valid`, `${mode} mode`);
     } else if (res.status === 401) {
-      fail("Dodo API key", `Rejected in ${mode} mode (401).`, `The key belongs to the other environment — flip DODO_MODE or use the matching key.`);
+      fail("Dodo API key", `Rejected in ${mode} mode (401).`, `The key belongs to the other environment: flip DODO_MODE or use the matching key.`);
     } else {
       fail("Dodo API key", `HTTP ${res.status}`, "Check the key in Dashboard → Developer → API keys.");
     }
@@ -300,7 +300,7 @@ if (!has("DODO_SECRET_KEY")) {
   }
 
   if (mode === "test" && env.NODE_ENV === "production") {
-    console.log(`  ${c.yellow("WARN")}  Dodo is in TEST mode in production — no real money will be collected.`);
+    console.log(`  ${c.yellow("WARN")}  Dodo is in TEST mode in production: no real money will be collected.`);
   }
 }
 

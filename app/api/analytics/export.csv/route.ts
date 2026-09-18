@@ -14,7 +14,7 @@ const querySchema = z.object({
   automationId: z.string().trim().min(1).max(64).optional(),
 });
 
-/** GET /api/analytics/export.csv?from=&to=&channelId=&automationId= — the daily series as a CSV download. */
+/** GET /api/analytics/export.csv?from=&to=&channelId=&automationId=: the daily series as a CSV download. */
 export const GET = withWorkspace(async (req, ctx) => {
   const query = parseQuery(req, querySchema);
   const { filename, csv } = await exportAnalyticsCsv(ctx.workspace.id, { ...query, timezone: ctx.workspace.timezone });

@@ -171,7 +171,7 @@ const envelopeSchema = z.object({
 });
 
 export type ParsedWebhook = {
-  /** Provider's delivery id (`webhook-id` header) — stable across retries, so it's our idempotency key. */
+  /** Provider's delivery id (`webhook-id` header): stable across retries, so it's our idempotency key. */
   eventId: string;
   type: string;
   payloadType: string | null;

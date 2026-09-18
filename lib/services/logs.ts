@@ -1,5 +1,5 @@
 /**
- * Delivery logs — the audit trail of every DM, private reply, public reply
+ * Delivery logs: the audit trail of every DM, private reply, public reply
  * and broadcast message the platform tried to send, with the reason when it
  * didn't go out. Rows are written by lib/automation/send.ts and friends; this
  * module only reads them.
@@ -20,7 +20,7 @@ import { customerReason, deliveryReason } from "@/lib/errors/customer-messages";
 
 export const LOG_LIST_DEFAULT_LIMIT = 50;
 export const LOG_LIST_MAX_LIMIT = 200;
-/** Export ceiling — beyond this a CSV in one response is the wrong tool. */
+/** Export ceiling: beyond this a CSV in one response is the wrong tool. */
 export const LOG_EXPORT_MAX_ROWS = 50_000;
 const EXPORT_PAGE_SIZE = 1000;
 

@@ -1,5 +1,5 @@
 /**
- * Automations service — every function takes `workspaceId` first and scopes
+ * Automations service: every function takes `workspaceId` first and scopes
  * each query by it. Route handlers and server components call these; the
  * engine (lib/automation/*) reads the same rows at runtime.
  */
@@ -409,7 +409,7 @@ function mediaSummary(row: {
 
 export type AutomationListFilters = { channelId?: string; status?: AutomationStatus; q?: string };
 
-/** Unfiltered total — the list page uses it to tell "nothing yet" apart from "no matches". */
+/** Unfiltered total: the list page uses it to tell "nothing yet" apart from "no matches". */
 export function countAutomations(workspaceId: string): Promise<number> {
   return prisma.automation.count({ where: { workspaceId } });
 }
@@ -575,7 +575,7 @@ export type UpdateAutomationResult = { automation: AutomationDetail; warnings: s
  * Saves the editor state. Drafts may be saved in any shape (work in progress);
  * an ACTIVE automation that no longer satisfies the activation rules is
  * demoted to PAUSED and the reasons are returned as warnings rather than
- * blocking the save — losing edits is worse than a paused automation.
+ * blocking the save: losing edits is worse than a paused automation.
  */
 export async function updateAutomation(workspaceId: string, id: string, input: AutomationUpdateInput, actorUserId?: string): Promise<UpdateAutomationResult> {
   const existing = await requireAutomation(workspaceId, id);

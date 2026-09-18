@@ -45,7 +45,7 @@ const ROLE_HINTS: Record<WorkspaceRole, string> = {
 
 /**
  * Two-step dialog: collect email + role, then show the generated link.
- * We never send email ourselves, so the second step is the whole point —
+ * We never send email ourselves, so the second step is the whole point:
  * the admin copies the link and shares it however they like.
  */
 export function InviteDialog({ actorRole, seats, trigger }: InviteDialogProps) {

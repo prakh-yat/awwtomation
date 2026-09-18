@@ -45,7 +45,7 @@ function whenLabel(row: BroadcastRow, timeZone: string): { label: string; value:
 
 /** Two-tone bar: black = sent, gray = failed/skipped, empty = still queued. */
 function DeliveryCell({ row }: { row: BroadcastRow }) {
-  if (row.status === "DRAFT" || row.status === "SCHEDULED") return <span className="text-muted-foreground">—</span>;
+  if (row.status === "DRAFT" || row.status === "SCHEDULED") return <span className="text-muted-foreground">–</span>;
   const p = progressParts(row);
   const sentPct = p.target > 0 ? (p.sent / p.target) * 100 : 0;
   const otherPct = p.target > 0 ? (p.other / p.target) * 100 : 0;

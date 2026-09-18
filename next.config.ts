@@ -12,7 +12,7 @@ const isProduction = process.env.NODE_ENV === "production";
  *   fast refresh) and is dropped from production builds.
  * - Images stay open (`https:`) because avatars and post thumbnails come from
  *   a long tail of Meta/Google CDN hostnames.
- * - `frame-ancestors 'none'` (plus X-Frame-Options) — the app is never embedded.
+ * - `frame-ancestors 'none'` (plus X-Frame-Options): the app is never embedded.
  */
 const contentSecurityPolicy = [
   "default-src 'self'",

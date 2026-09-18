@@ -38,7 +38,7 @@ export function FunnelChart({ steps, className }: { steps: FunnelDatum[]; classN
           <li key={step.key}>
             {i > 0 ? (
               <p className="py-1 pl-[10rem] text-[11px] tabular-nums text-muted-foreground">
-                {step.conversion === null ? "—" : `${pct(step.conversion)} of previous step`}
+                {step.conversion === null ? "–" : `${pct(step.conversion)} of previous step`}
               </p>
             ) : null}
             <div

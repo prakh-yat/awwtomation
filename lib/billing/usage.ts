@@ -91,7 +91,7 @@ export async function reserveDmQuota(workspaceId: string, n = 1): Promise<QuotaR
 
 /**
  * Read-only snapshot for dashboards and the billing page. If the stored
- * period is stale we report zero DMs used rather than writing — the next
+ * period is stale we report zero DMs used rather than writing: the next
  * `reserveDmQuota` call performs the real reset.
  */
 export async function getOrganizationUsage(organizationId: string): Promise<OrganizationUsage> {

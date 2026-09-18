@@ -29,7 +29,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const err = (body ?? {}) as { error?: string; code?: string; fieldErrors?: Record<string, string[]> };
-    // Surface the first field error verbatim — "Enter a full URL…" beats "Validation failed".
+    // Surface the first field error verbatim: "Enter a full URL…" beats "Validation failed".
     const firstField = err.fieldErrors ? Object.values(err.fieldErrors).flat()[0] : undefined;
     throw new LinksApiError(res.status, firstField ?? err.error ?? `Request failed (${res.status})`, err.code);
   }

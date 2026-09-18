@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { GENERIC_SERVER_ERROR } from "@/lib/errors/customer-messages";
 
 export interface ErrorCardProps {
-  /** Next's `error.digest` — the only thing about the failure a customer ever sees. */
+  /** Next's `error.digest`: the only thing about the failure a customer ever sees. */
   reference?: string;
   onRetry: () => void;
   /** Full-height centring for the root boundary; the app boundary sits inside the shell. */

@@ -49,21 +49,18 @@ export function WorkspaceCard({
   workspace,
   collapsed,
   onOpen,
-  railBind,
 }: {
   /** Shown small above the workspace name so it's clear which account it belongs to. */
   organizationName: string;
   workspace: ShellWorkspace | undefined;
   collapsed: boolean;
   onOpen: () => void;
-  railBind?: Record<string, unknown>;
 }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-label={workspace ? `Switch workspace, current: ${workspace.name}` : "Choose a workspace"}
-      {...railBind}
       className={cn(
         "group flex w-full items-center rounded-lg bg-primary text-left text-primary-foreground outline-none transition-colors",
         "hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
@@ -147,7 +144,7 @@ export function WorkspaceSwitcher({
       await postJson<{ workspace: { id: string } }>("/api/workspaces", { name: trimmed });
       toast.success(`Created ${trimmed}`);
       onOpenChange(false);
-      router.push("/channels?onboarding=1");
+      router.push("/welcome");
       router.refresh();
     } catch (err) {
       toast.error(clientErrorMessage(err, "Couldn't create the workspace."));

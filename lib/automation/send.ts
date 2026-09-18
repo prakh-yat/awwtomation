@@ -156,7 +156,7 @@ async function dispatch(channel: Channel, contact: Contact, message: OutboundMes
     : sendMessengerMessage(token, channel.externalId, contact.externalId, message, tag);
 }
 
-/** Persist the outbound Message (idempotent on mid — the echo webhook may have landed first) and bump counters. */
+/** Persist the outbound Message (idempotent on mid: the echo webhook may have landed first) and bump counters. */
 async function persistOutbound(input: SendToContactInput, message: OutboundMessage, result: SendResult, preview: string): Promise<void> {
   const { channel, contact } = input;
   const now = new Date();
@@ -239,7 +239,7 @@ export async function sendToContact(input: SendToContactInput): Promise<SendToCo
   if (channel.status !== ChannelStatus.ACTIVE) return skip(DeliveryStatus.FAILED, `Channel is ${channel.status.toLowerCase().replace("_", " ")}`);
 
   if (viaPrivateReplyCommentId) {
-    // One private reply per comment — Meta rejects the second, so don't spend a slot on it.
+    // One private reply per comment: Meta rejects the second, so don't spend a slot on it.
     const already = await prisma.deliveryLog.findFirst({
       where: { channelId: channel.id, commentExternalId: viaPrivateReplyCommentId, kind: DeliveryKind.PRIVATE_REPLY, status: DeliveryStatus.SENT },
       select: { id: true },

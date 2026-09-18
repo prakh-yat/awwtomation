@@ -12,7 +12,7 @@ export type LogLevel = "info" | "warn" | "error";
 
 type Serializable = Record<string, unknown>;
 
-/** Errors don't survive JSON.stringify — flatten the useful bits explicitly. */
+/** Errors don't survive JSON.stringify: flatten the useful bits explicitly. */
 function serializeError(err: Error): Serializable {
   const out: Serializable = { name: err.name, message: err.message };
   if (err.stack) out.stack = err.stack;
@@ -71,7 +71,7 @@ function formatLine(level: LogLevel, event: string, meta?: object): string {
   try {
     return JSON.stringify({ ...base, ...normalizeMeta(meta) }, replacer);
   } catch {
-    // Circular structures etc. — never let logging itself throw.
+    // Circular structures etc.: never let logging itself throw.
     return JSON.stringify({ ...base, metaError: "unserializable meta" });
   }
 }

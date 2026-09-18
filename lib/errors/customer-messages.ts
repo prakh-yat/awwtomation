@@ -8,7 +8,7 @@
  * raw stored message) into a fixed category with plain-English copy, and
  * `deliveryReason()` does the same per `DeliveryStatus`.
  *
- * Pure and dependency-free on purpose — it is imported by client components,
+ * Pure and dependency-free on purpose: it is imported by client components,
  * route handlers and server components alike, so it must never pull in
  * `lib/db`, `lib/meta/*` or anything else server-only. Meta error classes are
  * recognised by `name` / `code` rather than `instanceof` for the same reason.
@@ -131,7 +131,7 @@ type ErrorShape = {
   code?: number;
   subcode?: number;
   status?: number;
-  /** `ApiError.code` / client error code — a string, unlike Graph's numeric `code`. */
+  /** `ApiError.code` / client error code: a string, unlike Graph's numeric `code`. */
   apiCode?: string;
 };
 
@@ -223,14 +223,14 @@ function buildAdminHint(shape: ErrorShape): string | null {
   if (shape.status !== undefined) meta.push(`HTTP ${shape.status}`);
   if (shape.apiCode) meta.push(shape.apiCode);
   if (meta.length) parts.push(meta.join(" · "));
-  const hint = parts.join(" — ").trim();
+  const hint = parts.join(" | ").trim();
   return hint ? hint : null;
 }
 
 /**
- * Turn any error — a `MetaApiError` subclass, an `ApiError`, a fetch failure,
+ * Turn any error: a `MetaApiError` subclass, an `ApiError`, a fetch failure,
  * or a raw string stored on `DeliveryLog.errorMessage` / `Channel.lastError`
- * — into customer-safe copy plus an ADMIN-only technical hint.
+ *: into customer-safe copy plus an ADMIN-only technical hint.
  */
 export function categorise(input: unknown): CustomerMessage {
   const shape = shapeOf(input);
@@ -315,7 +315,7 @@ export function deliveryReason(status: DeliveryStatus, errorMessage?: string | n
 /**
  * The only form a delivery outcome may take once it leaves the server: a short
  * plain-language reason, or null when it was sent. The raw text Meta returned
- * stays in the database and the server logs — never in a page or API response.
+ * stays in the database and the server logs: never in a page or API response.
  */
 export function customerReason(status: DeliveryStatus, errorMessage: string | null | undefined): string | null {
   if (status === "SENT") return null;

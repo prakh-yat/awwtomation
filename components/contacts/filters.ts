@@ -6,7 +6,7 @@ import type { SegmentFilters } from "@/lib/services/segments";
 /**
  * Filter state as the list view holds it, plus conversions to the query
  * string (URL bar, export link, GET /api/contacts), the service shape and the
- * saved-segment shape. Pure helpers — imported by both the server page and
+ * saved-segment shape. Pure helpers: imported by both the server page and
  * client components, so nothing here may touch Prisma.
  */
 export type ContactFilterState = {
@@ -168,7 +168,7 @@ export function filtersToServiceFilters(f: ContactFilterState): ContactListFilte
 // ───────────────────────── Segments ─────────────────────────
 
 /**
- * Canonical segment filters for the current toolbar state — the exact object
+ * Canonical segment filters for the current toolbar state: the exact object
  * POST /api/segments stores. Only keys that change the predicate are emitted
  * (mirrors `compactSegmentFilters` on the server) so equality is by meaning.
  */

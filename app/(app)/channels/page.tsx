@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Plug } from "lucide-react";
 
@@ -14,6 +15,7 @@ import { limitsFor } from "@/lib/billing/plans";
 import { checkLimit } from "@/lib/billing/usage";
 import { isMetaConfigured } from "@/lib/env";
 import { listChannels, toChannelView } from "@/lib/services/channels";
+import { getOnboardingState } from "@/lib/services/onboarding";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 import { canManageChannels } from "@/lib/workspace/permissions";
 
@@ -27,6 +29,14 @@ export default async function ChannelsPage({ searchParams }: { searchParams: Sea
   const ctx = await requireWorkspaceContext();
   const params = await searchParams;
 
+  // Meta lands every connection on /channels?connected=<id>. When that is the
+  // connection the welcome flow was waiting for, hand the person straight back
+  // to it rather than dropping them on a page they did not ask for.
+  if (params.connected) {
+    const onboarding = await getOnboardingState(ctx.workspace.id);
+    if (!onboarding.completedAt) redirect("/welcome");
+  }
+
   const [summaries, slots] = await Promise.all([listChannels(ctx.workspace.id), checkLimit(ctx.workspace.id, "channels")]);
   const channels = summaries.map(toChannelView);
   const configured = isMetaConfigured();
@@ -39,7 +49,6 @@ export default async function ChannelsPage({ searchParams }: { searchParams: Sea
     <div>
       <PageHeader
         title="Channels"
-        description="The Instagram accounts and Facebook Pages this workspace replies from."
         actions={canManage && channels.length > 0 ? <ConnectButtons configured={configured} /> : null}
       />
 

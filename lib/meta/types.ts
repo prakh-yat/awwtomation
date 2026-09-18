@@ -70,7 +70,7 @@ export type NormalizedEvent =
       recipientId: string;
       payload: string;
       title?: string;
-      /** Meta message id of the postback (`postback.mid`) when provided — used for idempotency. */
+      /** Meta message id of the postback (`postback.mid`) when provided: used for idempotency. */
       postbackId?: string;
       timestamp: Date;
       raw: unknown;
@@ -178,7 +178,7 @@ export class MetaRateLimitError extends MetaApiError {
   }
 }
 
-/** Graph error code 190 / 102: the channel token is invalid or expired. Never retry — reconnect. */
+/** Graph error code 190 / 102: the channel token is invalid or expired. Never retry: reconnect. */
 export class MetaTokenError extends MetaApiError {
   constructor(message: string, code?: number, subcode?: number, status?: number, traceId?: string) {
     super(message, code, subcode, status, traceId);

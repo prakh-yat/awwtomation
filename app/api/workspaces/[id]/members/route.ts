@@ -11,7 +11,7 @@ type Params = { id: string };
 
 /**
  * The people who can work in this workspace: its organization's members, plus
- * pending invitations. Invite links are only included for ADMIN+ — a plain
+ * pending invitations. Invite links are only included for ADMIN+: a plain
  * member must not be able to hand out seats.
  */
 export const GET = withUser<Params>(async (_req, user, { params }) => {

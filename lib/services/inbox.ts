@@ -1,5 +1,5 @@
 /**
- * Inbox service — the unified live chat over Instagram DMs and Messenger.
+ * Inbox service: the unified live chat over Instagram DMs and Messenger.
  *
  * Every function takes `workspaceId` first and scopes every query by it;
  * conversation ids coming from the client are never trusted on their own.
@@ -46,8 +46,8 @@ export type WindowKind = "standard" | "human_agent" | "closed";
 
 /**
  * Meta's messaging window for a conversation.
- * - `standard`: within 24h of the contact's last message — anyone (bots included) may send.
- * - `human_agent`: 24h have passed but it's < 7 days — only a person may reply, using the HUMAN_AGENT tag.
+ * - `standard`: within 24h of the contact's last message, anyone (bots included) may send.
+ * - `human_agent`: 24h have passed but it's < 7 days, only a person may reply, using the HUMAN_AGENT tag.
  * - `closed`: nothing can be sent until the contact messages again.
  * `open` is true for both `standard` and `human_agent`.
  */
@@ -524,7 +524,7 @@ function sendFailure(result: SendToContactResult): ApiError {
 /**
  * Human reply from the inbox. Goes through `sendToContact` like every other
  * send (quota, rate limit, window, bookkeeping). A closed conversation is
- * reopened — replying is the clearest signal that it's active again.
+ * reopened: replying is the clearest signal that it's active again.
  */
 export async function sendReply(
   workspaceId: string,

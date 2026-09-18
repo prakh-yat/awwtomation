@@ -151,7 +151,7 @@ function normalizeMessaging(platform: ChannelPlatform, entryId: string, item: un
 
 /**
  * Flatten a webhook body (`object: "instagram" | "page"`) into NormalizedEvents.
- * Malformed input yields an empty array — never throws. `entry.id` is the IG
+ * Malformed input yields an empty array: never throws. `entry.id` is the IG
  * professional account id / Page id and becomes `channelExternalId` for every
  * event in that entry (it matches `Channel.externalId`).
  */
@@ -174,7 +174,7 @@ export function normalizeWebhookPayload(body: unknown): NormalizedEvent[] {
       const event = normalizeMessaging(platform, entryId, item);
       if (event) events.push(event);
     }
-    // `standby[]` (handover protocol) mirrors messages for secondary receivers — intentionally ignored.
+    // `standby[]` (handover protocol) mirrors messages for secondary receivers: intentionally ignored.
   }
   return events;
 }

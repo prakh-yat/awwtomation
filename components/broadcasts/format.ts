@@ -104,9 +104,9 @@ function safeTimeZone(timeZone: string): string {
 
 /** "Sep 6, 2026, 14:05" in the workspace timezone, the same shape Logs and Contacts use. */
 export function formatDateTime(value: string | Date | null | undefined, timeZone: string): string {
-  if (!value) return "—";
+  if (!value) return "–";
   const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "–";
   return new Intl.DateTimeFormat("en-US", {
     timeZone: safeTimeZone(timeZone),
     day: "numeric",

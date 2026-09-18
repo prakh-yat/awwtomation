@@ -1,7 +1,7 @@
 /**
  * Webhook ingestion. Verifies the signature, normalizes the body, persists a
  * WebhookEvent per event (idempotency), resolves the Channel and hands the
- * event to the engine. Never throws — the route must answer 200 quickly and
+ * event to the engine. Never throws: the route must answer 200 quickly and
  * Meta redelivers anything we fail on because `processed` stays false.
  */
 import { ChannelStatus, Prisma, type ChannelPlatform } from "@prisma/client";
@@ -57,7 +57,7 @@ async function resolveChannel(platform: ChannelPlatform, externalId: string) {
 
 /** Returns true when the engine handled the event, false when it was skipped for any reason. */
 async function processEvent(event: NormalizedEvent): Promise<boolean> {
-  // Read receipts / delivery confirmations are high-volume telemetry we don't act on — don't persist them.
+  // Read receipts / delivery confirmations are high-volume telemetry we don't act on: don't persist them.
   if (event.kind === "read" || event.kind === "delivery") return false;
 
   const dedupeKey = webhookDedupeKey(event);

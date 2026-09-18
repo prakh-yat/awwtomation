@@ -82,7 +82,7 @@ const PHONE_RE = /^\+?\d{7,15}$/;
  * Check a free-text answer and return the value to store, or null when it
  * fails. Emails are lower-cased; phones lose spacing/punctuation and keep an
  * optional leading "+"; numbers are stored as numbers. Every kind rejects an
- * empty answer — there is nothing to save.
+ * empty answer: there is nothing to save.
  */
 export function validateAnswer(text: string, validation: AnswerValidation = "none"): string | number | null {
   const trimmed = text.trim();
@@ -251,7 +251,7 @@ const HANDLES_BY_TYPE: Record<FlowNodeType, (node: FlowNode) => string[]> = {
       ...quick.map((_, i) => `qr:${i}`),
     ];
   },
-  // Quick replies on a question are suggested answers, not branches — the answer always continues via "next".
+  // Quick replies on a question are suggested answers, not branches: the answer always continues via "next".
   ask_question: () => ["next"],
   condition_follow: () => ["yes", "no"],
   delay: () => ["next"],
@@ -346,7 +346,7 @@ export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; error
     }
   }
 
-  // Reachability from the trigger — orphan nodes are almost always an editing mistake.
+  // Reachability from the trigger: orphan nodes are almost always an editing mistake.
   const trigger = triggers[0];
   if (trigger) {
     const reachable = new Set<string>([trigger.id]);

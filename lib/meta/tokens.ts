@@ -27,7 +27,7 @@ export async function storeChannelToken(channelId: string, token: string, expire
   });
 }
 
-/** Called wherever Meta answers 190/102 — the user must reconnect the channel. */
+/** Called wherever Meta answers 190/102: the user must reconnect the channel. */
 export async function markChannelTokenExpired(channelId: string, error?: string): Promise<void> {
   await prisma.channel.updateMany({
     where: { id: channelId, status: { not: ChannelStatus.DISCONNECTED } },

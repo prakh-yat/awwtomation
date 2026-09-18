@@ -31,7 +31,7 @@ function hourRange(h: number): string {
 }
 
 /**
- * When people engage, as a week × hour grid. One hue, light to dark — nothing
+ * When people engage, as a week × hour grid. One hue, light to dark: nothing
  * is lighter than "none", so an empty slot recedes into the page. Each cell is
  * its own hover and focus target; the busiest slot is called out in words below.
  */

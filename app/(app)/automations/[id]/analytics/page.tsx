@@ -16,6 +16,7 @@ import { withPrevious } from "@/components/charts/series";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { PlatformIcon } from "@/components/ui/platform-icon";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deliveryReason } from "@/lib/errors/customer-messages";
 import { getAnalytics } from "@/lib/services/analytics";
@@ -126,7 +127,6 @@ export default async function AutomationReportPage({ params, searchParams }: { p
             <AutomationStatusBadge status={automation.status} />
           </span>
         }
-        description={`${account} · ${trigger} matching ${matching}`}
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href={`/automations/${automation.id}`}>
@@ -136,6 +136,19 @@ export default async function AutomationReportPage({ params, searchParams }: { p
           </Button>
         }
       />
+
+      {/* What this report is of. It used to sit in the page description, which
+          only the dashboard carries now. */}
+      <p className="-mt-3 mb-6 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <PlatformIcon platform={automation.channel.platform} size={14} />
+          {account}
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          {trigger} matching {matching}
+        </span>
+      </p>
 
       <AnalyticsFrame rangeLabel={rangeLabel} compareLabel={compareLabel} today={today}>
         <div className="space-y-6">
@@ -235,7 +248,7 @@ export default async function AutomationReportPage({ params, searchParams }: { p
                           <TableCell className="whitespace-nowrap text-muted-foreground">{KIND_LABEL[d.kind]}</TableCell>
                           <TableCell>
                             <p className={cn("max-w-[420px] truncate", d.status !== "SENT" && "text-muted-foreground")} title={text ?? undefined}>
-                              {text ?? "—"}
+                              {text ?? "–"}
                             </p>
                           </TableCell>
                           <TableCell className="whitespace-nowrap pr-5 text-right text-muted-foreground" title={format(new Date(d.createdAt), "PPpp")}>

@@ -38,7 +38,7 @@ function GoogleIcon() {
 /**
  * A plain link to `/auth/google`, which mints the PKCE challenge server-side
  * and redirects to Google. No auth SDK in the browser, and sign-in still works
- * if the page's JavaScript never loads — the click handler only exists to show
+ * if the page's JavaScript never loads: the click handler only exists to show
  * the spinner while the navigation is in flight.
  */
 export function LoginForm({ next, error }: { next: string; error?: string }) {

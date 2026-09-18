@@ -2,7 +2,7 @@ import { differenceInCalendarDays, format, isSameDay, isThisYear, isToday, isYes
 
 import type { InboxContact, InboxUser } from "@/lib/services/inbox";
 
-/** "now", "5m", "3h", "2d", then "Mar 4" / "Mar 4, 2025" — the compact style used in the thread list. */
+/** "now", "5m", "3h", "2d", then "Mar 4" / "Mar 4, 2025": the compact style used in the thread list. */
 export function shortRelative(iso: string | null, now = Date.now()): string {
   if (!iso) return "";
   const date = new Date(iso);

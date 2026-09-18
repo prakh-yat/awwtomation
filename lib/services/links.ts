@@ -1,5 +1,5 @@
 /**
- * Tracked links — `/l/{slug}` redirects with click counting.
+ * Tracked links: `/l/{slug}` redirects with click counting.
  *
  * Every workspace-facing function takes `workspaceId` first and scopes by it.
  * The two public entry points used by the redirect route (`resolveLink`,
@@ -200,7 +200,7 @@ export function buildLinkUrl(slug: string): string {
 }
 
 /**
- * 7 chars from the base64url alphabet minus `-`/`_` — i.e. base62. ~3.5e12
+ * 7 chars from the base64url alphabet minus `-`/`_`: i.e. base62. ~3.5e12
  * combinations, so collisions are rare and handled by retrying the insert.
  */
 function randomSlug(): string {
@@ -303,7 +303,7 @@ export async function createTrackedLink(workspaceId: string, input: CreateLinkIn
     }
   }
 
-  // The unique index is the collision check — cheaper than a read-then-write
+  // The unique index is the collision check: cheaper than a read-then-write
   // race and correct under concurrency.
   for (let attempt = 1; attempt <= SLUG_RETRY_ATTEMPTS; attempt++) {
     try {
@@ -457,7 +457,7 @@ export type RecordClickInput = { contactId?: string; userAgent?: string; ip?: st
 /**
  * Increments the counter and writes the LinkClick row in one statement
  * (nested create inside the update), so concurrent clicks never lose counts.
- * A contact id is only attached when it belongs to the link's workspace —
+ * A contact id is only attached when it belongs to the link's workspace:
  * anyone can append `?c=` to a public URL, so it must not be trusted alone.
  * Returns false when the slug doesn't exist.
  */
@@ -481,7 +481,7 @@ export async function recordClick(slug: string, input: RecordClickInput = {}): P
       select: { id: true },
     });
   } catch (err) {
-    // Deleted between resolve and record — nothing to count.
+    // Deleted between resolve and record: nothing to count.
     if (isNotFound(err)) return false;
     throw err;
   }

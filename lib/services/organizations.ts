@@ -291,7 +291,7 @@ export async function deleteOrganization(organizationId: string, actorId: string
 const userSummarySelect = { id: true, email: true, name: true, avatarUrl: true } as const;
 
 export async function listMembers(organizationId: string): Promise<MemberWithUser[]> {
-  // Enum order in the schema is OWNER, ADMIN, MEMBER — ascending puts owners first.
+  // Enum order in the schema is OWNER, ADMIN, MEMBER: ascending puts owners first.
   return prisma.organizationMember.findMany({
     where: { organizationId },
     include: { user: { select: userSummarySelect } },
@@ -337,7 +337,7 @@ export async function updateMemberRole(organizationId: string, actorId: string, 
 /**
  * Removes a member. Anyone may remove themselves (leave); otherwise the actor
  * must be ADMIN+ and outrank the target, except OWNERs who may remove anyone.
- * The last OWNER can never be removed — transfer ownership first.
+ * The last OWNER can never be removed: transfer ownership first.
  */
 export async function removeMember(organizationId: string, actorId: string, targetUserId: string): Promise<void> {
   const actor = await assertOrganizationMembership(organizationId, actorId, "MEMBER");

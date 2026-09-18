@@ -23,7 +23,7 @@ function text(formData: FormData, key: string): string | undefined {
  * Saves the General settings form. Returns a result object instead of
  * throwing so the client can toast and highlight the offending field.
  * `updateWorkspace` itself does not check roles, so the ADMIN gate here is
- * load-bearing — never call it without `requireRole`.
+ * load-bearing: never call it without `requireRole`.
  */
 export async function updateWorkspaceAction(formData: FormData): Promise<UpdateWorkspaceResult> {
   const ctx = await getWorkspaceContext();

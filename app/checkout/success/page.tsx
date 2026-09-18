@@ -20,7 +20,7 @@ function first(value: string | string[] | undefined): string | undefined {
 /**
  * Dodo returns here with `payment_id`, `subscription_id` and `status` appended
  * to the return URL we registered (`?organization=&tier=&interval=`). We pass the
- * ids on to the poller; it never trusts them for activation — the server
+ * ids on to the poller; it never trusts them for activation: the server
  * re-reads everything from Dodo with our own key.
  */
 export default async function CheckoutSuccessPage({ searchParams }: { searchParams: SearchParams }) {

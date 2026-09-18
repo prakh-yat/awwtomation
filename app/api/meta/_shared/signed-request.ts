@@ -2,7 +2,7 @@
  * Meta's `signed_request` (deauthorize + data-deletion callbacks):
  * `base64url(HMAC-SHA256(payload)) + "." + base64url(json payload)`.
  * Facebook-app callbacks are signed with META_APP_SECRET; Instagram Login
- * callbacks with INSTAGRAM_APP_SECRET — both are tried.
+ * callbacks with INSTAGRAM_APP_SECRET: both are tried.
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";

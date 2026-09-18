@@ -28,7 +28,7 @@ export type WorkspaceContext = {
   organizations: Array<{ organization: OrganizationSummary; role: WorkspaceRole }>;
 };
 
-/** Thrown by `requireRole` — `handleApiError` maps it to a 403 JSON response. */
+/** Thrown by `requireRole`: `handleApiError` maps it to a 403 JSON response. */
 export class ForbiddenError extends Error {
   readonly status = 403;
   readonly code = "FORBIDDEN";
@@ -102,7 +102,7 @@ export async function getRequestPathname(): Promise<string | null> {
  *
  * NOTE for layouts wrapping `/onboarding`: call `getWorkspaceContext()` and
  * render children bare when it is null and `getRequestPathname()` is
- * `ONBOARDING_PATH` — calling this guard there would redirect to itself.
+ * `ONBOARDING_PATH`: calling this guard there would redirect to itself.
  */
 export async function requireWorkspaceContext(): Promise<WorkspaceContext> {
   const user = await getCurrentUser();

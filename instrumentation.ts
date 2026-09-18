@@ -1,12 +1,12 @@
 /**
- * Next.js instrumentation hook — `register()` runs once per server boot on
+ * Next.js instrumentation hook: `register()` runs once per server boot on
  * the Node runtime (never on Edge, never during `next build`).
  *
  * Two jobs: fail fast in production when a REQUIRED variable is missing, so a
  * misconfigured deploy dies at boot instead of 500-ing on its first request;
  * and log one structured line saying which OPTIONAL integrations are off, so
  * an operator can tell "billing not configured" from "billing broken".
- * Optional integrations never throw — a fresh install without Meta or Dodo
+ * Optional integrations never throw: a fresh install without Meta or Dodo
  * credentials must still boot so the owner can sign in and finish setup.
  */
 export async function register(): Promise<void> {

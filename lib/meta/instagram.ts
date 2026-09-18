@@ -4,7 +4,7 @@
  * Ids: `/me` returns `id` (app-scoped user id) AND `user_id` (the Instagram
  * professional account id). Webhook `entry.id`, `recipient.id` and the
  * messaging/media paths all use the professional account id, so
- * `getInstagramMe().id` is that one — store it as `Channel.externalId`.
+ * `getInstagramMe().id` is that one: store it as `Channel.externalId`.
  */
 import { optionalEnv } from "@/lib/env";
 import { GRAPH_INSTAGRAM_HOST, INSTAGRAM_OAUTH_HOST, graphUrl, metaFetch, parseGraphDate } from "./client";
@@ -101,7 +101,7 @@ export async function refreshInstagramToken(longToken: string): Promise<{ access
 // ───────────────────────── Account ─────────────────────────
 
 export type InstagramMe = {
-  /** Instagram professional account id — use as Channel.externalId. */
+  /** Instagram professional account id: use as Channel.externalId. */
   id: string;
   /** App-scoped user id (the raw `id` field). */
   appScopedId: string;
@@ -244,7 +244,7 @@ export function sendInstagramPrivateReply(token: string, igUserId: string, comme
   return sendOutbound({ url: graphUrl(IG, `/${igUserId}/messages`), token, recipient: { comment_id: commentId }, message });
 }
 
-/** Standard send — the recipient must be inside the 24h window unless `tag` is HUMAN_AGENT (7 days). */
+/** Standard send: the recipient must be inside the 24h window unless `tag` is HUMAN_AGENT (7 days). */
 export function sendInstagramMessage(
   token: string,
   igUserId: string,

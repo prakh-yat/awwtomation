@@ -67,7 +67,7 @@ jobs:
       - name: Migrations apply cleanly on Postgres 16
         run: npx prisma migrate deploy
       - name: Fail on drift between prisma/migrations and schema.prisma
-        # Exit code 2 when the migrations folder would not produce the schema —
+        # Exit code 2 when the migrations folder would not produce the schema:
         # i.e. someone edited schema.prisma without `prisma migrate dev`.
         run: >-
           npx prisma migrate diff

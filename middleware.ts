@@ -5,7 +5,7 @@ import { sanitizeNextPath } from "@/lib/utils";
 
 /**
  * Route prefixes that require a signed-in user. Everything else (marketing,
- * /login, /invite, /l, webhooks) is public — the page itself decides what to do.
+ * /login, /invite, /l, webhooks) is public: the page itself decides what to do.
  */
 const PROTECTED_PREFIXES = [
   "/dashboard",

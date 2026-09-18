@@ -73,7 +73,7 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
         }
       } catch (err) {
         if (cancelled) return;
-        // 403 means the ids belong to another organization — no amount of waiting fixes that.
+        // 403 means the ids belong to another organization: no amount of waiting fixes that.
         if (err instanceof ClientApiError && err.status === 403) {
           setLastError(errorMessage(err, "This payment belongs to a different organization. Switch to it from the account menu, then check Billing."));
           setPhase("failed");

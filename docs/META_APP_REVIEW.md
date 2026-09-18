@@ -4,9 +4,9 @@ Use this when submitting the app for Advanced Access so customers (not just peop
 
 ## Order of operations
 
-1. **Business Verification** (Meta Business Suite → Settings → Security Center). Upload company registration + tax document. Documents must be in a Meta-supported language — Nepali is not one, so use English-issued documents or a certified translation.
+1. **Business Verification** (Meta Business Suite → Settings → Security Center). Upload company registration + tax document. Documents must be in a Meta-supported language: Nepali is not one, so use English-issued documents or a certified translation.
 2. **Access Verification** (App Dashboard → App Review → Access verification). Choose "Tech Provider", describe: *"We provide a SaaS that lets businesses automate replies to comments and messages on their own Instagram and Facebook accounts."*
-3. **App Review** — request the permissions below with the justifications and the screencast.
+3. **App Review**: request the permissions below with the justifications and the screencast.
 4. Set the app to **Live** mode.
 
 ## Permissions to request
@@ -23,11 +23,11 @@ Use this when submitting the app for Advanced Access so customers (not just peop
 
 ## Justification text (adapt wording)
 
-**instagram_business_manage_messages** — "When a person comments a keyword the account owner configured (for example 'LINK') on the owner's own post or reel, our app sends that person one private reply containing the content they asked for. If the person taps a button in that reply, the flow continues inside the 24-hour messaging window. The account owner can also answer conversations manually from our Inbox. We never message people who have not interacted with the account, and we respect Meta's rate limits."
+**instagram_business_manage_messages**: "When a person comments a keyword the account owner configured (for example 'LINK') on the owner's own post or reel, our app sends that person one private reply containing the content they asked for. If the person taps a button in that reply, the flow continues inside the 24-hour messaging window. The account owner can also answer conversations manually from our Inbox. We never message people who have not interacted with the account, and we respect Meta's rate limits."
 
-**instagram_business_manage_comments** — "We receive the `comments` webhook for the connected account's own media to detect keyword comments and, if the owner enabled it, post a public reply under the comment."
+**instagram_business_manage_comments**: "We receive the `comments` webhook for the connected account's own media to detect keyword comments and, if the owner enabled it, post a public reply under the comment."
 
-**instagram_business_basic** — "We read the connected account's id, username and media list so the owner can pick which post an automation applies to."
+**instagram_business_basic**: "We read the connected account's id, username and media list so the owner can pick which post an automation applies to."
 
 ## Screencast script (2–3 min, one take, real accounts)
 

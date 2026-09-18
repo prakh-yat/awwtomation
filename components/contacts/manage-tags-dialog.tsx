@@ -110,7 +110,7 @@ function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed
 
 /**
  * Rename or delete tags across the whole workspace. Tags have no row of their
- * own — they only exist on contacts — so this is the one place to tidy them.
+ * own, they only exist on contacts, so this is the one place to tidy them.
  */
 function ManageTagsDialog({ tags: initialTags, onChanged, open: controlledOpen, onOpenChange }: ManageTagsDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);

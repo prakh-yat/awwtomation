@@ -12,7 +12,7 @@ import { appUrl } from "@/lib/env";
  * from our own origin. Everything else (including tools that send neither
  * header) is refused, so a session cookie alone can never perform an action.
  *
- * Server Actions never pass through here — Next.js enforces its own
+ * Server Actions never pass through here: Next.js enforces its own
  * origin/host check for them. Webhooks and cron routes authenticate with
  * signatures/bearer secrets and do not use the wrappers either.
  */
@@ -48,7 +48,7 @@ export function verifyRequestOrigin(req: NextRequest): OriginVerdict {
   if (SAFE_METHODS.has(req.method.toUpperCase())) return { ok: true };
 
   const site = req.headers.get("sec-fetch-site")?.trim().toLowerCase();
-  // "none" is a user-initiated navigation (typed URL, bookmark) — not forgeable by a page.
+  // "none" is a user-initiated navigation (typed URL, bookmark): not forgeable by a page.
   if (site === "same-origin" || site === "none") return { ok: true };
 
   const origin = hostOf(req.headers.get("origin"));

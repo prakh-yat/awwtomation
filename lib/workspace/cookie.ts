@@ -23,7 +23,7 @@ export function activeWorkspaceCookieOptions() {
   };
 }
 
-/** Server Actions / Route Handlers only — Server Components cannot write cookies. */
+/** Server Actions / Route Handlers only: Server Components cannot write cookies. */
 export async function setActiveWorkspaceCookie(workspaceId: string): Promise<void> {
   const store = await cookies();
   store.set(ACTIVE_WORKSPACE_COOKIE, workspaceId, activeWorkspaceCookieOptions());

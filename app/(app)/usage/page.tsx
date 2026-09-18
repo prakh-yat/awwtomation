@@ -67,11 +67,6 @@ export default async function UsagePage() {
     <div>
       <PageHeader
         title="Usage"
-        description={
-          multipleWorkspaces
-            ? `DMs sent by every workspace in ${ctx.organization.name}, against your plan, this month and over the last six months.`
-            : "DMs sent against your plan, this month and over the last six months."
-        }
       />
 
       <div className="space-y-6">

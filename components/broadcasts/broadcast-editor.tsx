@@ -51,7 +51,7 @@ export interface BroadcastEditorProps {
   /** Required in edit mode (DRAFT or SCHEDULED). */
   broadcast?: BroadcastRow;
   channels: ChannelOption[];
-  /** Workspace IANA timezone — schedule times are entered in it. */
+  /** Workspace IANA timezone: schedule times are entered in it. */
   timeZone: string;
 }
 
@@ -169,7 +169,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
 
   const activeSegment = audience.segmentId ? (segmentOptions.find((s) => s.id === audience.segmentId) ?? null) : null;
 
-  /** Any manual edit detaches the audience from its segment — the label must never claim filters it no longer has. */
+  /** Any manual edit detaches the audience from its segment: the label must never claim filters it no longer has. */
   function updateAudience(patch: Partial<BroadcastAudience>) {
     setAudience((a) => ({ ...a, ...patch, segmentId: null }));
   }
@@ -329,7 +329,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
       router.push(`/broadcasts/${id}`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't send the broadcast"));
-      // The draft was saved even if the send failed — don't strand a new one on /new.
+      // The draft was saved even if the send failed: don't strand a new one on /new.
       if (id && !isEdit) router.push(`/broadcasts/${id}`);
       throw err;
     } finally {
@@ -340,7 +340,7 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
   if (channels.length === 0) {
     return (
       <>
-        <PageHeader backHref="/broadcasts" backLabel="Broadcasts" title="New broadcast" description="Write a message and choose who gets it." />
+        <PageHeader backHref="/broadcasts" backLabel="Broadcasts" title="New broadcast" />
         <EmptyState
           icon={Plug}
           title="Connect an account first"
@@ -366,7 +366,6 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
         backHref="/broadcasts"
         backLabel="Broadcasts"
         title={isEdit ? name.trim() || "Edit broadcast" : "New broadcast"}
-        description="Write a message and choose who gets it."
         actions={
           <>
             {isEdit ? <Badge variant={meta.variant}>{meta.label}</Badge> : null}

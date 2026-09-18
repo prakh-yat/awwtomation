@@ -34,5 +34,5 @@ export async function createOrganizationAction(_prev: CreateOrganizationState, f
   }
 
   await setActiveOrganizationCookies(ids.organizationId, ids.workspaceId);
-  redirect("/channels?onboarding=1");
+  redirect("/welcome");
 }

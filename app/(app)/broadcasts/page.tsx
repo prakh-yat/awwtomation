@@ -15,8 +15,6 @@ import { requireWorkspaceContext } from "@/lib/workspace/context";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Broadcasts" };
 
-const DESCRIPTION = "Message a group of contacts at once. It reaches the people who messaged you in the last 24 hours.";
-
 export default async function BroadcastsPage() {
   const ctx = await requireWorkspaceContext();
   const plan = limitsFor(effectivePlan(ctx.organization));
@@ -24,7 +22,7 @@ export default async function BroadcastsPage() {
   if (!plan.broadcasts) {
     return (
       <>
-        <PageHeader title="Broadcasts" description={DESCRIPTION} />
+        <PageHeader title="Broadcasts" />
         <EmptyState
           icon={Megaphone}
           title={`Broadcasts aren't included in the ${plan.label} plan`}
@@ -49,7 +47,6 @@ export default async function BroadcastsPage() {
     <>
       <PageHeader
         title="Broadcasts"
-        description={DESCRIPTION}
         actions={
           <Button asChild>
             <Link href="/broadcasts/new">

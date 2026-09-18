@@ -1,5 +1,5 @@
 /**
- * Segments — saved contact filters.
+ * Segments: saved contact filters.
  *
  * `buildContactWhere` is the only translation from the filter shape to a
  * Prisma predicate. The contacts list and CSV export, segment counts, the
@@ -67,7 +67,7 @@ const filterTagList = z.array(tagSchema).max(SEGMENT_MAX_FILTER_TAGS).transform(
  * - `tags` + `tagMode` ("all" when omitted): the contact carries every / at least one of them.
  * - `excludeTags`: the contact carries none of them.
  * - `onlyFollowers`: isFollower = true. `excludeFollowers`: not a known follower
- *   (includes "unknown" — follow status is only learned during a follow gate). `onlyFollowers` wins if both are set.
+ *   (includes "unknown": follow status is only learned during a follow gate). `onlyFollowers` wins if both are set.
  * - `lastInteractionDays`: lastInteractionAt within the last N days (contacts that never interacted are excluded).
  * - `excludeOptedOut`: optedOut = false. `optedOut`: exact match, used by the raw list API; `excludeOptedOut` wins if both are set.
  * - `q`: case-insensitive substring on username, name or email (a leading "@" is ignored).
@@ -141,7 +141,7 @@ export function compactSegmentFilters(filters: SegmentFilters): SegmentFilters {
 /**
  * Tolerant read of stored JSON. Unknown keys are dropped (an older build may
  * read a newer row); an unusable value logs and falls back to "everyone" so a
- * list keeps rendering — callers that send messages must still confirm counts.
+ * list keeps rendering: callers that send messages must still confirm counts.
  */
 export function parseSegmentFilters(json: Prisma.JsonValue | null | undefined, meta?: { segmentId?: string }): SegmentFilters {
   const parsed = segmentFiltersBase.safeParse(json ?? {});
@@ -176,7 +176,7 @@ export function buildContactWhere(workspaceId: string, filters: SegmentFilters, 
   if (excludeTags.length > 0) where.NOT = { tags: { hasSome: excludeTags } };
 
   if (filters.onlyFollowers) where.isFollower = true;
-  // "Not a follower" includes unknown — we only learn follower status during a follow gate.
+  // "Not a follower" includes unknown: we only learn follower status during a follow gate.
   else if (filters.excludeFollowers) where.isFollower = { not: true };
 
   if (filters.lastInteractionDays) {
@@ -262,7 +262,7 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T
 
 // ───────────────────────── Reads ─────────────────────────
 
-/** Segments with live counts — one count query per segment, a few at a time. */
+/** Segments with live counts: one count query per segment, a few at a time. */
 export async function listSegments(workspaceId: string): Promise<SegmentSummary[]> {
   const rows = await prisma.segment.findMany({ where: { workspaceId }, orderBy: { name: "asc" }, take: MAX_SEGMENTS_PER_WORKSPACE });
   const now = new Date();
@@ -281,7 +281,7 @@ export async function getSegment(workspaceId: string, id: string): Promise<Segme
 
 /**
  * Saved segments this contact currently falls into. Each segment's predicate
- * is ANDed with the contact id, so it is exactly the list membership test —
+ * is ANDed with the contact id, so it is exactly the list membership test:
  * capped so a workspace with many segments can't turn a profile page into 50 queries.
  */
 export async function segmentsForContact(workspaceId: string, contactId: string): Promise<{ segments: SegmentMatch[]; truncated: boolean }> {

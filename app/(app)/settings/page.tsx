@@ -30,7 +30,7 @@ export default async function GeneralSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="General" description={`The ${workspace.name} workspace and the ${organization.name} organization it belongs to.`} />
+      <PageHeader title="General" />
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <GeneralForm

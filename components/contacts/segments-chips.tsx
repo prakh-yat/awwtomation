@@ -12,7 +12,7 @@ export interface SegmentChipsProps {
   className?: string;
 }
 
-/** Which saved segments a contact currently matches — each chip opens that segment on the contacts page. */
+/** Which saved segments a contact currently matches: each chip opens that segment on the contacts page. */
 function SegmentChips({ segments, truncated = false, className }: SegmentChipsProps) {
   if (segments.length === 0) {
     return <span className={cn("text-muted-foreground", className)}>Not in any segment</span>;

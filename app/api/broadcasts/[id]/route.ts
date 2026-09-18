@@ -31,7 +31,7 @@ export const PATCH = withWorkspace<Params>(async (req, ctx, { params }) => {
   return NextResponse.json({ broadcast });
 });
 
-/** DELETE /api/broadcasts/[id] → { ok: true } — DRAFT/CANCELLED/SENT/FAILED only. */
+/** DELETE /api/broadcasts/[id] → { ok: true }, DRAFT/CANCELLED/SENT/FAILED only. */
 export const DELETE = withWorkspace<Params>(async (_req, ctx, { params }) => {
   const { id } = await params;
   await deleteBroadcast(ctx.workspace.id, id, ctx.user.id);

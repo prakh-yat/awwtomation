@@ -29,7 +29,7 @@ export interface ClickSparklineProps {
   height?: number;
 }
 
-/** Daily clicks as a flat black area — no axes, the two date captions underneath are enough context. */
+/** Daily clicks as a flat black area: no axes, the two date captions underneath are enough context. */
 export function ClickSparkline({ data, height = 120 }: ClickSparklineProps) {
   const empty = data.every((p) => p.clicks === 0);
   const first = data[0]?.date;

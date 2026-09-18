@@ -80,7 +80,7 @@ export async function assertMembership(workspaceId: string, userId: string, minR
  * Adds a workspace to an organization (ADMIN+). Slugs derive from the name; on
  * collision we append a short random suffix rather than a counter so the
  * check-then-insert race can't produce duplicates (the unique index is the real
- * guard — we retry on P2002).
+ * guard: we retry on P2002).
  */
 export async function createWorkspace(organizationId: string, actorId: string, name: string): Promise<Workspace> {
   await assertOrganizationMembership(organizationId, actorId, "ADMIN");

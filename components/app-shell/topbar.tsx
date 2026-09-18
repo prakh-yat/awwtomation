@@ -14,7 +14,7 @@ import type { ShellProps } from "./types";
 
 /**
  * Mobile header. Below md the rail is hidden, so the same sidebar opens in a
- * left drawer — navigation is identical at every width.
+ * left drawer: navigation is identical at every width.
  */
 export function Topbar(props: ShellProps) {
   const [open, setOpen] = React.useState(false);
@@ -54,7 +54,7 @@ export function Topbar(props: ShellProps) {
             >
               <X className="h-4 w-4" />
             </DialogPrimitive.Close>
-            <Sidebar {...props} collapsed={false} variant="drawer" onNavigate={() => setOpen(false)} />
+            <Sidebar {...props} onNavigate={() => setOpen(false)} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

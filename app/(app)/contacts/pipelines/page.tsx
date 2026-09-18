@@ -21,11 +21,6 @@ export default async function PipelinesPage() {
         backHref="/contacts"
         backLabel="Contacts"
         title="Pipelines"
-        description={
-          canManage
-            ? "The stages contacts move through. Keep one for sales, another for wholesale, and give each stage a colour."
-            : "The stages contacts move through. Only admins and owners can change them."
-        }
       />
       <PipelinesManager initialPipelines={pipelines} canManage={canManage} />
     </>

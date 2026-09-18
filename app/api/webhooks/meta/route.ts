@@ -33,7 +33,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 }
 
 /**
- * Always 200 once a body is accepted — Meta disables webhooks that keep
+ * Always 200 once a body is accepted: Meta disables webhooks that keep
  * failing, and every event is persisted before processing so nothing is lost
  * when we log an error instead. The two non-200s (429, 413) fire only for
  * traffic Meta itself would never send.

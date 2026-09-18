@@ -140,7 +140,7 @@ export function isAnalyticsPeriod(value: unknown): value is AnalyticsPeriod {
   return typeof value === "number" && (ANALYTICS_PERIODS as readonly number[]).includes(value);
 }
 
-/** Lenient parser for `?days=` — anything unrecognised falls back to the default. */
+/** Lenient parser for `?days=`: anything unrecognised falls back to the default. */
 export function parseAnalyticsPeriod(value: unknown): AnalyticsPeriod {
   const n = typeof value === "string" ? Number(value) : value;
   return isAnalyticsPeriod(n) ? n : DEFAULT_ANALYTICS_PERIOD;
@@ -319,7 +319,7 @@ function rate(numerator: number, denominator: number): number {
 
 type SeriesBuild = { series: SeriesPoint[]; previousSeries: SeriesPoint[]; current: PeriodSums; previous: PeriodSums };
 
-/** Fills every day of both periods with zeros, then folds the grouped rows in — O(rows + days). */
+/** Fills every day of both periods with zeros, then folds the grouped rows in: O(rows + days). */
 function buildSeries(
   range: PeriodRange,
   rows: { delivery: DeliveryDayRow[]; triggers: CountDayRow[]; contacts: CountDayRow[]; clicks: CountDayRow[] },
@@ -738,7 +738,7 @@ export type AnalyticsReport = {
   pipelines: PipelineBreakdown[];
   /** "audit" when stage changes came from AuditLog `contact.stage_changed`; "contacts" for the updatedAt approximation. */
   leadsSource: "audit" | "contacts";
-  /** False until the workspace has ever triggered an automation or logged a delivery — drives the empty state. */
+  /** False until the workspace has ever triggered an automation or logged a delivery: drives the empty state. */
   hasAnyData: boolean;
 };
 
@@ -1525,7 +1525,7 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
   };
 }
 
-/** Just the funnel for the dashboard card — four small queries instead of the whole report. */
+/** Just the funnel for the dashboard card: four small queries instead of the whole report. */
 export async function getAnalyticsFunnel(workspaceId: string, input: AnalyticsInput = {}): Promise<AnalyticsFunnel & { range: Pick<AnalyticsRange, "from" | "to" | "days"> }> {
   const [scope, settings] = await Promise.all([resolveScope(workspaceId, input), workspaceSettings(workspaceId, input.timezone)]);
   const range = resolveAnalyticsRange(input, settings.timezone);

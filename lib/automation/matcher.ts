@@ -10,7 +10,7 @@ export function normalizeText(value: string): string {
   return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/** Escape only regex syntax characters — escaping anything else is a SyntaxError under the `u` flag. */
+/** Escape only regex syntax characters: escaping anything else is a SyntaxError under the `u` flag. */
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -25,7 +25,7 @@ export function wholeWordPattern(keyword: string): RegExp {
   try {
     return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu");
   } catch {
-    // Engines without lookbehind/property escapes — degrade to ASCII boundaries.
+    // Engines without lookbehind/property escapes: degrade to ASCII boundaries.
     return new RegExp(`\\b${escaped}\\b`, "i");
   }
 }
@@ -54,7 +54,7 @@ export function matchedKeyword(text: string, keywords: string[], mode: MatchMode
 /**
  * CONTAINS: keyword anywhere (case-insensitive). EXACT: whole word.
  * ANY: everything (after exclusions). CONTAINS/EXACT with no keywords never
- * match — an empty keyword list is a misconfiguration, not "everyone".
+ * match: an empty keyword list is a misconfiguration, not "everyone".
  */
 export function matchesKeywords(text: string, keywords: string[], mode: MatchMode, exclude: string[] = []): boolean {
   return matchedKeyword(text, keywords, mode, exclude) !== null;
@@ -63,7 +63,7 @@ export function matchesKeywords(text: string, keywords: string[], mode: MatchMod
 /**
  * ACTIVE automations on the channel for this trigger whose media filter and
  * keywords match. Automations belong to the channel, and the channel was
- * resolved by (platform, externalId) — tenant scoping flows from there.
+ * resolved by (platform, externalId): tenant scoping flows from there.
  */
 export async function findMatchingAutomations(channelId: string, trigger: TriggerType, text: string, mediaId?: string): Promise<Automation[]> {
   const candidates = await prisma.automation.findMany({

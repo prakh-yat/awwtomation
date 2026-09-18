@@ -7,7 +7,7 @@
  *   node --env-file=.env scripts/create-dodo-products.mjs
  *
  * Reads DODO_SECRET_KEY and DODO_MODE (test|live). Product ids differ between
- * test and live mode — run it once per mode and keep the env files separate.
+ * test and live mode: run it once per mode and keep the env files separate.
  *
  * Prices mirror lib/billing/plans.ts (PLANS[tier].priceUsd / priceAnnualUsd).
  * If you change a price there, change it here too; the script warns when an

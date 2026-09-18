@@ -18,7 +18,7 @@ export type PlanLimits = {
 /**
  * Plan matrix. Limits are enforced server-side in `lib/billing/usage.ts`;
  * the copy here feeds the pricing page and the billing settings screen.
- * Numbers are the contract from ARCHITECTURE §5 — change them there first.
+ * Numbers are the contract from ARCHITECTURE §5: change them there first.
  */
 export const PLANS: Record<PlanTier, PlanLimits> = {
   FREE: {
@@ -111,7 +111,7 @@ export function planPriceCents(tier: PlanTier, interval: BillingIntervalId): num
   return (interval === "ANNUAL" ? plan.priceAnnualUsd : plan.priceUsd) * 100;
 }
 
-/** Effective monthly cost in cents — annual plans spread over 12 months, for "per month" copy. */
+/** Effective monthly cost in cents: annual plans spread over 12 months, for "per month" copy. */
 export function monthlyEquivalentCents(tier: PlanTier, interval: BillingIntervalId): number {
   return interval === "ANNUAL" ? Math.round(planPriceCents(tier, interval) / 12) : planPriceCents(tier, interval);
 }

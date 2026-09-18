@@ -1,7 +1,7 @@
 # Billing (Dodo Payments)
 
 Awwtomation sells the STARTER / PRO / AGENCY plans as recurring subscriptions through
-[Dodo Payments](https://dodopayments.com) (merchant of record — Dodo handles cards, tax and
+[Dodo Payments](https://dodopayments.com) (merchant of record, Dodo handles cards, tax and
 invoices). This document covers setup, how entitlements are derived, and the admin override.
 
 Code map:
@@ -62,7 +62,7 @@ script, then in the Dodo dashboard (the script never edits an existing product).
 Dodo dashboard → **Developer → Webhooks → Add endpoint**:
 
 - URL: `https://<your-domain>/api/billing/webhook`
-- Events: at minimum `subscription.*`, `payment.*`, `refund.*`, `dispute.*` (selecting all is fine —
+- Events: at minimum `subscription.*`, `payment.*`, `refund.*`, `dispute.*` (selecting all is fine:
   unknown types are stored in `BillingEvent` and ignored).
 - Copy the signing secret (`whsec_…`):
 
@@ -93,7 +93,7 @@ exercise `payment.failed` / `subscription.on_hold`.
 1. Create a live API key and live products (`DODO_MODE=live`, re-run the products script) and
    set the live `DODO_PRODUCT_*` ids.
 2. Add a live webhook endpoint pointing at the production domain and set its secret.
-3. Set `NEXT_PUBLIC_APP_URL` to the production origin — it builds the checkout `return_url`.
+3. Set `NEXT_PUBLIC_APP_URL` to the production origin: it builds the checkout `return_url`.
 4. Production refuses to start a checkout while `DODO_MODE=test` (HTTP 503 with a detailed server
    log). Set `DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true` only for a deliberate staging deploy.
 
@@ -126,7 +126,7 @@ single workspace. A subscription is attached to an organization in this order:
 
 1. The organization whose `billingSubscriptionId` already equals the subscription id (authoritative).
 2. Otherwise `metadata.organization_id` (or `workspace_id` on subscriptions created before
-   organizations existed; migrated organizations kept their workspace's id) — but only if that
+   organizations existed; migrated organizations kept their workspace's id): but only if that
    organization has **no other live** subscription (ACTIVE / TRIALING / PAST_DUE / ON_HOLD). A stray
    or replayed event can never re-point a paying organization at someone else's subscription.
 
@@ -148,7 +148,7 @@ first (members only), so paying from one tab while another tab switched organiza
 | SUBSCRIPTION | ACTIVE, TRIALING | `subscribedPlan` |
 | SUBSCRIPTION | PAST_DUE, ON_HOLD | `subscribedPlan` for 7 days after `currentPeriodEnd` (grace), then FREE |
 | SUBSCRIPTION | NONE, CANCELLED, EXPIRED | FREE |
-| DEFAULT | — | `plan` (FREE for new organizations) |
+| DEFAULT |: | `plan` (FREE for new organizations) |
 
 `lib/billing/usage.ts` (`reserveDmQuota`, `getOrganizationUsage`, `getUsage`, `checkOrganizationLimit`,
 `checkLimit`, `canAdd*`, `canUseBroadcasts`) reads limits through `effectivePlan`, so quota
@@ -193,12 +193,12 @@ audit log. Customers see the result on their Billing page as a "Custom plan".
 
 ## 5. Troubleshooting
 
-- **Plan not active after paying** — check `BillingEvent` rows (`error` column) and the
+- **Plan not active after paying**: check `BillingEvent` rows (`error` column) and the
   `billing.*` log lines; then hit "Refresh" on the success page or `POST /api/billing/reconcile`
   with `{ subscriptionId }`. Most often the webhook secret or the product ids are wrong.
-- **`billing.unknown_product`** — a subscription references a product id that isn't in
+- **`billing.unknown_product`**: a subscription references a product id that isn't in
   `DODO_PRODUCT_*`; the billing columns are recorded but no plan is granted. Fix the env and reconcile.
-- **`billing.subscription_organization_mismatch`** — the resolution rule above refused to attach a
+- **`billing.subscription_organization_mismatch`**: the resolution rule above refused to attach a
   subscription; inspect the organization's `billingSubscriptionId` before intervening manually.
-- **401 from the webhook route** — secret mismatch (test vs live endpoint) or a proxy that rewrites
+- **401 from the webhook route**: secret mismatch (test vs live endpoint) or a proxy that rewrites
   the body. The signature must be computed over the exact bytes Dodo sent.
