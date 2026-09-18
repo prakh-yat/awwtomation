@@ -1,0 +1,32 @@
+name: Deploy to Mac
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mac
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS, ARM64, awwtomation]
+
+    steps:
+      - name: Pull latest code and restart Docker Compose
+        run: |
+          set -euo pipefail
+          cd /Users/piriri/Desktop/awwtomation
+
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "The deployment folder has local uncommitted changes. Commit or stash them before deploying."
+            git status --short
+            exit 1
+          fi
+
+          git fetch origin main
+          git merge --ff-only origin/main
+          docker compose up -d --build
+          docker compose ps
