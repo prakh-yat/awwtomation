@@ -94,8 +94,10 @@ exercise `payment.failed` / `subscription.on_hold`.
    set the live `DODO_PRODUCT_*` ids.
 2. Add a live webhook endpoint pointing at the production domain and set its secret.
 3. Set `NEXT_PUBLIC_APP_URL` to the production origin: it builds the checkout `return_url`.
-4. Production refuses to start a checkout while `DODO_MODE=test` (HTTP 503 with a detailed server
-   log). Set `DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true` only for a deliberate staging deploy.
+4. Production permits test checkout only when `DODO_MODE=test` is set explicitly. Checkout displays
+   a prominent test-mode notice and no real payment is collected. If `DODO_MODE` is omitted,
+   production fails closed with HTTP 503 instead of silently using the schema's test default.
+   `DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true` remains as a compatibility override for older deploys.
 
 ## 2. Flow
 

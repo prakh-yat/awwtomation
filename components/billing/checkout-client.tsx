@@ -149,6 +149,15 @@ export function CheckoutClient({ tier, initialInterval, email, defaultName, orga
           </Link>
 
           <div className="mt-6">
+            {mode === "test" ? (
+              <div className="mb-5 flex items-start gap-2.5 rounded-md border border-warning/30 bg-warning/5 p-3 text-[13px]" role="status">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                <div>
+                  <p className="font-medium">Test checkout</p>
+                  <p className="mt-0.5 text-muted-foreground">Use a Dodo test card. No real payment will be taken.</p>
+                </div>
+              </div>
+            ) : null}
             <h1 className="text-2xl font-semibold tracking-tight">Payment details</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Upgrading <span className="font-medium text-foreground">{organizationName}</span> to {plan.label}. You&apos;ll enter your card in a secure

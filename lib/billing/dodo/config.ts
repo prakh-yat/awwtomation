@@ -40,9 +40,19 @@ export function isBillingConfigured(): boolean {
 export function assertBillingUsableInProduction(): void {
   if (process.env.NODE_ENV !== "production") return;
   if (getDodoMode() === "live") return;
+  // An explicit test mode is itself an operator choice. This is useful for a
+  // deployed staging/beta URL and is visibly labelled in checkout. Keep an
+  // omitted mode fail-closed: getDodoMode() defaults to test for local builds,
+  // but production must never silently inherit that default.
+  if (process.env.DODO_MODE?.trim() === "test") {
+    logger.warn("billing.test_mode_checkout", {
+      hint: "Dodo test checkout is enabled in production because DODO_MODE=test was set explicitly. No real payment will be collected.",
+    });
+    return;
+  }
   if (optionalEnv("DODO_ALLOW_TEST_MODE_IN_PRODUCTION") === "true") return;
   logger.error("billing.test_mode_in_production", {
-    hint: "DODO_MODE=test on a production deploy. Set DODO_MODE=live (with a live key) or DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true to proceed intentionally.",
+    hint: "DODO_MODE is unset on a production deploy, so billing fell back to test. Set DODO_MODE=test intentionally for test checkout, or DODO_MODE=live with a live key.",
   });
   throw new ApiError(503, "Billing is temporarily unavailable", "BILLING_MISCONFIGURED");
 }

@@ -52,7 +52,10 @@ export async function register(): Promise<void> {
 
   if (production && process.env.DODO_MODE !== "live" && integrations.billing) {
     logger.warn("app.boot.billing_test_mode", {
-      hint: "DODO_MODE is not 'live' in production; set DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true if intentional.",
+      hint:
+        process.env.DODO_MODE === "test"
+          ? "DODO_MODE=test was set explicitly. Test checkout is enabled and no real payment will be collected."
+          : "DODO_MODE is unset, so checkout will fail closed. Set DODO_MODE=test intentionally or configure live billing.",
     });
   }
 }

@@ -276,5 +276,5 @@ Test a restore once into a throwaway database. Backups nobody has restored are h
 | Cron returns 401 | `CRON_SECRET` mismatch, or the scheduler sends no header: use `?token=`. |
 | Webhook verification fails in Meta | app not reachable over https yet, or `META_WEBHOOK_VERIFY_TOKEN` differs from what you typed in Meta. |
 | Comments arrive but no DM | worker down (see above) or plan quota reached: Logs page shows the skip reason per delivery. |
-| Boot log `app.boot.billing_test_mode` | `DODO_MODE=test` in production. Intentional? set `DODO_ALLOW_TEST_MODE_IN_PRODUCTION=true`. |
+| Boot log `app.boot.billing_test_mode` | Billing is not live. Explicit `DODO_MODE=test` enables labelled test checkout; an omitted mode fails checkout closed. |
 | Process exits immediately with "Invalid environment configuration" | a required variable is missing; the message lists which. `node scripts/check-env.mjs` shows the same table. |
