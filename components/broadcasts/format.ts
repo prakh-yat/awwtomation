@@ -8,29 +8,29 @@ import type { BroadcastAudience, BroadcastRow } from "./types";
 
 type BadgeVariant = NonNullable<BadgeProps["variant"]>;
 
-const STATUS_META: Record<BroadcastStatus, { label: string; variant: BadgeVariant }> = {
-  DRAFT: { label: "Draft", variant: "outline" },
-  SCHEDULED: { label: "Scheduled", variant: "secondary" },
-  SENDING: { label: "Sending", variant: "warning" },
+const STATUS_META: Record<BroadcastStatus, { label: string; variant: BadgeVariant; live?: boolean }> = {
+  DRAFT: { label: "Draft", variant: "secondary" },
+  SCHEDULED: { label: "Scheduled", variant: "sky" },
+  SENDING: { label: "Sending", variant: "blue", live: true },
   SENT: { label: "Sent", variant: "success" },
   FAILED: { label: "Failed", variant: "destructive" },
-  CANCELLED: { label: "Cancelled", variant: "outline" },
+  CANCELLED: { label: "Cancelled", variant: "secondary" },
 };
 
-export function statusMeta(status: BroadcastStatus): { label: string; variant: BadgeVariant } {
+export function statusMeta(status: BroadcastStatus): { label: string; variant: BadgeVariant; live?: boolean } {
   return STATUS_META[status];
 }
 
 const DELIVERY_META: Record<DeliveryStatus, { label: string; variant: BadgeVariant }> = {
   SENT: { label: "Sent", variant: "success" },
   FAILED: { label: "Failed", variant: "destructive" },
-  SKIPPED_WINDOW: { label: "Outside 24 hours", variant: "outline" },
-  SKIPPED_OPTED_OUT: { label: "Opted out", variant: "outline" },
-  SKIPPED_PLAN_LIMIT: { label: "Monthly limit", variant: "warning" },
-  SKIPPED_RATE_LIMIT: { label: "Hourly limit", variant: "warning" },
-  SKIPPED_SELF: { label: "Own account", variant: "outline" },
-  SKIPPED_DUPLICATE: { label: "Already replied", variant: "outline" },
-  SKIPPED_NOT_FOLLOWING: { label: "Not following", variant: "outline" },
+  SKIPPED_WINDOW: { label: "Over 24 hours", variant: "secondary" },
+  SKIPPED_OPTED_OUT: { label: "Opted out", variant: "secondary" },
+  SKIPPED_PLAN_LIMIT: { label: "Monthly limit", variant: "yellow" },
+  SKIPPED_RATE_LIMIT: { label: "Too many at once", variant: "yellow" },
+  SKIPPED_SELF: { label: "Own account", variant: "secondary" },
+  SKIPPED_DUPLICATE: { label: "Already sent", variant: "secondary" },
+  SKIPPED_NOT_FOLLOWING: { label: "Not following", variant: "secondary" },
 };
 
 export function deliveryMeta(status: DeliveryStatus): { label: string; variant: BadgeVariant } {

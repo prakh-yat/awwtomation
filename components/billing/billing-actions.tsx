@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
+import { ON_DARK } from "@/components/billing/on-dark";
 import { apiFetch, errorMessage } from "@/components/settings/client-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,9 +43,12 @@ export interface BillingActionsProps {
 }
 
 /**
- * Buttons on the current-plan card. Each action hits its own route and then
- * refreshes the server-rendered page, so the card, plan grid and payment
+ * Buttons on the ink plan block. Each action hits its own route and then
+ * refreshes the server-rendered page, so the block, plan grid and payment
  * history all reflect the new state without client-side bookkeeping.
+ *
+ * One white pill per state: resuming while the plan is set to cancel, fixing
+ * the card while a payment is failing, otherwise changing plan.
  */
 export function BillingActions({ overview, canManage }: BillingActionsProps) {
   const router = useRouter();
@@ -52,7 +56,9 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
   const [resumePending, setResumePending] = React.useState(false);
 
   const state: ServiceState = overview.serviceState;
-  const disabledReason = !canManage ? "Only an owner of the organization can change billing" : !overview.configured ? "Billing isn't configured yet" : null;
+  const cancelling = state === "cancelling";
+  const unpaid = state === "grace" || state === "lapsed";
+  const disabledReason = !canManage ? "Only an owner can change billing" : !overview.configured ? "Billing isn't configured yet" : null;
 
   async function openPortal() {
     setPortalPending(true);
@@ -78,47 +84,70 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
     }
   }
 
+  const changePlanFirst = !cancelling && !unpaid;
+  const changePlan = (
+    <Button asChild size="sm" variant={changePlanFirst ? "secondary" : "outline"} className={changePlanFirst ? ON_DARK.primary : ON_DARK.outline}>
+      <Link href="#plans">Change plan</Link>
+    </Button>
+  );
+  const portal = (
+    <Button
+      size="sm"
+      variant={unpaid ? "secondary" : "outline"}
+      className={unpaid ? ON_DARK.primary : ON_DARK.outline}
+      onClick={openPortal}
+      loading={portalPending}
+      disabled={Boolean(disabledReason) || !overview.hasCustomer}
+      title={disabledReason ?? (!overview.hasCustomer ? "No billing account yet" : undefined)}
+    >
+      Payment methods &amp; invoices
+      <ExternalLink />
+    </Button>
+  );
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {overview.hasSubscription ? (
         <>
-          <Button asChild size="sm">
-            <Link href="#plans">Change plan</Link>
-          </Button>
-          {state === "cancelling" ? (
-            <Button size="sm" variant="outline" onClick={resume} loading={resumePending} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
+          {cancelling ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className={ON_DARK.primary}
+              onClick={resume}
+              loading={resumePending}
+              disabled={Boolean(disabledReason)}
+              title={disabledReason ?? undefined}
+            >
               Resume plan
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={openPortal}
-            loading={portalPending}
-            disabled={Boolean(disabledReason) || !overview.hasCustomer}
-            title={disabledReason ?? (!overview.hasCustomer ? "No billing account yet" : undefined)}
-          >
-            Manage payment methods &amp; invoices
-            <ExternalLink />
-          </Button>
-          {state !== "cancelling" ? (
-            <CancelDialog overview={overview} disabledReason={disabledReason} onDone={() => router.refresh()} />
-          ) : null}
+          {unpaid ? portal : changePlan}
+          {unpaid ? changePlan : portal}
+          {!cancelling ? <CancelDialog overview={overview} disabledReason={disabledReason} onDone={() => router.refresh()} /> : null}
         </>
       ) : (
         <>
-          <Button asChild size="sm">
+          <Button asChild size="sm" variant="secondary" className={ON_DARK.primary}>
             <Link href="#plans">Upgrade</Link>
           </Button>
           {overview.hasCustomer ? (
-            <Button size="sm" variant="outline" onClick={openPortal} loading={portalPending} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
+            <Button
+              size="sm"
+              variant="outline"
+              className={ON_DARK.outline}
+              onClick={openPortal}
+              loading={portalPending}
+              disabled={Boolean(disabledReason)}
+              title={disabledReason ?? undefined}
+            >
               Past invoices
               <ExternalLink />
             </Button>
           ) : null}
         </>
       )}
-      {!canManage ? <p className="basis-full text-xs text-muted-foreground">Only an owner of the organization can change billing.</p> : null}
+      {!canManage ? <p className="basis-full text-xs text-white/60">Only an owner can change billing.</p> : null}
     </div>
   );
 }
@@ -168,17 +197,17 @@ function CancelDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
+        <Button size="sm" variant="ghost" className={ON_DARK.ghost} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
           Cancel plan
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Cancel the {planLabel} plan?</DialogTitle>
           <DialogDescription>
             {endDate
-              ? `You keep everything until ${endDate}, then the organization moves to Free limits. Nothing is refunded and you can resume any time before then.`
-              : "The organization moves to Free limits at the end of the current period. You can resume any time before then."}
+              ? `You keep ${planLabel} until ${endDate}, then the organization moves to Free. Nothing is refunded, and you can resume any time before then.`
+              : "The organization moves to Free at the end of the current period. You can resume any time before then."}
           </DialogDescription>
         </DialogHeader>
 
@@ -204,19 +233,19 @@ function CancelDialog({
               id="cancel-comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Optional. This goes straight to our team."
+              placeholder="Optional"
               rows={3}
               maxLength={500}
             />
           </div>
         </div>
 
-        <DialogFooter className="mt-2 gap-2 sm:gap-0">
+        <DialogFooter className="mt-2">
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
-            Keep my plan
+            Keep plan
           </Button>
           <Button type="button" variant="destructive" onClick={confirm} loading={pending}>
-            Cancel at period end
+            Cancel plan
           </Button>
         </DialogFooter>
       </DialogContent>

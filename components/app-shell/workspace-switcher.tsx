@@ -7,8 +7,10 @@ import Link from "next/link";
 import { ArrowLeftRight, Check, ChevronsUpDown, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TONES, type Tone } from "@/components/ui/tone";
 import { clientErrorMessage } from "@/lib/errors/customer-messages";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +32,16 @@ export interface WorkspaceSwitcherProps {
 
 function initialOf(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
+}
+
+const WORKSPACE_TONES: Tone[] = ["purple", "blue", "green", "orange", "indigo", "magenta", "sky", "lavender", "yellow"];
+
+/** Each workspace keeps one colour, picked from its id, so two brands never look alike in the switcher. */
+export function workspaceTone(id: string | undefined): Tone {
+  if (!id) return "fog";
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return WORKSPACE_TONES[hash % WORKSPACE_TONES.length];
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -62,21 +74,24 @@ export function WorkspaceCard({
       onClick={onOpen}
       aria-label={workspace ? `Switch workspace, current: ${workspace.name}` : "Choose a workspace"}
       className={cn(
-        "group flex w-full items-center rounded-lg bg-primary text-left text-primary-foreground outline-none transition-colors",
-        "hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
-        collapsed ? "h-10 justify-center px-0" : "gap-3 px-2.5 py-2",
+        "group flex w-full items-center text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        collapsed ? "h-full justify-center rounded-[28%]" : "gap-3 rounded-2xl border bg-card px-2.5 py-2 hover:border-ink/30",
+        collapsed && TONES[workspaceTone(workspace?.id)].solid,
       )}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-sm font-semibold ring-1 ring-inset ring-white/10">
-        {workspace ? initialOf(workspace.name) : "?"}
-      </span>
-      {collapsed ? null : (
+      {collapsed ? (
+        // Sized off the dock slot (a size container), so it grows with the tile.
+        <span className="font-display text-[36cqw] leading-none">{workspace ? initialOf(workspace.name) : "?"}</span>
+      ) : (
         <>
+          <span className={cn("font-display flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[16px]", TONES[workspaceTone(workspace?.id)].solid)}>
+            {workspace ? initialOf(workspace.name) : "?"}
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[11px] leading-tight text-white/60">{organizationName}</span>
+            <span className="block truncate text-[11px] leading-tight text-muted-foreground">{organizationName}</span>
             <span className="block truncate text-sm font-semibold leading-tight">{workspace?.name ?? "No workspace"}</span>
           </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-white/60 transition-colors group-hover:text-white/90" />
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-ink" />
         </>
       )}
     </button>
@@ -156,25 +171,25 @@ export function WorkspaceSwitcher({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-black/30 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed z-[61] flex max-h-[calc(100vh-2rem)] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl bg-background shadow-elevated outline-none ring-1 ring-border",
+            "fixed z-[61] flex max-h-[calc(100vh-2rem)] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl bg-background shadow-pop outline-none ring-1 ring-border",
             "left-4 top-4 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-left-2",
-            variant === "rail" && (collapsed ? "md:left-[5rem]" : "md:left-[17rem]"),
+            variant === "rail" && (collapsed ? "md:left-[6rem]" : "md:left-[17rem]"),
           )}
         >
-          <header className="flex items-start justify-between gap-3 border-b px-4 py-3">
+          <header className="flex items-start justify-between gap-3 border-b px-4 py-3.5">
             <div className="min-w-0">
-              <DialogPrimitive.Title className="text-sm font-semibold">Workspaces</DialogPrimitive.Title>
-              <DialogPrimitive.Description className="mt-0.5 text-xs text-muted-foreground">
-                In <span className="font-medium text-foreground">{organization.name}</span>. Each one has its own accounts and contacts, and all of
-                them share the {planLabel(organization.plan)} plan.
+              <DialogPrimitive.Title className="font-display text-[20px] leading-none">Workspaces</DialogPrimitive.Title>
+              <DialogPrimitive.Description className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                <span className="truncate">{organization.name}</span>
+                <Badge variant="yellow">{planLabel(organization.plan)}</Badge>
               </DialogPrimitive.Description>
             </div>
             <DialogPrimitive.Close
               aria-label="Close"
-              className="-mr-1 rounded-md p-1 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="-mr-1 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
             >
               <X className="h-4 w-4" />
             </DialogPrimitive.Close>
@@ -190,18 +205,18 @@ export function WorkspaceSwitcher({
                     onClick={() => switchTo(ws.id)}
                     disabled={switchingId !== null}
                     className={cn(
-                      "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
-                      isActive ? "bg-muted" : "hover:bg-muted/60",
+                      "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default",
+                      isActive ? "bg-fog" : "hover:bg-fog/60",
                     )}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+                    <span className={cn("font-display flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[14px]", TONES[workspaceTone(ws.id)].solid)}>
                       {initialOf(ws.name)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{ws.name}</span>
                     {switchingId === ws.id ? (
                       <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
                     ) : isActive ? (
-                      <Check className="h-4 w-4 shrink-0 text-foreground" />
+                      <Check className="h-4 w-4 shrink-0 text-purple" strokeWidth={2.5} />
                     ) : null}
                   </button>
                 </li>
@@ -231,7 +246,7 @@ export function WorkspaceSwitcher({
                 </div>
               </form>
             ) : canCreate ? (
-              <Button variant="outline" className="w-full" onClick={() => setCreating(true)}>
+              <Button variant="secondary" className="w-full" onClick={() => setCreating(true)}>
                 <Plus className="h-4 w-4" />
                 New workspace
               </Button>
@@ -240,7 +255,7 @@ export function WorkspaceSwitcher({
               <Link
                 href="/organizations"
                 onClick={() => onOpenChange(false)}
-                className="flex h-9 items-center justify-center gap-2 rounded-md text-[13px] text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-9 items-center justify-center gap-2 rounded-full text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <ArrowLeftRight className="h-3.5 w-3.5" />
                 Switch organization

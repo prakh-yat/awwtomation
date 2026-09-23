@@ -1,22 +1,26 @@
 import type { WorkspaceRole } from "@prisma/client";
 import {
   BarChart3,
+  BotMessageSquare,
   Inbox,
   LayoutDashboard,
   Link2,
   Megaphone,
-  Plug,
   ScrollText,
-  Sparkles,
+  Settings,
   Users,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
 
+import type { Tone } from "@/components/ui/tone";
+
 export type NavItem = {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** The section's colour: its dock tile and the tile next to its page title. */
+  tone: Tone;
 };
 
 export type SettingsLink = {
@@ -28,20 +32,35 @@ export type SettingsLink = {
 
 /**
  * Flat primary navigation, in the order people use the product: see how it's
- * going, build automations, talk to people, then the account plumbing.
+ * going, build automations, then talk to people. Connected accounts are managed
+ * from the dashboard, and settings from the account menu.
  */
 export const PRIMARY_NAV: readonly NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Automations", href: "/automations", icon: Workflow },
-  { label: "AI", href: "/ai", icon: Sparkles },
-  { label: "Inbox", href: "/inbox", icon: Inbox },
-  { label: "Contacts", href: "/contacts", icon: Users },
-  { label: "Broadcasts", href: "/broadcasts", icon: Megaphone },
-  { label: "Channels", href: "/channels", icon: Plug },
-  { label: "Links", href: "/links", icon: Link2 },
-  { label: "Logs", href: "/logs", icon: ScrollText },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, tone: "yellow" },
+  { label: "Analytics", href: "/analytics", icon: BarChart3, tone: "blue" },
+  { label: "Automations", href: "/automations", icon: Workflow, tone: "purple" },
+  { label: "AI", href: "/ai", icon: BotMessageSquare, tone: "ink" },
+  { label: "Inbox", href: "/inbox", icon: Inbox, tone: "magenta" },
+  { label: "Contacts", href: "/contacts", icon: Users, tone: "green" },
+  { label: "Broadcasts", href: "/broadcasts", icon: Megaphone, tone: "orange" },
+  { label: "Links", href: "/links", icon: Link2, tone: "sky" },
+  { label: "Logs", href: "/logs", icon: ScrollText, tone: "lavender" },
 ];
+
+export const SETTINGS_NAV: NavItem = { label: "Settings", href: "/settings", icon: Settings, tone: "fog" };
+
+/**
+ * The section a pathname belongs to, for the tile next to a page title. Usage
+ * sits with Settings, and the Facebook Page picker with the dashboard, where
+ * accounts are managed.
+ */
+export function sectionFor(pathname: string): NavItem | null {
+  const primary = PRIMARY_NAV.find((item) => isActivePath(pathname, item.href));
+  if (primary) return primary;
+  if (isActivePath(pathname, "/channels")) return PRIMARY_NAV[0];
+  if (isActivePath(pathname, "/settings") || isActivePath(pathname, "/usage")) return SETTINGS_NAV;
+  return null;
+}
 
 /**
  * Settings sub-navigation, filtered by role so nobody sees a link to a page that
@@ -72,6 +91,8 @@ export type SectionTab = {
   href: string;
   /** Match only the exact path, for a tab whose section root has children. */
   exact?: boolean;
+  /** Paths under this tab that belong to a sibling tab instead. */
+  exclude?: readonly string[];
   /** Hidden from MEMBER accounts, which cannot open the page anyway. */
   adminOnly?: boolean;
 };
@@ -83,16 +104,8 @@ export type SectionTab = {
  * is noise, so `sectionTabs` returns nothing rather than a single chip.
  */
 const SECTION_TABS: Record<string, readonly SectionTab[]> = {
-  "/automations": [
-    { label: "Automations", href: "/automations", exact: true },
-    { label: "Templates", href: "/automations?templates=1" },
-  ],
-  "/ai": [
-    { label: "Agents", href: "/ai", exact: true },
-    { label: "Providers", href: "/ai/providers" },
-  ],
   "/contacts": [
-    { label: "Contacts", href: "/contacts", exact: true },
+    { label: "Contacts", href: "/contacts", exclude: ["/contacts/pipelines"] },
     { label: "Pipelines", href: "/contacts/pipelines" },
   ],
   "/settings": [
@@ -102,6 +115,12 @@ const SECTION_TABS: Record<string, readonly SectionTab[]> = {
     { label: "Billing", href: "/settings/billing", adminOnly: true },
   ],
 };
+
+/** Whether a tab reads as the current page: its path, minus what a sibling tab owns. */
+export function isTabActive(pathname: string, tab: SectionTab): boolean {
+  if (!isActivePath(pathname, tab.href, tab.exact)) return false;
+  return !(tab.exclude ?? []).some((other) => isActivePath(pathname, other));
+}
 
 /** Tabs for the section the pathname belongs to, filtered by role. */
 export function sectionTabs(pathname: string, role: WorkspaceRole): SectionTab[] {

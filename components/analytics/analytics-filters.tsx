@@ -4,7 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarRange, ChevronDown } from "lucide-react";
 
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,12 @@ const PRESETS = [
 
 const ALL = "all";
 
+/** One pill on the date track: ink when chosen, as every segmented control is. */
+const RANGE_PILL =
+  "inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring sm:px-3.5";
+const RANGE_PILL_ON = "bg-ink text-white";
+const RANGE_PILL_OFF = "text-muted-foreground hover:bg-background hover:text-ink";
+
 const PendingContext = React.createContext(false);
 
 /**
@@ -38,7 +44,6 @@ export function AnalyticsFrame({
   channels,
   automations,
   rangeLabel,
-  compareLabel,
   today,
   children,
   actions,
@@ -47,10 +52,8 @@ export function AnalyticsFrame({
   channels?: FilterChannel[];
   /** Omit to hide the automation filter, e.g. on a single automation's report. */
   automations?: FilterAutomation[];
-  /** e.g. "Aug 15 – Sep 13" */
+  /** e.g. "Aug 15 – Sep 13", on the custom range pill once one is chosen. */
   rangeLabel: string;
-  /** e.g. "vs Jul 16 – Aug 14", shown once for every change figure below. */
-  compareLabel: string;
   /** YYYY-MM-DD in the workspace time zone; the latest selectable day. */
   today: string;
   actions?: React.ReactNode;
@@ -88,7 +91,7 @@ export function AnalyticsFrame({
     <PendingContext.Provider value={pending}>
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5" role="group" aria-label="Date range">
+          <div className="scrollbar-none inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-fog p-1" role="group" aria-label="Date range">
             {PRESETS.map((preset) => (
               <button
                 key={preset.days}
@@ -101,29 +104,20 @@ export function AnalyticsFrame({
                   })
                 }
                 aria-pressed={activePreset === preset.days}
-                className={cn(
-                  "h-8 rounded-md px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                  activePreset === preset.days
-                    ? "bg-background font-medium text-foreground shadow-card"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
+                aria-label={preset.label}
+                className={cn(RANGE_PILL, activePreset === preset.days ? RANGE_PILL_ON : RANGE_PILL_OFF)}
               >
-                {preset.label.replace("Last ", "")}
+                {/* All four choices fit a phone's width only in the short form. */}
+                <span className="sm:hidden">{preset.days}d</span>
+                <span className="hidden sm:inline">{preset.label.replace("Last ", "")}</span>
               </button>
             ))}
             <Popover open={customOpen} onOpenChange={setCustomOpen}>
               <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-pressed={custom}
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                    custom ? "bg-background font-medium text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <CalendarRange className="h-3.5 w-3.5" />
+                <button type="button" aria-pressed={custom} className={cn(RANGE_PILL, custom ? RANGE_PILL_ON : RANGE_PILL_OFF)}>
+                  <CalendarRange className="hidden h-3.5 w-3.5 sm:block" aria-hidden />
                   {custom ? rangeLabel : "Custom"}
-                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" aria-hidden />
                 </button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-72">
@@ -147,7 +141,7 @@ export function AnalyticsFrame({
                       <Input id="range-to" type="date" value={draftTo} max={today} onChange={(e) => setDraftTo(e.target.value)} required />
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">Up to a year. Compared with the same number of days before it.</p>
+                  <p className="text-xs text-muted-foreground">Up to a year.</p>
                   <Button type="submit" size="sm" className="w-full">
                     Apply range
                   </Button>
@@ -158,7 +152,7 @@ export function AnalyticsFrame({
 
           {channels && channels.length > 1 ? (
             <Select value={channelId} onValueChange={(v) => push({ channelId: v, automationId: null })}>
-              <SelectTrigger className="h-9 w-auto min-w-[160px] gap-2" aria-label="Account">
+              <SelectTrigger className="min-w-0 grow basis-40 gap-2 sm:w-auto sm:min-w-[170px] sm:grow-0 sm:basis-auto" aria-label="Account">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -166,7 +160,7 @@ export function AnalyticsFrame({
                 {(channels ?? []).map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     <span className="flex items-center gap-2">
-                      <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
+                      <PlatformMark platform={c.platform} size={16} />
                       {c.label}
                     </span>
                   </SelectItem>
@@ -177,7 +171,7 @@ export function AnalyticsFrame({
 
           {automations ? (
             <Select value={automationId} onValueChange={(v) => push({ automationId: v })}>
-              <SelectTrigger className="h-9 w-auto min-w-[180px] max-w-[260px] gap-2" aria-label="Automation">
+              <SelectTrigger className="min-w-0 grow basis-40 gap-2 sm:w-auto sm:min-w-[180px] sm:max-w-[260px] sm:grow-0 sm:basis-auto" aria-label="Automation">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -191,7 +185,9 @@ export function AnalyticsFrame({
             </Select>
           ) : null}
 
-          <span className="text-xs text-muted-foreground">{pending ? "Updating…" : `Changes ${compareLabel}`}</span>
+          <span className="sr-only" aria-live="polite">
+            {pending ? "Updating" : ""}
+          </span>
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>

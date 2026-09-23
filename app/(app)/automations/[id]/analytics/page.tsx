@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import type { TriggerType } from "@prisma/client";
 import { format, formatDistanceToNowStrict, parseISO } from "date-fns";
 import { Pencil } from "lucide-react";
 
 import { AnalyticsFrame } from "@/components/analytics/analytics-filters";
+import { CardLink } from "@/components/analytics/card-link";
+import { KpiStrip } from "@/components/analytics/kpi-strip";
 import { DATE_KEY, formatRate, minusDays, todayIn } from "@/components/analytics/range";
 import { AutomationStatusBadge } from "@/components/automations/badges";
 import { BarList } from "@/components/charts/bar-list";
@@ -13,10 +16,12 @@ import { FunnelChart } from "@/components/charts/funnel";
 import { Heatmap } from "@/components/charts/heatmap";
 import { MetricTabs, type MetricTab } from "@/components/charts/metric-tabs";
 import { withPrevious } from "@/components/charts/series";
+import { stagger } from "@/components/charts/stagger";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deliveryReason } from "@/lib/errors/customer-messages";
 import { getAnalytics } from "@/lib/services/analytics";
@@ -28,6 +33,8 @@ type Params = Promise<{ id: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const PRESET_DAYS = new Set(["7", "30", "90"]);
+/** Keywords past this many collapse into a count, so the line stays one line. */
+const KEYWORDS_SHOWN = 6;
 
 // generateMetadata and the page both need the automation; cache dedupes the query per request.
 const loadAutomation = cache((workspaceId: string, id: string) => getAutomation(workspaceId, id));
@@ -50,14 +57,31 @@ const KIND_LABEL: Record<RecentDelivery["kind"], string> = {
   BROADCAST: "Broadcast",
 };
 
+const TRIGGER_NOUN: Record<TriggerType, { one: string; many: string }> = {
+  COMMENT: { one: "comment", many: "Comments" },
+  DM: { one: "DM", many: "DMs" },
+  STORY_REPLY: { one: "story reply", many: "Story replies" },
+};
+
 function Outcome({ delivery }: { delivery: RecentDelivery }) {
-  const sent = delivery.status === "SENT";
-  const failed = delivery.status === "FAILED";
+  if (delivery.status === "SENT") {
+    return (
+      <Badge variant="success" dot>
+        Sent
+      </Badge>
+    );
+  }
+  if (delivery.status === "FAILED") {
+    return (
+      <Badge variant="destructive" dot>
+        Failed
+      </Badge>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className={cn("h-1.5 w-1.5 rounded-full", sent ? "bg-success" : failed ? "bg-destructive" : "bg-muted-foreground/50")} aria-hidden />
-      {sent ? "Sent" : failed ? "Failed" : "Not sent"}
-    </span>
+    <Badge variant="secondary" dot>
+      Not sent
+    </Badge>
   );
 }
 
@@ -110,11 +134,9 @@ export default async function AutomationReportPage({ params, searchParams }: { p
   const keywordItems = report.topKeywords.slice(0, 8).map((k) => ({ key: k.keyword, label: k.keyword, value: k.count }));
 
   const account = automation.channel.username ? `@${automation.channel.username}` : (automation.channel.name ?? "Your account");
-  const trigger =
-    automation.triggerType === "COMMENT" ? "Comments" : automation.triggerType === "DM" ? "DMs" : "Story replies";
-  const matching = automation.matchMode === "ANY" ? "every message" : automation.keywords.length ? automation.keywords.join(", ") : "no keywords yet";
+  const noun = TRIGGER_NOUN[automation.triggerType];
+  const hiddenKeywords = automation.keywords.length - KEYWORDS_SHOWN;
   const rangeLabel = `${format(parseISO(report.range.from), "MMM d")} – ${format(parseISO(report.range.to), "MMM d")}`;
-  const compareLabel = `vs ${format(parseISO(report.range.previousFrom), "MMM d")} – ${format(parseISO(report.range.previousTo), "MMM d")}`;
 
   return (
     <>
@@ -139,19 +161,33 @@ export default async function AutomationReportPage({ params, searchParams }: { p
 
       {/* What this report is of. It used to sit in the page description, which
           only the dashboard carries now. */}
-      <p className="-mt-3 mb-6 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <PlatformIcon platform={automation.channel.platform} size={14} />
+      <div className="-mt-3 mb-6 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
+          <PlatformMark platform={automation.channel.platform} size={18} />
           {account}
         </span>
         <span aria-hidden>·</span>
-        <span>
-          {trigger} matching {matching}
-        </span>
-      </p>
+        {automation.matchMode === "ANY" ? (
+          <span>Every {noun.one}</span>
+        ) : automation.keywords.length === 0 ? (
+          <span>No keywords yet</span>
+        ) : (
+          <>
+            <span>{noun.many} matching</span>
+            {automation.keywords.slice(0, KEYWORDS_SHOWN).map((keyword, i) => (
+              <Badge key={`${i}-${keyword}`} variant="secondary" className="font-medium">
+                {keyword}
+              </Badge>
+            ))}
+            {hiddenKeywords > 0 ? <span className="text-xs">+{hiddenKeywords} more</span> : null}
+          </>
+        )}
+      </div>
 
-      <AnalyticsFrame rangeLabel={rangeLabel} compareLabel={compareLabel} today={today}>
+      <AnalyticsFrame rangeLabel={rangeLabel} today={today}>
         <div className="space-y-6">
+          <KpiStrip items={metrics} highlight="sent" tone="purple" />
+
           <Card className="overflow-hidden">
             <MetricTabs metrics={metrics} initialKey="sent" height={260} />
           </Card>
@@ -160,7 +196,6 @@ export default async function AutomationReportPage({ params, searchParams }: { p
             <Card>
               <CardHeader>
                 <CardTitle>From trigger to lead</CardTitle>
-                <CardDescription>People at each step, as a share of the step before.</CardDescription>
               </CardHeader>
               <CardContent>
                 <FunnelChart steps={report.funnel.steps} />
@@ -169,7 +204,6 @@ export default async function AutomationReportPage({ params, searchParams }: { p
             <Card>
               <CardHeader>
                 <CardTitle>Why DMs weren&apos;t sent</CardTitle>
-                <CardDescription>Held back by Instagram rules or your own settings, or refused by Instagram.</CardDescription>
               </CardHeader>
               <CardContent>
                 <BarList items={skipItems} valueLabel="messages" emptyLabel="Every DM in this range went out" />
@@ -178,10 +212,9 @@ export default async function AutomationReportPage({ params, searchParams }: { p
           </div>
 
           <div className={cn("grid grid-cols-1 gap-6", keywordItems.length > 0 && "lg:grid-cols-[1.6fr_1fr]")}>
-            <Card>
+            <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Busiest times</CardTitle>
-                <CardDescription>When this automation runs, by day and hour.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Heatmap grid={report.heatmap} unit="run" timezone={timezone} />
@@ -191,7 +224,6 @@ export default async function AutomationReportPage({ params, searchParams }: { p
               <Card>
                 <CardHeader>
                   <CardTitle>Keywords</CardTitle>
-                  <CardDescription>Which words started the most runs.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <BarList items={keywordItems} valueLabel="runs" />
@@ -201,20 +233,12 @@ export default async function AutomationReportPage({ params, searchParams }: { p
           </div>
 
           <Card className="overflow-hidden">
-            <CardHeader className="flex-row items-start justify-between space-y-0">
-              <div className="space-y-1">
-                <CardTitle>Latest messages</CardTitle>
-                <CardDescription>The 20 most recent, newest first.</CardDescription>
-              </div>
-              <Link
-                href={`/logs?automationId=${encodeURIComponent(automation.id)}`}
-                className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-              >
-                See all in Logs
-              </Link>
+            <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+              <CardTitle>Latest messages</CardTitle>
+              <CardLink href={`/logs?automationId=${encodeURIComponent(automation.id)}`}>Open Logs</CardLink>
             </CardHeader>
             {recent.length === 0 ? (
-              <p className="border-t px-5 py-8 text-[13px] text-muted-foreground">Nothing sent yet. Messages show up here the first time the automation runs.</p>
+              <p className="border-t px-5 py-8 text-[13px] text-muted-foreground">Nothing sent yet.</p>
             ) : (
               <div className="overflow-x-auto border-t">
                 <Table>
@@ -222,20 +246,20 @@ export default async function AutomationReportPage({ params, searchParams }: { p
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-5">Contact</TableHead>
                       <TableHead>Outcome</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="min-w-[260px]">Message</TableHead>
+                      <TableHead className="hidden sm:table-cell">Type</TableHead>
+                      <TableHead className="min-w-[240px]">Message</TableHead>
                       <TableHead className="pr-5 text-right">When</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recent.map((d) => {
+                    {recent.map((d, i) => {
                       const who = d.contactUsername ? `@${d.contactUsername}` : (d.contactName ?? "Unknown contact");
                       const text = d.status === "SENT" ? d.messagePreview : (d.reason ?? d.messagePreview);
                       return (
-                        <TableRow key={d.id}>
+                        <TableRow key={d.id} className="rise" style={stagger(i)}>
                           <TableCell className="whitespace-nowrap pl-5">
                             {d.contactId ? (
-                              <Link href={`/contacts/${d.contactId}`} className="font-medium underline-offset-4 hover:underline">
+                              <Link href={`/contacts/${d.contactId}`} className="font-semibold underline-offset-4 hover:underline">
                                 {who}
                               </Link>
                             ) : (
@@ -245,7 +269,7 @@ export default async function AutomationReportPage({ params, searchParams }: { p
                           <TableCell>
                             <Outcome delivery={d} />
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-muted-foreground">{KIND_LABEL[d.kind]}</TableCell>
+                          <TableCell className="hidden whitespace-nowrap text-muted-foreground sm:table-cell">{KIND_LABEL[d.kind]}</TableCell>
                           <TableCell>
                             <p className={cn("max-w-[420px] truncate", d.status !== "SENT" && "text-muted-foreground")} title={text ?? undefined}>
                               {text ?? "–"}

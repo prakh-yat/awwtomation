@@ -8,18 +8,20 @@ const sizes = {
   lg: "h-8 w-8",
 } as const;
 
-export interface SpinnerProps extends React.SVGAttributes<SVGSVGElement> {
+export interface SpinnerProps extends React.HTMLAttributes<HTMLSpanElement> {
   size?: keyof typeof sizes;
 }
 
+/**
+ * The rotation lives on the icon and any positioning on the wrapper: a
+ * `translate` class on the spinning element itself would be overwritten by the
+ * spin's own transform and drift.
+ */
 function Spinner({ size = "default", className, ...props }: SpinnerProps) {
   return (
-    <LoaderCircle
-      role="status"
-      aria-label="Loading"
-      className={cn("animate-spin text-muted-foreground", sizes[size], className)}
-      {...props}
-    />
+    <span role="status" aria-label="Loading" className={cn("inline-flex shrink-0 text-muted-foreground", className)} {...props}>
+      <LoaderCircle aria-hidden className={cn("animate-spin", sizes[size])} />
+    </span>
   );
 }
 

@@ -54,8 +54,8 @@ export function ColumnChart({
       const d = payload[0]?.payload as ColumnDatum | undefined;
       if (!d) return null;
       return (
-        <div className="min-w-[150px] rounded-lg border bg-background px-3 py-2.5 text-xs shadow-elevated">
-          <p className="text-sm font-semibold tabular-nums">{formatNumber(d.value)}</p>
+        <div className="min-w-[150px] rounded-xl border bg-background px-3 py-2.5 text-xs shadow-elevated">
+          <p className="text-sm font-semibold tabular-nums text-ink">{formatNumber(d.value)}</p>
           <p className="mt-0.5 text-muted-foreground">
             {valueLabel} · {d.label}
           </p>
@@ -88,7 +88,7 @@ export function ColumnChart({
             axisLine={false}
             tickFormatter={(v) => formatNumber(Number(v))}
           />
-          <Tooltip content={renderTooltip} cursor={{ fill: "rgba(24, 24, 27, 0.04)" }} isAnimationActive={false} />
+          <Tooltip content={renderTooltip} cursor={{ fill: "rgba(15, 15, 15, 0.04)" }} isAnimationActive={false} />
           {showLimit ? (
             <ReferenceLine
               y={limit}

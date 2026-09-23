@@ -3,43 +3,44 @@
 import { Clock } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { WindowState } from "@/lib/services/inbox";
+import { cn } from "@/lib/utils";
 
-import { timeLeft } from "./format";
-import { WINDOW_RULE_EXPLANATION } from "./window-state";
+import { untilLabel } from "./format";
+import { teamReplyDeadline } from "./window-state";
+
+/** With less than this left the pill turns orange and pulses. */
+const CLOSING_SOON_MS = 2 * 3600 * 1000;
 
 /**
- * How long you can still reply: "23h left", then "6d left" once only a person
- * on the team may answer, then "Can't reply". The rule itself is in the tooltip.
- * It avoids "Open" and "Closed", which already describe the conversation.
+ * How long you can still reply, as one compact pill: "Replies open until
+ * Tue 4:12 pm", orange once it is nearly up, "Replies closed" after that.
+ * The deadline is the one that applies to a person replying from here.
  */
-function WindowBadge({ window, now }: { window: WindowState; now: number }) {
-  let label: string;
-  let variant: "success" | "warning" | "secondary";
-  if (window.kind === "standard") {
-    label = timeLeft(window.expiresAt, now);
-    variant = "success";
-  } else if (window.kind === "human_agent") {
-    label = `${timeLeft(window.expiresAt, now)}, team only`;
-    variant = "warning";
-  } else {
-    label = "Can't reply";
-    variant = "secondary";
+function WindowBadge({ window, now, className }: { window: WindowState; now: number; className?: string }) {
+  const deadline = teamReplyDeadline(window);
+  if (!deadline) {
+    return (
+      <Badge variant="secondary" className={cn("shrink-0", className)}>
+        <Clock aria-hidden />
+        Replies closed
+      </Badge>
+    );
   }
 
+  const closingSoon = new Date(deadline).getTime() - now < CLOSING_SOON_MS;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant={variant} className="shrink-0 cursor-default whitespace-nowrap">
-          <Clock className="h-3 w-3" aria-hidden />
-          {label}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-xs leading-relaxed">
-        {WINDOW_RULE_EXPLANATION}
-      </TooltipContent>
-    </Tooltip>
+    // Allowed to shrink on narrow screens: the label truncates, the leading dot keeps its size.
+    <Badge
+      variant={closingSoon ? "warning" : "success"}
+      dot={closingSoon ? "pulse" : true}
+      className={cn("min-w-0 [&>span:first-child]:shrink-0", className)}
+    >
+      <span className="truncate">
+        <span className="hidden sm:inline">Replies open</span>
+        <span className="sm:hidden">Open</span> until {untilLabel(deadline, now)}
+      </span>
+    </Badge>
   );
 }
 

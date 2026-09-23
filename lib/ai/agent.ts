@@ -33,7 +33,14 @@ const REPLY_CHAR_BUDGET = 900;
  */
 export const agentButtonSchema = z.object({
   title: z.string().trim().min(1).max(MAX_BUTTON_TITLE_CHARS),
-  url: z.string().trim().url().max(2048),
+  // Zod's `.url()` would accept `javascript:` and `data:`; these links are sent
+  // to real people, and unlike a flow's buttons nothing validates them again later.
+  url: z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine((u) => /^https?:\/\//i.test(u), "Links must start with http:// or https://"),
 });
 export type AgentButton = z.infer<typeof agentButtonSchema>;
 
@@ -137,6 +144,10 @@ export function parseReply(raw: string, allowed: AgentButton[] = []): ParsedRepl
     // Some models still reach for markdown emphasis; a DM shows the asterisks.
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$)/g, "$1$2")
+    // A marker lifted out from mid-sentence leaves the spaces that flanked it.
+    // Collapse runs of spaces and tabs, but never newlines: a DM may be several lines.
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
     .trim();
 
   return { text: text.slice(0, REPLY_CHAR_BUDGET), buttons: wanted.slice(0, MAX_BUTTONS), handoff, done };

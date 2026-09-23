@@ -2,7 +2,6 @@
 
 import * as React from "react";
 
-import { Delta } from "@/components/ui/delta";
 import { cn } from "@/lib/utils";
 
 import type { TrendPoint } from "./series";
@@ -11,7 +10,7 @@ import { TrendChart } from "./trend-chart";
 export type MetricTab = {
   key: string;
   label: string;
-  /** Pre-formatted headline figure. */
+  /** Pre-formatted headline figure, shown by the KPI strip above the chart. */
   value: string;
   delta?: number | string | null;
   upIsGood?: boolean;
@@ -19,18 +18,12 @@ export type MetricTab = {
   data: TrendPoint[];
 };
 
-const GRID_COLS: Record<number, string> = {
-  2: "grid-cols-2",
-  3: "grid-cols-2 sm:grid-cols-3",
-  4: "grid-cols-2 sm:grid-cols-4",
-  5: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5",
-  6: "grid-cols-2 sm:grid-cols-3 xl:grid-cols-6",
-};
-
 /**
- * Headline numbers that double as the chart's switcher: pick a metric and the
- * trend below redraws for it, this period against the one before. One metric
- * at a time keeps the chart to one axis and one accent colour.
+ * The trend chart with a switcher for which metric it draws, this period
+ * against the one before. One metric at a time keeps the chart to one axis and
+ * one accent colour; the numbers themselves sit in the KPI strip, so the
+ * switcher only has to name them. It scrolls sideways on a phone rather than
+ * squeezing the labels.
  */
 export function MetricTabs({
   metrics,
@@ -63,38 +56,40 @@ export function MetricTabs({
 
   return (
     <div className={cn(fill && "flex h-full flex-col")}>
-      <div role="tablist" aria-label="Metric" onKeyDown={onKeyDown} className={cn("grid border-b", GRID_COLS[metrics.length] ?? "grid-cols-2 sm:grid-cols-4")}>
-        {metrics.map((m, i) => {
-          const selected = i === activeIndex;
-          return (
-            <button
-              key={m.key}
-              ref={(node) => {
-                refs.current[i] = node;
-              }}
-              id={`${id}-tab-${m.key}`}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls={`${id}-panel`}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => setActiveKey(m.key)}
-              className={cn(
-                "relative -mb-px -ml-px border-b border-l px-5 py-4 text-left outline-none transition-colors focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                selected ? "bg-card" : "bg-muted/40 hover:bg-muted/70",
-              )}
-            >
-              <span className={cn("block text-[13px]", selected ? "text-foreground" : "text-muted-foreground")}>{m.label}</span>
-              <span className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-[22px] font-semibold leading-none tracking-tight">{m.value}</span>
-                <Delta value={m.delta} upIsGood={m.upIsGood} />
-              </span>
-              {selected ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-foreground" aria-hidden /> : null}
-            </button>
-          );
-        })}
+      <div className="px-5 pt-5">
+        <div
+          role="tablist"
+          aria-label="Chart"
+          onKeyDown={onKeyDown}
+          className="scrollbar-none inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-fog p-1"
+        >
+          {metrics.map((m, i) => {
+            const selected = i === activeIndex;
+            return (
+              <button
+                key={m.key}
+                ref={(node) => {
+                  refs.current[i] = node;
+                }}
+                id={`${id}-tab-${m.key}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls={`${id}-panel`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveKey(m.key)}
+                className={cn(
+                  "h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring",
+                  selected ? "bg-ink text-white" : "text-muted-foreground hover:bg-background hover:text-ink",
+                )}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${active.key}`} className={cn("p-5", fill && "min-h-0 flex-1")}>
+      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${active.key}`} className={cn("p-5 pt-4", fill && "min-h-0 flex-1")}>
         <TrendChart data={active.data} label={active.label} kind={active.kind} height={height} fill={fill} />
       </div>
     </div>

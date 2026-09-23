@@ -8,5 +8,6 @@ export const brand = {
     "Awwtomation sends a private message to people who comment a keyword on your Instagram or Facebook posts, replies under their comment and saves them as a contact.",
   supportEmail: "support@awwtomation.com",
   company: "Awwtomation",
-  colors: { ink: "#18181B", lavender: "#C1C1D7" },
+  /** The marketing site's palette; `app/globals.css` holds the full set. */
+  colors: { ink: "#0f0f0f", paper: "#ffffff", yellow: "#fff200", magenta: "#fb0df7", purple: "#7b34ce", lavender: "#d8bee3" },
 } as const;

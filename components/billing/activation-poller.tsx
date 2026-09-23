@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, Clock, XCircle } from "lucide-react";
+import { CircleCheck, CircleX, Clock } from "lucide-react";
 
 import { apiFetch, ClientApiError, errorMessage } from "@/components/settings/client-api";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import type { ServiceState } from "@/lib/billing/entitlements";
 import { PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
 import type { BillingOverview } from "@/lib/services/billing";
+import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2_000;
 const MAX_ATTEMPTS = 30; // ≈ 60s
@@ -31,6 +32,29 @@ export interface ActivationPollerProps {
 }
 
 type Phase = "polling" | "active" | "timeout" | "failed";
+
+/** The tilted colour tile each state opens with, as on the empty states. */
+function StateTile({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "mx-auto flex h-14 w-14 rotate-[-4deg] items-center justify-center rounded-2xl shadow-[0_10px_24px_-12px_rgb(15_15_15/0.45)]",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function StateBody({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <>
+      <h1 className="font-display mt-6 text-[28px] leading-none">{title}</h1>
+      <p className="mt-3 text-sm text-muted-foreground">{children}</p>
+    </>
+  );
+}
 
 /**
  * Polls /api/billing/reconcile until the subscription is active. The webhook
@@ -100,17 +124,16 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
   if (phase === "active" && overview) {
     const plan = PLANS[overview.effectivePlan];
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background">
-          <CheckCircle2 className="h-6 w-6" strokeWidth={2} />
-        </div>
-        <h1 className="mt-5 text-xl font-semibold tracking-tight">You&apos;re on {plan.label}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {plan.channels} accounts, {plan.automations.toLocaleString("en-US")} automations and{" "}
-          {plan.dmsPerMonth.toLocaleString("en-US")} DMs a month are ready to use.
+      <div className="animate-fade-in text-center">
+        <StateTile className="bg-green text-white">
+          <CircleCheck className="h-7 w-7" strokeWidth={2} />
+        </StateTile>
+        <StateBody title={`You're on ${plan.label}`}>
+          {plan.channels} accounts, {plan.automations.toLocaleString("en-US")} automations and {plan.dmsPerMonth.toLocaleString("en-US")} DMs a month
+          are ready to use.
           {overview.customerEmail ? ` A receipt is on its way to ${overview.customerEmail}.` : ""}
-        </p>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+        </StateBody>
+        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
             <Link href="/dashboard">Go to dashboard</Link>
           </Button>
@@ -124,15 +147,14 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
 
   if (phase === "failed") {
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-background">
-          <XCircle className="h-6 w-6 text-destructive" strokeWidth={1.75} />
-        </div>
-        <h1 className="mt-5 text-xl font-semibold tracking-tight">Payment didn&apos;t go through</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {lastError ?? "Your card wasn't charged. You can try again with the same or a different payment method."}
-        </p>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+      <div className="animate-fade-in text-center">
+        <StateTile className="bg-destructive text-white">
+          <CircleX className="h-7 w-7" strokeWidth={2} />
+        </StateTile>
+        <StateBody title="Payment didn't go through">
+          {lastError ?? "Your card wasn't charged. Try again with the same card or another one."}
+        </StateBody>
+        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
             <Link href={retryHref}>Try again</Link>
           </Button>
@@ -146,16 +168,14 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
 
   if (phase === "timeout") {
     return (
-      <div className="text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-background">
-          <Clock className="h-6 w-6 text-muted-foreground" strokeWidth={1.75} />
-        </div>
-        <h1 className="mt-5 text-xl font-semibold tracking-tight">This is taking longer than usual</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          If your payment went through, the plan usually switches on within a minute. Check again, or carry on and the upgrade will show up by
-          itself.
-        </p>
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+      <div className="animate-fade-in text-center">
+        <StateTile className="bg-fog text-ink">
+          <Clock className="h-7 w-7" strokeWidth={2} />
+        </StateTile>
+        <StateBody title="This is taking longer than usual">
+          Your plan switches on within a minute or two of paying.
+        </StateBody>
+        <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Button
             size="lg"
             onClick={() => {
@@ -172,10 +192,10 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
         </div>
         <p className="mt-6 text-xs text-muted-foreground">
           Still not active after a few minutes? Email{" "}
-          <a href={`mailto:${brand.supportEmail}`} className="underline underline-offset-2 hover:text-foreground">
+          <a href={`mailto:${brand.supportEmail}`} className="font-semibold text-ink underline underline-offset-2 hover:no-underline">
             {brand.supportEmail}
           </a>{" "}
-          with your organization name and we&apos;ll sort it out.
+          with your organization name.
         </p>
       </div>
     );
@@ -183,13 +203,10 @@ export function ActivationPoller({ ids, switchToOrganizationId, providerStatus, 
 
   return (
     <div className="text-center" aria-live="polite">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border bg-background">
-        <Spinner />
-      </div>
-      <h1 className="mt-5 text-xl font-semibold tracking-tight">Activating your plan…</h1>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        Confirming your payment. This usually takes a few seconds, so keep this tab open.
-      </p>
+      <StateTile className="bg-fog">
+        <Spinner size="lg" className="text-ink" />
+      </StateTile>
+      <StateBody title="Activating your plan…">This usually takes a few seconds. Keep this tab open.</StateBody>
     </div>
   );
 }

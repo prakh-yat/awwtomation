@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PLATFORM_TONE } from "@/components/ui/platform-badge";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { cn, initials } from "@/lib/utils";
 
@@ -12,12 +13,15 @@ export interface ContactAvatarProps {
 }
 
 const SIZES = {
-  sm: { avatar: "h-7 w-7", text: "text-[10px]", badge: "h-3.5 w-3.5 -right-0.5 -bottom-0.5", icon: 9 },
-  md: { avatar: "h-9 w-9", text: "text-[11px]", badge: "h-4 w-4 -right-0.5 -bottom-0.5", icon: 10 },
-  lg: { avatar: "h-14 w-14", text: "text-base", badge: "h-5 w-5 -right-1 -bottom-1", icon: 12 },
+  sm: { avatar: "h-8 w-8", text: "text-[11px]", badge: "-bottom-0.5 -right-0.5 h-4 w-4 border-[1.5px]", icon: 9 },
+  md: { avatar: "h-10 w-10", text: "text-xs", badge: "-bottom-0.5 -right-0.5 h-[18px] w-[18px] border-2", icon: 10 },
+  lg: { avatar: "h-16 w-16", text: "text-lg", badge: "-bottom-0.5 -right-0.5 h-6 w-6 border-2", icon: 12 },
 } as const;
 
-/** Round avatar with a small platform glyph pinned to the corner. Initials fall back from name → username. */
+/**
+ * Round avatar with the platform's colour tile pinned to the corner: magenta
+ * for Instagram, blue for Facebook. Initials fall back from name to username.
+ */
 function ContactAvatar({ name, username, avatarUrl, platform, size = "md", className }: ContactAvatarProps) {
   const s = SIZES[size];
   const fallback = initials(name ?? username ?? null, "?");
@@ -27,13 +31,7 @@ function ContactAvatar({ name, username, avatarUrl, platform, size = "md", class
         {avatarUrl ? <AvatarImage src={avatarUrl} alt="" referrerPolicy="no-referrer" /> : null}
         <AvatarFallback className={s.text}>{fallback}</AvatarFallback>
       </Avatar>
-      <span
-        className={cn(
-          "absolute flex items-center justify-center rounded-full border border-background bg-primary text-primary-foreground",
-          s.badge,
-        )}
-        aria-hidden
-      >
+      <span className={cn("absolute flex items-center justify-center rounded-full border-background", PLATFORM_TONE[platform].tile, s.badge)} aria-hidden>
         <PlatformIcon platform={platform} size={s.icon} />
       </span>
     </span>

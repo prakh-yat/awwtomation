@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
@@ -63,41 +63,33 @@ function SegmentFormDialog({ open, onOpenChange, mode, initialName = "", initial
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <form onSubmit={submit} className="contents">
           <DialogHeader>
             <DialogTitle>{mode === "create" ? "Save as segment" : "Rename segment"}</DialogTitle>
-            <DialogDescription>
-              {mode === "create"
-                ? "Segments are saved filters. Contacts move in and out automatically as they match, and broadcasts can target them."
-                : "The segment keeps its filters; only the label changes."}
-            </DialogDescription>
           </DialogHeader>
 
           {mode === "create" && summary ? (
-            <div className="rounded-md border bg-muted/40 px-3 py-2 text-[13px]">
-              <p className="truncate text-muted-foreground" title={summary}>
-                {summary}
-              </p>
-              {typeof count === "number" ? (
-                <p className="mt-0.5 font-medium tabular-nums">
-                  {formatNumber(count)} contact{count === 1 ? "" : "s"} right now
+            <div className="relative overflow-hidden rounded-2xl bg-green-soft px-4 py-3.5 text-green-ink">
+              <div aria-hidden className="bg-grid pointer-events-none absolute inset-0 [--grid-size:24px] [mask-image:linear-gradient(to_left,black,transparent_70%)]" />
+              <div className="relative">
+                {typeof count === "number" ? (
+                  <p className="font-display text-[26px] leading-none tabular-nums">
+                    {formatNumber(count)} <span className="text-[15px]">{count === 1 ? "contact" : "contacts"}</span>
+                  </p>
+                ) : (
+                  <span aria-hidden className="block h-[26px] w-32 rounded-lg bg-green/10 motion-safe:animate-pulse" />
+                )}
+                <p className="mt-2 truncate text-[13px] opacity-80" title={summary}>
+                  {summary}
                 </p>
-              ) : null}
+              </div>
             </div>
           ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="segment-name">Name</Label>
-            <Input
-              id="segment-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Warm leads"
-              maxLength={NAME_MAX}
-              autoFocus
-              autoComplete="off"
-            />
+            <Input id="segment-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Warm leads" maxLength={NAME_MAX} autoFocus autoComplete="off" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="segment-description">
@@ -113,7 +105,7 @@ function SegmentFormDialog({ open, onOpenChange, mode, initialName = "", initial
             />
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
               Cancel
             </Button>

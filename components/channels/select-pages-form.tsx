@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 
@@ -8,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { PlatformIcon } from "@/components/ui/platform-icon";
 import { toast } from "@/components/ui/sonner";
 import type { ChannelView, SelectablePage } from "@/lib/services/channels";
@@ -41,6 +43,7 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
   const newCount = pages.filter((p) => p.state === "available" && selected.has(p.id)).length;
   const overLimit = newCount > remainingSlots;
   const count = selected.size;
+  const left = remainingSlots - newCount;
 
   function toggle(page: SelectablePage) {
     if (page.state === "claimed") return;
@@ -61,8 +64,8 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
         method: "POST",
         body: JSON.stringify({ pageIds: Array.from(selected) }),
       });
-      // The channels page turns `?connected=` into the success toast.
-      router.push(`/channels?connected=${channels.map((c) => c.id).join(",")}`);
+      // The dashboard turns `?connected=` into the success toast.
+      router.push(`/dashboard?connected=${channels.map((c) => c.id).join(",")}`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't connect the selected Pages"));
       setSubmitting(false);
@@ -70,43 +73,44 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
   }
 
   return (
-    <form onSubmit={submit} className="rounded-lg border bg-card shadow-card">
-      <ul className="divide-y">
-        {pages.map((page) => {
+    <form onSubmit={submit} className="rounded-2xl border bg-card">
+      <ul className="divide-y overflow-hidden rounded-t-2xl">
+        {pages.map((page, i) => {
           const checked = selected.has(page.id);
           const claimed = page.state === "claimed";
           const id = `page-${page.id}`;
           return (
-            <li key={page.id}>
+            <li key={page.id} className="rise" style={{ "--i": Math.min(i, 12) } as React.CSSProperties}>
               <label
                 htmlFor={id}
                 className={cn(
-                  "flex cursor-pointer items-center gap-3 px-5 py-3.5 transition-colors hover:bg-muted/40",
-                  claimed && "cursor-not-allowed opacity-60 hover:bg-transparent",
+                  "flex cursor-pointer items-center gap-3.5 px-4 py-3.5 transition-colors duration-150 sm:px-5",
+                  claimed ? "cursor-not-allowed opacity-60" : checked ? "bg-yellow-soft/60" : "hover:bg-fog/70",
                 )}
               >
                 <Checkbox id={id} checked={checked} disabled={claimed} onCheckedChange={() => toggle(page)} aria-label={`Select ${page.name}`} />
-                <Avatar className="h-9 w-9 border">
-                  {page.picture ? <AvatarImage src={page.picture} alt="" referrerPolicy="no-referrer" /> : null}
-                  <AvatarFallback>{initials(page.name, "P")}</AvatarFallback>
-                </Avatar>
+                <div className="relative shrink-0">
+                  <Avatar className="h-10 w-10 border">
+                    {page.picture ? <AvatarImage src={page.picture} alt="" referrerPolicy="no-referrer" /> : null}
+                    <AvatarFallback>{initials(page.name, "P")}</AvatarFallback>
+                  </Avatar>
+                  <PlatformMark aria-hidden platform="FACEBOOK" size={18} className="absolute -bottom-1 -right-1 ring-2 ring-card" />
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{page.name}</p>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <PlatformIcon platform="FACEBOOK" size={11} />
+                  <p className="truncate text-[14px] font-semibold">{page.name}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
                     <span>Facebook Page</span>
                     {page.instagramBusinessId ? (
-                      <>
-                        <span aria-hidden>·</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-magenta-soft py-0.5 pl-1.5 pr-2 text-[11px] font-semibold text-magenta-ink">
                         <PlatformIcon platform="INSTAGRAM" size={11} />
-                        <span>Instagram linked</span>
-                      </>
+                        Instagram linked
+                      </span>
                     ) : null}
                   </p>
                 </div>
                 {page.state === "connected" ? (
                   <Badge variant="success">
-                    <Check className="h-3 w-3" />
+                    <Check />
                     Connected
                   </Badge>
                 ) : claimed ? (
@@ -118,13 +122,22 @@ export function SelectPagesForm({ pages, remainingSlots, planLimit }: SelectPage
         })}
       </ul>
 
-      <div className="flex flex-col gap-3 border-t px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Sticks to the bottom of the window, so a long list never hides the button. */}
+      <div className="sticky bottom-0 flex flex-col gap-3 rounded-b-2xl border-t bg-card/95 px-4 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <p className={cn("text-[13px]", overLimit ? "text-destructive" : "text-muted-foreground")}>
-          {overLimit
-            ? `Your plan allows ${planLimit} connected account${planLimit === 1 ? "" : "s"}. Deselect ${newCount - remainingSlots} or upgrade.`
-            : `${newCount} new · ${remainingSlots - newCount} slot${remainingSlots - newCount === 1 ? "" : "s"} left on your plan`}
+          {overLimit ? (
+            <>
+              Your plan allows {planLimit} account{planLimit === 1 ? "" : "s"}. Deselect {newCount - remainingSlots} or{" "}
+              <Link href="/settings/billing" className="font-semibold underline underline-offset-4 hover:no-underline">
+                upgrade
+              </Link>
+              .
+            </>
+          ) : (
+            `${left} account${left === 1 ? "" : "s"} left on your plan`
+          )}
         </p>
-        <Button type="submit" loading={submitting} disabled={count === 0 || overLimit}>
+        <Button type="submit" variant="highlight" size="lg" loading={submitting} disabled={count === 0 || overLimit}>
           Connect {count} {count === 1 ? "Page" : "Pages"}
         </Button>
       </div>

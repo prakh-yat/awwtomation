@@ -7,10 +7,12 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Menu, X } from "lucide-react";
 
 import { LogoMark, Wordmark } from "@/components/ui/logo";
+import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 import { Sidebar } from "./sidebar";
 import type { ShellProps } from "./types";
+import { workspaceTone } from "./workspace-switcher";
 
 /**
  * Mobile header. Below md the rail is hidden, so the same sidebar opens in a
@@ -65,11 +67,11 @@ export function Topbar(props: ShellProps) {
       </Link>
 
       {active ? (
-        <span className="ml-auto flex max-w-[45%] items-center gap-2 rounded-md border px-2 py-1 text-xs">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary text-[10px] font-semibold text-primary-foreground">
+        <span className="ml-auto flex max-w-[45%] items-center gap-2 rounded-full border py-1 pl-1 pr-2.5 text-xs">
+          <span className={cn("font-display flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px]", TONES[workspaceTone(active.id)].solid)}>
             {active.name.trim().charAt(0).toUpperCase()}
           </span>
-          <span className="truncate font-medium">{active.name}</span>
+          <span className="truncate font-semibold">{active.name}</span>
         </span>
       ) : null}
     </header>

@@ -235,7 +235,7 @@ export function filtersEqual(a: ContactFilterState, b: ContactFilterState): bool
 /** Pipeline and stage names for summaries; ids that aren't found read as "one pipeline" / "one stage". */
 export type PipelineNames = ReadonlyArray<{ id: string; name: string; stages: ReadonlyArray<{ id: string; name: string }> }>;
 
-/** Short human summary for tooltips and the rail, e.g. "Tags: vip · followers · last 7 days". */
+/** Short human summary for the segment chips' tooltips and the save dialog, e.g. "tags vip · followers · last 7 days". */
 export function describeSegmentFilters(s: SegmentFilters, pipelines: PipelineNames = []): string {
   const parts: string[] = [];
   if (s.q) parts.push(`“${s.q}”`);
@@ -253,8 +253,8 @@ export function describeSegmentFilters(s: SegmentFilters, pipelines: PipelineNam
   if (s.onlyFollowers) parts.push("followers");
   else if (s.excludeFollowers) parts.push("not following");
   if (s.lastInteractionDays) parts.push(s.lastInteractionDays === 1 ? "last 24 hours" : `last ${s.lastInteractionDays} days`);
-  if (s.excludeOptedOut || s.optedOut === false) parts.push("excl. opted out");
-  else if (s.optedOut === true) parts.push("opted out only");
+  if (s.excludeOptedOut || s.optedOut === false) parts.push("not stopped");
+  else if (s.optedOut === true) parts.push("stopped only");
   return parts.length ? parts.join(" · ") : "All contacts";
 }
 

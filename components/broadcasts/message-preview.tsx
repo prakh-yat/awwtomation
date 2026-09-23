@@ -1,6 +1,7 @@
 import type { ChannelPlatform } from "@prisma/client";
-import { ImageIcon } from "lucide-react";
+import { ExternalLink, ImageIcon, Smile } from "lucide-react";
 
+import { PlatformMark } from "@/components/ui/platform-badge";
 import type { OutboundMessage } from "@/lib/meta/types";
 import { cn, initials } from "@/lib/utils";
 
@@ -22,23 +23,24 @@ function fillSample(text: string): string {
 }
 
 /**
- * Phone-shaped, monochrome mock of how an OutboundMessage lands in the
- * recipient's DM thread. Self-contained (no hooks) so both the editor and
- * the read-only report can render it.
+ * A phone showing how the message lands in the recipient's thread, drawn as
+ * the platform draws it. Self-contained (no hooks) so both the editor and the
+ * read-only report can render it.
  */
 function MessagePreview({ message, platform = "INSTAGRAM", senderName = "Your account", senderAvatarUrl, className }: MessagePreviewProps) {
   const text = message.text?.trim() ? fillSample(message.text.trim()) : "";
   const buttons = (message.buttons ?? []).filter((b) => b.title.trim());
   const quickReplies = message.quickReplies ?? [];
   const hasContent = Boolean(text || message.imageUrl || buttons.length);
+  const action = platform === "FACEBOOK" ? "text-blue-ink" : "text-purple-ink";
 
   return (
-    <div className={cn("mx-auto w-[300px] select-none rounded-[2.25rem] border-[6px] border-foreground bg-background shadow-elevated", className)} aria-label="Message preview">
-      <div className="flex h-[580px] flex-col overflow-hidden rounded-[1.85rem]">
-        <div className="mx-auto mt-2 h-5 w-24 shrink-0 rounded-full bg-foreground" aria-hidden />
+    <div className={cn("mx-auto w-[300px] select-none rounded-[40px] bg-ink p-[7px] shadow-pop", className)} aria-label="Message preview">
+      <div className="flex h-[520px] flex-col overflow-hidden rounded-[33px] bg-white">
+        <div className="mx-auto mt-2.5 h-[18px] w-[80px] shrink-0 rounded-full bg-ink" aria-hidden />
 
         <div className="flex shrink-0 items-center gap-2.5 border-b px-4 pb-2.5 pt-3">
-          <div className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-muted text-[10px] font-medium">
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-lavender text-[10px] font-semibold">
             {senderAvatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- remote avatar, no optimisation wanted
               <img src={senderAvatarUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
@@ -46,47 +48,47 @@ function MessagePreview({ message, platform = "INSTAGRAM", senderName = "Your ac
               initials(senderName)
             )}
           </div>
-          <div className="min-w-0 leading-tight">
-            <p className="truncate text-[13px] font-medium">{senderName}</p>
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="truncate text-[13px] font-semibold">{senderName}</p>
             <p className="text-[10px] text-muted-foreground">{platform === "FACEBOOK" ? "Messenger" : "Instagram"}</p>
           </div>
+          <PlatformMark platform={platform} size={18} />
         </div>
 
         <div className="scrollbar-thin flex-1 space-y-2 overflow-y-auto px-3 py-4">
           <p className="text-center text-[10px] text-muted-foreground">Today</p>
 
           {!hasContent ? (
-            <div className="mr-10 rounded-2xl rounded-bl-md border border-dashed px-3 py-6 text-center text-[12px] text-muted-foreground">
-              Your message will appear here
-            </div>
+            <div className="mr-10 rounded-[18px] rounded-bl-md border border-dashed px-3 py-6 text-center text-[12px] text-muted-foreground">Your message shows here</div>
           ) : null}
 
           {message.imageUrl ? (
-            <div className="mr-10 overflow-hidden rounded-2xl rounded-bl-md border bg-muted">
+            <div className="mr-10 overflow-hidden rounded-[18px] rounded-bl-md bg-fog">
               {/* eslint-disable-next-line @next/next/no-img-element -- user-supplied URL rendered as Meta would */}
               <img src={message.imageUrl} alt="" className="block max-h-56 w-full object-cover" referrerPolicy="no-referrer" />
             </div>
           ) : null}
 
           {buttons.length > 0 ? (
-            <div className="mr-10 overflow-hidden rounded-2xl rounded-bl-md border bg-background">
-              {text ? <p className="whitespace-pre-wrap break-words bg-muted px-3 py-2 text-[13px] leading-snug">{text}</p> : null}
-              <div className="divide-y">
+            <div className="mr-10 overflow-hidden rounded-[18px] rounded-bl-md bg-[#efefef]">
+              {text ? <p className="whitespace-pre-wrap break-words px-3 py-2 text-[13px] leading-snug">{text}</p> : null}
+              <div className="divide-y divide-white">
                 {buttons.map((b, i) => (
-                  <div key={i} className="px-3 py-2 text-center text-[13px] font-medium">
+                  <div key={i} className={cn("flex items-center justify-center gap-1.5 bg-white/70 px-3 py-2 text-[13px] font-semibold", action)}>
                     {fillSample(b.title)}
+                    <ExternalLink className="h-3 w-3" />
                   </div>
                 ))}
               </div>
             </div>
           ) : text ? (
-            <div className="mr-10 whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-muted px-3 py-2 text-[13px] leading-snug">{text}</div>
+            <div className="mr-10 whitespace-pre-wrap break-words rounded-[18px] rounded-bl-md bg-[#efefef] px-3 py-2 text-[13px] leading-snug">{text}</div>
           ) : null}
 
           {quickReplies.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 pt-1">
               {quickReplies.map((q, i) => (
-                <span key={i} className="rounded-full border px-2.5 py-1 text-[12px]">
+                <span key={i} className={cn("rounded-full border px-2.5 py-1 text-[12px] font-semibold", action)}>
                   {fillSample(q.title)}
                 </span>
               ))}
@@ -94,8 +96,9 @@ function MessagePreview({ message, platform = "INSTAGRAM", senderName = "Your ac
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t px-3 py-2">
-          <div className="flex h-8 items-center gap-2 rounded-full border bg-background px-3 text-[12px] text-muted-foreground">
+        <div className="shrink-0 px-3 pb-4 pt-2">
+          <div className="flex h-9 items-center gap-2 rounded-full bg-fog px-3 text-[12px] text-muted-foreground">
+            <Smile className="h-4 w-4" strokeWidth={1.75} />
             <span className="flex-1">Message…</span>
             <ImageIcon className="h-3.5 w-3.5" />
           </div>

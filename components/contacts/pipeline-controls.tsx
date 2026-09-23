@@ -17,17 +17,20 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FilterMenu } from "@/components/ui/filter-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { stageColorClasses } from "@/lib/pipelines/colors";
 import type { ContactPipelineRef, PipelineStageSummary, PipelineSummary } from "@/lib/services/pipelines";
 import { cn, formatNumber } from "@/lib/utils";
 
+import { filterPill } from "./filter-pill";
+
 /** A pipeline's first few stage colours, overlapped: tells pipelines apart at a glance. */
-function PipelineMark({ pipeline }: { pipeline: PipelineSummary }) {
+function PipelineMark({ pipeline, ring = "ring-popover" }: { pipeline: PipelineSummary; ring?: string }) {
   return (
     <span aria-hidden className="flex shrink-0 items-center">
       {pipeline.stages.slice(0, 4).map((s, i) => (
-        <span key={s.id} className={cn("h-2.5 w-2.5 rounded-full ring-2 ring-popover", stageColorClasses(s.color).dot, i > 0 && "-ml-1")} />
+        <span key={s.id} className={cn("h-2.5 w-2.5 rounded-full ring-2", ring, stageColorClasses(s.color).dot, i > 0 && "-ml-1")} />
       ))}
     </span>
   );
@@ -52,20 +55,20 @@ export function PipelineSwitcher({
   onChange: (pipelineId: string) => void;
 }) {
   const current = pipelines.find((p) => p.id === value) ?? null;
-  const label = value ? (current?.name ?? "Pipeline removed") : "All contacts";
+  const label = value ? (current?.name ?? "Pipeline removed") : "Pipeline";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("h-8 max-w-[15rem] gap-2 text-[13px]", value && "border-foreground")} aria-label={`Showing ${label}`}>
-          {value ? <SquareKanban className="text-muted-foreground" /> : <Users className="text-muted-foreground" />}
-          <span className="truncate font-medium">{label}</span>
-          <ChevronDown className="-mr-1 text-muted-foreground" />
+        <Button variant="outline" size="sm" className={cn(filterPill(Boolean(value)), "max-w-[15rem]")} aria-label={value ? `Pipeline: ${label}` : "Pipeline"}>
+          {current ? <PipelineMark pipeline={current} ring="ring-green-soft" /> : <SquareKanban />}
+          <span className="truncate">{label}</span>
+          <ChevronDown className="-mr-0.5 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuItem onSelect={() => onChange("")}>
-          <Users className="text-muted-foreground" />
+          <Users />
           <span className="min-w-0 flex-1 truncate">All contacts</span>
           <span className="text-xs tabular-nums text-muted-foreground">{formatNumber(totalCount)}</span>
           <Check className={cn(value === "" ? "opacity-100" : "opacity-0")} />
@@ -73,7 +76,7 @@ export function PipelineSwitcher({
         {pipelines.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Pipelines</DropdownMenuLabel>
+            <DropdownMenuLabel>Pipelines</DropdownMenuLabel>
             {pipelines.map((p) => (
               <DropdownMenuItem key={p.id} onSelect={() => onChange(p.id)}>
                 <PipelineMark pipeline={p} />
@@ -101,7 +104,11 @@ export function PipelineSwitcher({
 }
 
 /** Stage tabs above the list: every stage of the pipeline with how many contacts match. */
-export function StageStrip({
+/** Stands in for "every stage": Radix menus can't represent an empty value. */
+const ALL_STAGES = "__all__";
+
+/** The stages of the pipeline in view, as one filter menu with each stage's colour and count. */
+export function StageFilter({
   pipeline,
   counts,
   value,
@@ -117,31 +124,31 @@ export function StageStrip({
   const total = pipeline.stages.reduce((sum, s) => sum + countFor(s), 0);
 
   return (
-    <div role="radiogroup" aria-label={`${pipeline.name} stages`} className="-mx-1 flex gap-1.5 overflow-x-auto px-1 py-0.5 scrollbar-none">
-      <StageTab label="All stages" count={total} checked={value === ""} onClick={() => onChange("")} />
-      {pipeline.stages.map((s) => (
-        <StageTab key={s.id} label={s.name} color={s.color} count={countFor(s)} checked={value === s.id} onClick={() => onChange(value === s.id ? "" : s.id)} />
-      ))}
-    </div>
+    <FilterMenu
+      label="Stage"
+      showLabel
+      icon={SquareKanban}
+      triggerClassName={filterPill}
+      align="start"
+      value={value || ALL_STAGES}
+      onChange={(next) => onChange(next === ALL_STAGES ? "" : next)}
+      defaultValue={ALL_STAGES}
+      options={[
+        { value: ALL_STAGES, label: "All stages", count: total },
+        ...pipeline.stages.map((s) => ({ value: s.id, label: s.name, count: countFor(s), dot: stageColorClasses(s.color).dot })),
+      ]}
+    />
   );
 }
 
-function StageTab({ label, color, count, checked, onClick }: { label: string; color?: string; count: number; checked: boolean; onClick: () => void }) {
+/** Every stage of a pipeline as a short track, with the contact's stage lit in its own colour. */
+export function StageTrack({ stages, current, className }: { stages: PipelineStageSummary[]; current: string | undefined; className?: string }) {
   return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={checked}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-2 rounded-full border px-3 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-        checked ? "border-foreground bg-foreground text-background" : "bg-background text-foreground hover:bg-accent",
-      )}
-    >
-      {color ? <StageDot color={color} className={cn(checked && "ring-2 ring-background/30")} /> : null}
-      <span className="whitespace-nowrap font-medium">{label}</span>
-      <span className={cn("tabular-nums", checked ? "text-background/70" : "text-muted-foreground")}>{formatNumber(count)}</span>
-    </button>
+    <span aria-hidden className={cn("flex h-1.5 gap-1", className)}>
+      {stages.map((s) => (
+        <span key={s.id} className={cn("flex-1 rounded-full transition-colors duration-300", s.id === current ? stageColorClasses(s.color).dot : "bg-ink/10")} />
+      ))}
+    </span>
   );
 }
 
@@ -162,7 +169,7 @@ export function StageSelectCell({
     <Select value={entry.stageId} onValueChange={onChange}>
       <SelectTrigger
         className={cn(
-          "h-7 w-auto min-w-[7rem] max-w-[11rem] gap-1.5 rounded-full border-0 px-2.5 text-xs font-medium shadow-none ring-1 ring-inset focus:ring-2 [&>svg]:h-3 [&>svg]:w-3",
+          "h-7 w-auto min-w-[7rem] max-w-[11rem] gap-1.5 rounded-full border-0 px-2.5 text-[12px] font-semibold ring-1 ring-inset focus:ring-2 [&>svg]:h-3 [&>svg]:w-3",
           stageColorClasses(entry.stageColor).pill,
         )}
         aria-label={`Stage for ${contactName}`}
@@ -265,24 +272,30 @@ export function PipelinesCell({
         <button
           type="button"
           aria-label={`Pipelines for ${contactName}`}
-          className="-mx-1 flex max-w-full items-center gap-1.5 rounded-md px-1 py-1 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent"
+          className="-mx-1.5 flex max-w-full items-center gap-1.5 rounded-full px-1.5 py-1 text-left outline-none transition-colors hover:bg-fog focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-fog"
         >
           {first ? (
             <>
               <StagePill name={first.stageName} color={first.stageColor} title={`${first.pipelineName}: ${first.stageName}`} className="min-w-0" />
               {rest.length > 0 ? (
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title={rest.map((e) => `${e.pipelineName}: ${e.stageName}`).join("\n")}>
+                <span
+                  className="shrink-0 rounded-full bg-fog px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground"
+                  title={rest.map((e) => `${e.pipelineName}: ${e.stageName}`).join("\n")}
+                >
                   +{rest.length}
                 </span>
               ) : null}
             </>
           ) : (
-            <span className="text-[13px] text-muted-foreground">Add to pipeline</span>
+            <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+              <SquareKanban className="h-3.5 w-3.5" aria-hidden />
+              Add to pipeline
+            </span>
           )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Pipelines</DropdownMenuLabel>
+        <DropdownMenuLabel>Pipelines</DropdownMenuLabel>
         <PipelineStageMenuItems pipelines={pipelines} entries={entries} onSetStage={onSetStage} onRemove={onRemove} />
       </DropdownMenuContent>
     </DropdownMenu>

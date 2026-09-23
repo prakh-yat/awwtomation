@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Link2, SendHorizontal, X } from "lucide-react";
+import { BellOff, Clock, Link2, SendHorizontal, Unplug, X, type LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,12 +15,14 @@ import type { OutboundButton, OutboundMessage } from "@/lib/meta/types";
 import type { WindowState } from "@/lib/services/inbox";
 import { cn } from "@/lib/utils";
 
-import { WINDOW_RULE_EXPLANATION } from "./window-state";
+import { WindowBadge } from "./window-badge";
 
 // Meta limits (mirrors lib/meta/messages.ts, which can't be imported client-side).
 const MAX_TEXT_BYTES = 1000;
 const MAX_BUTTONS = 3;
 const MAX_BUTTON_TITLE_CHARS = 20;
+/** The reply box grows with its text up to this height, then scrolls. */
+const MAX_TEXTAREA_PX = 176;
 
 function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).length;
@@ -42,6 +44,8 @@ type LinkButton = Extract<OutboundButton, { type: "web_url" }>;
 
 export type ComposerProps = {
   window: WindowState;
+  /** Drives the reply window pill; the thread's ticking clock. */
+  now: number;
   channelActive: boolean;
   contactOptedOut: boolean;
   contactName: string;
@@ -68,7 +72,7 @@ function LinkButtonPopover({ disabled, onAdd }: { disabled: boolean; onAdd: (but
     const cleanUrl = normalizeUrl(url);
     if (!cleanTitle) return setError("Give the button a label");
     if (cleanTitle.length > MAX_BUTTON_TITLE_CHARS) return setError(`Labels are limited to ${MAX_BUTTON_TITLE_CHARS} characters`);
-    if (!cleanUrl) return setError("Enter a valid http(s) link");
+    if (!cleanUrl) return setError("Enter a valid link");
     onAdd({ type: "web_url", title: cleanTitle, url: cleanUrl });
     reset();
     setOpen(false);
@@ -85,18 +89,18 @@ function LinkButtonPopover({ disabled, onAdd }: { disabled: boolean; onAdd: (but
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={disabled} aria-label="Insert link button">
+            <Button type="button" variant="ghost" size="icon-sm" disabled={disabled} aria-label="Add a link button">
               <Link2 />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent>Insert link button</TooltipContent>
+        <TooltipContent>Add a link button</TooltipContent>
       </Tooltip>
-      <PopoverContent align="start" className="w-80">
+      <PopoverContent align="start" side="top" className="w-80">
         <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Link button</p>
-            <p className="text-xs text-muted-foreground">Shown under your message as a tappable button. Up to {MAX_BUTTONS} per message.</p>
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold">Link button</p>
+            <p className="text-xs text-muted-foreground">Up to {MAX_BUTTONS} per message.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="composer-link-title">Label</Label>
@@ -110,12 +114,12 @@ function LinkButtonPopover({ disabled, onAdd }: { disabled: boolean; onAdd: (but
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="composer-link-url">URL</Label>
+            <Label htmlFor="composer-link-url">Link</Label>
             <Input id="composer-link-url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/guide" inputMode="url" />
           </div>
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" size="sm">
@@ -128,55 +132,63 @@ function LinkButtonPopover({ disabled, onAdd }: { disabled: boolean; onAdd: (but
   );
 }
 
+/** Why replying is off right now, and the one thing that fixes it when there is one. */
+function BlockedNotice({ icon: Icon, children, action }: { icon: LucideIcon; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-fog py-2.5 pl-3 pr-2.5" role="status">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <p className="min-w-0 flex-1 text-[13px] text-ink">{children}</p>
+      {action}
+    </div>
+  );
+}
+
 /**
  * Reply box. Parent should key this by conversation id so drafts reset when
  * the thread changes. Enter sends, Shift+Enter inserts a newline.
  */
-function Composer({ window, channelActive, contactOptedOut, contactName, sending, onSend }: ComposerProps) {
+function Composer({ window, now, channelActive, contactOptedOut, contactName, sending, onSend }: ComposerProps) {
   const [text, setText] = React.useState("");
   const [buttons, setButtons] = React.useState<LinkButton[]>([]);
-  // Defaults to on: when the human-agent checkbox is visible, sending without it would be rejected anyway.
-  const [humanAgent, setHumanAgent] = React.useState(true);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+  // Past the first 24 hours only a person may reply, and the send has to say
+  // so. Everything typed here is typed by a person, so it always does.
   const needsHumanAgent = window.kind === "human_agent";
   const bytes = utf8Bytes(text);
   const overLimit = bytes > MAX_TEXT_BYTES;
 
-  let blockedReason: React.ReactNode = null;
+  let blocked: { icon: LucideIcon; text: React.ReactNode; action?: React.ReactNode } | null = null;
   if (!channelActive) {
-    blockedReason = (
-      <>
-        This channel is disconnected or its token expired.{" "}
-        <Link href="/channels" className="underline underline-offset-2 hover:text-foreground">
-          Reconnect it from Channels
-        </Link>{" "}
-        to reply.
-      </>
-    );
+    blocked = {
+      icon: Unplug,
+      text: "This account is disconnected.",
+      action: (
+        <Button asChild size="sm" variant="outline" className="bg-background">
+          <Link href="/dashboard?accounts=1">Reconnect</Link>
+        </Button>
+      ),
+    };
   } else if (contactOptedOut) {
-    blockedReason = <>{contactName} has opted out of messages, so replies can&apos;t be sent.</>;
+    blocked = { icon: BellOff, text: `${contactName} opted out of messages.` };
   } else if (window.kind === "closed") {
-    blockedReason = (
-      <>
-        Meta&apos;s 7-day messaging window has passed. You can reply again once {contactName} messages you.{" "}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button type="button" className="underline underline-offset-2 hover:text-foreground">
-              Why?
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs leading-relaxed">
-            {WINDOW_RULE_EXPLANATION}
-          </TooltipContent>
-        </Tooltip>
-      </>
-    );
+    blocked = { icon: Clock, text: `You can reply once ${contactName} messages you.` };
   }
-  const blocked = blockedReason !== null;
 
+  // A draft typed before replying closed stays on screen (read only) rather than vanishing.
+  const showInput = !blocked || text.length > 0 || buttons.length > 0;
   const hasContent = text.trim().length > 0 || buttons.length > 0;
-  const canSend = !blocked && !sending && hasContent && !overLimit && (!needsHumanAgent || humanAgent);
+  const canSend = !blocked && !sending && hasContent && !overLimit;
+
+  // Grow with the text, up to a cap.
+  React.useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_PX)}px`;
+  }, [text, showInput]);
 
   async function submit() {
     if (!canSend) return;
@@ -184,7 +196,7 @@ function Composer({ window, channelActive, contactOptedOut, contactName, sending
       text: text.trim() || undefined,
       buttons: buttons.length > 0 ? buttons : undefined,
     };
-    const ok = await onSend(message, needsHumanAgent && humanAgent);
+    const ok = await onSend(message, needsHumanAgent);
     if (ok) {
       setText("");
       setButtons([]);
@@ -199,73 +211,85 @@ function Composer({ window, channelActive, contactOptedOut, contactName, sending
     }
   }
 
-  const rows = Math.min(6, Math.max(1, text.split("\n").length));
-
   return (
-    <div className="border-t bg-background p-3">
-      {blocked ? (
-        <p className="mb-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">{blockedReason}</p>
-      ) : null}
+    <div className="shrink-0 bg-background px-3 pb-3 pt-1 sm:px-5 sm:pb-4">
+      <div className="mx-auto w-full max-w-4xl space-y-2">
+        {blocked ? (
+          <BlockedNotice icon={blocked.icon} action={blocked.action}>
+            {blocked.text}
+          </BlockedNotice>
+        ) : null}
 
-      {buttons.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {buttons.map((b, i) => (
-            <span key={`${b.url}-${i}`} className="inline-flex max-w-full items-center gap-1 rounded-md border bg-secondary px-2 py-1 text-xs">
-              <Link2 className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="truncate font-medium">{b.title}</span>
-              <span className="truncate text-muted-foreground">{b.url}</span>
-              <button
-                type="button"
-                onClick={() => setButtons((prev) => prev.filter((_, j) => j !== i))}
-                className="ml-0.5 rounded-sm text-muted-foreground hover:text-foreground"
-                aria-label={`Remove button ${b.title}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
+        {showInput ? (
+          <div
+            className={cn(
+              "rounded-3xl border bg-background transition-[border-color,box-shadow] duration-150",
+              "focus-within:border-ink focus-within:ring-4 focus-within:ring-ring/15",
+              overLimit && "border-destructive focus-within:border-destructive focus-within:ring-destructive/15",
+              blocked && "opacity-60",
+            )}
+          >
+            {buttons.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+                {buttons.map((b, i) => (
+                  <span key={`${b.url}-${i}`} className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-fog py-1 pl-2.5 pr-1 text-[12px]">
+                    <Link2 className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="truncate font-semibold">{b.title}</span>
+                    <span className="hidden truncate text-muted-foreground sm:inline">{b.url}</span>
+                    <button
+                      type="button"
+                      onClick={() => setButtons((prev) => prev.filter((_, j) => j !== i))}
+                      disabled={blocked !== null || sending}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                      aria-label={`Remove button ${b.title}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
 
-      <div className={cn("rounded-lg border bg-background shadow-sm transition-colors focus-within:border-foreground", blocked && "opacity-60")}>
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={rows}
-          disabled={blocked || sending}
-          placeholder={blocked ? "Replying is unavailable" : `Reply to ${contactName}…`}
-          aria-label="Reply"
-          aria-invalid={overLimit || undefined}
-          className="min-h-0 resize-none border-0 bg-transparent px-3 py-2.5 shadow-none focus-visible:ring-0"
-        />
-        <div className="flex items-center gap-2 px-2 pb-2">
-          <LinkButtonPopover
-            disabled={blocked || sending || buttons.length >= MAX_BUTTONS}
-            onAdd={(b) => setButtons((prev) => (prev.length < MAX_BUTTONS ? [...prev, b] : prev))}
-          />
+            <Textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={onKeyDown}
+              rows={1}
+              disabled={blocked !== null || sending}
+              placeholder={`Reply to ${contactName}…`}
+              aria-label="Reply"
+              aria-invalid={overLimit || undefined}
+              className="min-h-0 resize-none rounded-none border-0 bg-transparent px-4 pb-1.5 pt-3 text-[14px] shadow-none hover:border-0 focus-visible:ring-0 disabled:cursor-default disabled:opacity-100"
+            />
 
-          {needsHumanAgent && !blocked ? (
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox checked={humanAgent} onCheckedChange={(v) => setHumanAgent(v === true)} aria-label="Send as human agent" />
-              Send as human agent (7-day window)
-            </label>
-          ) : null}
+            <div className="flex items-center gap-2 px-2 pb-2">
+              <LinkButtonPopover
+                disabled={blocked !== null || sending || buttons.length >= MAX_BUTTONS}
+                onAdd={(b) => setButtons((prev) => (prev.length < MAX_BUTTONS ? [...prev, b] : prev))}
+              />
+              {!blocked ? <WindowBadge window={window} now={now} /> : null}
 
-          <span className="flex-1" />
+              <span className="flex-1" />
 
-          {bytes > MAX_TEXT_BYTES * 0.8 ? (
-            <span className={cn("text-[11px] tabular-nums", overLimit ? "text-destructive" : "text-muted-foreground")}>
-              {bytes}/{MAX_TEXT_BYTES}
-            </span>
-          ) : null}
-          <span className="hidden text-[11px] text-muted-foreground sm:inline">Enter to send · Shift+Enter for a new line</span>
-          <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSend} loading={sending} aria-label="Send reply">
-            <SendHorizontal />
-            Send
-          </Button>
-        </div>
+              {bytes > MAX_TEXT_BYTES * 0.8 ? (
+                <span className={cn("shrink-0 text-[11px] tabular-nums", overLimit ? "font-semibold text-destructive" : "text-muted-foreground")}>
+                  {bytes}/{MAX_TEXT_BYTES}
+                </span>
+              ) : text.length > 0 && !blocked ? (
+                <span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground lg:flex">
+                  <Kbd>Shift</Kbd>
+                  <Kbd>Enter</Kbd>
+                  new line
+                </span>
+              ) : null}
+              <Button type="button" size="sm" onClick={() => void submit()} disabled={!canSend} loading={sending} aria-label="Send reply">
+                Send
+                <SendHorizontal />
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

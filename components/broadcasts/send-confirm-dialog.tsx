@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Send } from "lucide-react";
+import { Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -75,40 +75,34 @@ function SendConfirmDialog({ open, onOpenChange, name, channelId, audience, esti
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Send “{name || "this broadcast"}” now?</DialogTitle>
-          <DialogDescription>Recipients are decided the moment you confirm.</DialogDescription>
+          <DialogDescription>It goes out as soon as you confirm.</DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border bg-muted/40 p-4">
+        <div className="rounded-2xl bg-orange p-5 text-ink">
           {loading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner size="sm" /> Counting eligible contacts…
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Spinner size="sm" /> Counting…
             </div>
           ) : error ? (
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-sm font-semibold">{error}</p>
           ) : estimate ? (
-            <div className="space-y-2">
-              <p className="text-2xl font-semibold tabular-nums tracking-tight">
-                {formatCount(estimate.eligible)} <span className="text-sm font-normal text-muted-foreground">will receive it now</span>
+            <div>
+              <p className="brand-label">Can get it now</p>
+              <p className="font-display mt-1 text-[48px] leading-none tabular-nums">{formatCount(estimate.eligible)}</p>
+              <p className="mt-3 text-[13px]">
+                {formatCount(estimate.total)} match. {formatCount(estimate.skippedWindow)} have not messaged you in the last 24 hours, so they are skipped.
               </p>
-              <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
-                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  {formatCount(estimate.skippedWindow)} of the {formatCount(estimate.total)} matching contacts are outside the 24-hour window. They are
-                  logged as skipped and never messaged.
-                </span>
-              </p>
-              <p className="text-[12px] text-muted-foreground">Uses {formatCount(estimate.eligible)} DMs from your monthly quota.</p>
             </div>
           ) : null}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
           <Button type="button" onClick={confirm} loading={pending} disabled={loading || !estimate || eligible === 0}>
             <Send />
-            {estimate && eligible === 0 ? "No one is eligible right now" : `Send to ${formatCount(eligible)} contact${eligible === 1 ? "" : "s"}`}
+            {estimate && eligible === 0 ? "No one can get it right now" : `Send to ${formatCount(eligible)} ${eligible === 1 ? "person" : "people"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

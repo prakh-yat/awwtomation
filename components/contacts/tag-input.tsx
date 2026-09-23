@@ -119,14 +119,14 @@ function TagInput({
     <div ref={rootRef} className={cn("relative", className)}>
       <div
         className={cn(
-          "flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm transition-colors",
-          "focus-within:border-foreground focus-within:ring-2 focus-within:ring-ring",
+          "flex min-h-10 w-full flex-wrap items-center gap-1 rounded-xl border border-input bg-background px-2 py-1.5 text-sm transition-[border-color,box-shadow] hover:border-ink/30",
+          "focus-within:border-ink focus-within:ring-4 focus-within:ring-ring/15 focus-within:hover:border-ink",
           disabled && "cursor-not-allowed opacity-50",
         )}
         onClick={() => inputRef.current?.focus()}
       >
         {value.map((tag) => (
-          <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-full bg-secondary pl-2 pr-1 text-[12px] font-medium text-secondary-foreground">
+          <span key={tag} className="inline-flex h-6 items-center motion-safe:animate-pop gap-1 rounded-full bg-green-soft pl-2.5 pr-1 text-[12px] font-semibold text-green-ink">
             <span className="max-w-[12rem] truncate">{tag}</span>
             <button
               type="button"
@@ -136,7 +136,7 @@ function TagInput({
                 e.stopPropagation();
                 remove(tag);
               }}
-              className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+              className="flex h-4 w-4 items-center justify-center rounded-full text-green-ink/70 transition-colors hover:bg-green/15 hover:text-green-ink"
             >
               <X className="h-3 w-3" />
             </button>
@@ -162,7 +162,7 @@ function TagInput({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          className="h-6 min-w-[8rem] flex-1 bg-transparent px-1 text-sm outline-none placeholder:text-muted-foreground"
+          className="h-6 min-w-[8rem] flex-1 bg-transparent px-1.5 text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
 
@@ -170,7 +170,7 @@ function TagInput({
         <ul
           id={listId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-elevated"
+          className="absolute left-0 right-0 top-full z-30 mt-1.5 max-h-56 overflow-auto motion-safe:animate-fade-in rounded-2xl border bg-popover p-1.5 text-popover-foreground shadow-elevated"
         >
           {items.map((item, i) => (
             <li
@@ -183,20 +183,20 @@ function TagInput({
                 e.preventDefault();
                 commit(item.label);
               }}
-              className={cn(
-                "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-[13px]",
-                i === highlight ? "bg-accent text-accent-foreground" : "text-foreground",
-              )}
+              className={cn("flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-[13px]", i === highlight ? "bg-fog text-ink" : "text-foreground")}
             >
               {item.kind === "create" ? (
                 <>
-                  <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                  <Plus className="h-3.5 w-3.5 text-green-ink" />
                   <span>
-                    Create <span className="font-medium">&ldquo;{item.label}&rdquo;</span>
+                    Create <span className="font-semibold">&ldquo;{item.label}&rdquo;</span>
                   </span>
                 </>
               ) : (
-                <span className="truncate">{item.label}</span>
+                <>
+                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-green" />
+                  <span className="truncate">{item.label}</span>
+                </>
               )}
             </li>
           ))}

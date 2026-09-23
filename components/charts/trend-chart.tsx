@@ -71,13 +71,13 @@ export function TrendChart({
       const point = payload[0]?.payload as TrendPoint | undefined;
       if (!point) return null;
       return (
-        <div className="min-w-[170px] rounded-lg border bg-background px-3 py-2.5 text-xs shadow-elevated">
+        <div className="min-w-[170px] rounded-xl border bg-background px-3 py-2.5 text-xs shadow-elevated">
           <div className="flex items-center justify-between gap-6">
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <LineKey color={VIZ.accent} />
               {day(point.date, "EEE, MMM d")}
             </span>
-            <span className="text-sm font-semibold tabular-nums text-foreground">{clean(point.value, kind)}</span>
+            <span className="text-sm font-semibold tabular-nums text-ink">{clean(point.value, kind)}</span>
           </div>
           {hasPrevious && point.previous !== undefined ? (
             <div className="mt-1.5 flex items-center justify-between gap-6">
@@ -97,7 +97,7 @@ export function TrendChart({
   return (
     <div className={cn(fill ? "flex h-full flex-col gap-3" : "space-y-3", className)}>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <LineKey color={VIZ.accent} />
             {hasPrevious ? "This period" : label}
@@ -112,20 +112,21 @@ export function TrendChart({
         <button
           type="button"
           onClick={() => setAsTable((v) => !v)}
-          className="text-xs text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          aria-pressed={asTable}
+          className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
         >
           {asTable ? "Show chart" : "Show table"}
         </button>
       </div>
 
       {asTable ? (
-        <div className="max-h-[320px] overflow-auto rounded-lg border scrollbar-thin">
+        <div className="max-h-[320px] overflow-auto rounded-xl border scrollbar-thin">
           <table className="w-full text-[13px]">
-            <thead className="sticky top-0 bg-muted/60 text-xs text-muted-foreground backdrop-blur">
+            <thead className="sticky top-0 bg-fog text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Date</th>
-                <th className="px-3 py-2 text-right font-medium">{label}</th>
-                {hasPrevious ? <th className="px-3 py-2 text-right font-medium">Previous period</th> : null}
+                <th className="brand-label px-3 py-2.5 text-left font-normal">Date</th>
+                <th className="brand-label px-3 py-2.5 text-right font-normal">{label}</th>
+                {hasPrevious ? <th className="brand-label px-3 py-2.5 text-right font-normal">Previous period</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -196,7 +197,7 @@ export function TrendChart({
           </ResponsiveContainer>
           {empty ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-6">
-              <p className="rounded-md border bg-background px-3 py-1.5 text-xs text-muted-foreground shadow-card">Nothing in this period yet</p>
+              <p className="rounded-full border bg-background px-3.5 py-1.5 text-xs font-medium text-muted-foreground">Nothing in this period yet</p>
             </div>
           ) : null}
         </div>

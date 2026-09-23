@@ -29,6 +29,19 @@ export type BuilderSettings = {
   oncePerContact: boolean;
 };
 
+/** What undo restores: the settings and the graph, never selection or save state. */
+export type Snapshot = { settings: BuilderSettings; nodes: BuilderNode[]; edges: BuilderEdge[] };
+
+export type History = {
+  past: Snapshot[];
+  future: Snapshot[];
+  /** True between the first and last position change of a drag, so a drag is one step. */
+  dragging: boolean;
+  /** Consecutive edits with the same group (typing in one field) collapse into one step. */
+  group: string | null;
+  groupAt: number;
+};
+
 export type BuilderState = {
   settings: BuilderSettings;
   nodes: BuilderNode[];
@@ -39,6 +52,7 @@ export type BuilderState = {
   savedSnapshot: string;
   /** Media the user has seen (selected thumbnails + picker results), keyed by external id. */
   mediaById: Record<string, MediaSummary>;
+  history: History;
 };
 
 export type AddableNodeType = Exclude<FlowNodeType, "trigger">;
@@ -53,7 +67,13 @@ export type BuilderAction =
    * whatever the handle pointed at); without it the step goes after the
    * selected node. `data` pre-fills it, e.g. with the first pipeline.
    */
-  | { type: "addNode"; nodeType: AddableNodeType; data?: FlowNodeData; after?: { nodeId: string; handle: string } }
+  | { type: "addNode"; nodeType: AddableNodeType; data?: FlowNodeData; after?: { nodeId: string; handle: string }; position?: { x: number; y: number } }
+  /**
+   * A step dragged in from the palette. Dropped on a connection it goes in
+   * between; dropped on open canvas it stays where it landed and is wired from
+   * the nearest step above it that still has a free way out.
+   */
+  | { type: "dropNode"; nodeType: AddableNodeType; data?: FlowNodeData; position: { x: number; y: number }; edgeId?: string | null }
   | { type: "updateNodeData"; id: string; data: FlowNodeData; handleRemap?: Record<string, string | null> }
   /**
    * Moves nodes to new positions. `rebaseline` (used when a crowded layout is
@@ -65,15 +85,16 @@ export type BuilderAction =
   | { type: "select"; id: string | null }
   | { type: "saved"; detail: AutomationDetail }
   | { type: "setStatus"; status: AutomationStatus }
-  | { type: "mediaLoaded"; items: MediaSummary[] };
+  | { type: "mediaLoaded"; items: MediaSummary[] }
+  | { type: "undo" }
+  | { type: "redo" };
 
 // ───────────────────────── Graph conversion ─────────────────────────
 
-/** Monochrome edge styling shared by initial and newly-drawn edges. */
+/** Edge styling shared by initial and newly-drawn edges; colours come from the canvas stylesheet. */
 export const EDGE_DEFAULTS: Partial<BuilderEdge> = {
-  type: "smoothstep",
-  markerEnd: { type: MarkerType.ArrowClosed, color: "#0a0a0a", width: 16, height: 16 },
-  style: { stroke: "#0a0a0a", strokeWidth: 1.5 },
+  type: "insertable",
+  markerEnd: { type: MarkerType.ArrowClosed, color: "#5c5c5c", width: 14, height: 14 },
 };
 
 export function fromFlowGraph(flow: FlowGraph): { nodes: BuilderNode[]; edges: BuilderEdge[] } {
@@ -146,6 +167,7 @@ export function initBuilderState(detail: AutomationDetail): BuilderState {
     // A recovered (unparseable) flow must read as dirty so the user is nudged to save the repaired graph.
     savedSnapshot: detail.flowRecovered ? "" : snapshot(settings, nodes, edges),
     mediaById,
+    history: { past: [], future: [], dragging: false, group: null, groupAt: 0 },
   };
 }
 
@@ -369,13 +391,34 @@ function placeAfter(anchor: BuilderNode | undefined, nodes: BuilderNode[], handl
   return candidate;
 }
 
+/**
+ * The step a freely dropped step should hang off: the closest one above the
+ * drop point, roughly in the same column, with a free way out.
+ */
+function anchorAbove(nodes: BuilderNode[], edges: BuilderEdge[], at: { x: number; y: number }): { node: BuilderNode; handle: string } | null {
+  let best: { node: BuilderNode; handle: string; score: number } | null = null;
+  const centre = at.x + NODE_WIDTH / 2;
+  for (const n of nodes) {
+    const bottom = n.position.y + (n.measured?.height ?? 120);
+    const dy = at.y - bottom;
+    const dx = Math.abs(n.position.x + (n.measured?.width ?? NODE_WIDTH) / 2 - centre);
+    if (dy < -16 || dy > 420 || dx > NODE_WIDTH * 1.25) continue;
+    const handles = allowedHandles(n.data);
+    const handle = handles.find((h) => !edgeFromHandle(edges, n.id, h));
+    if (!handle) continue;
+    const score = dy + dx * 0.6;
+    if (!best || score < best.score) best = { node: n, handle, score };
+  }
+  return best ? { node: best.node, handle: best.handle } : null;
+}
+
 // ───────────────────────── Reducer ─────────────────────────
 
 function withSelection(nodes: BuilderNode[], id: string | null): BuilderNode[] {
   return nodes.map((n) => (Boolean(n.selected) === (n.id === id) ? n : { ...n, selected: n.id === id }));
 }
 
-export function builderReducer(state: BuilderState, action: BuilderAction): BuilderState {
+function reduce(state: BuilderState, action: BuilderAction): BuilderState {
   switch (action.type) {
     case "settings": {
       const next = { ...state.settings, ...action.patch };
@@ -437,10 +480,28 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
         return { ...state, nodes: [...withSelection(moved, null), node], edges, selectedNodeId: id };
       }
 
-      const position = placeAfter(anchor, state.nodes, handle);
+      const position = action.position ?? placeAfter(anchor, state.nodes, handle);
       const node: BuilderNode = { id, type: action.nodeType, position, data, deletable: true, selected: true };
       if (anchor && handle) edges.push({ ...EDGE_DEFAULTS, id: `e-${anchor.id}-${handle}-${id}`, source: anchor.id, target: id, sourceHandle: handle });
       return { ...state, nodes: [...withSelection(state.nodes, null), node], edges, selectedNodeId: id };
+    }
+
+    case "dropNode": {
+      const edge = action.edgeId ? state.edges.find((e) => e.id === action.edgeId) : undefined;
+      if (edge) {
+        return reduce(state, { type: "addNode", nodeType: action.nodeType, data: action.data, after: { nodeId: edge.source, handle: normalizeHandle(edge.sourceHandle) } });
+      }
+      const position = { x: snap(action.position.x - NODE_WIDTH / 2), y: snap(action.position.y - 28) };
+      const anchor = anchorAbove(state.nodes, state.edges, position);
+      if (anchor) {
+        return reduce(state, { type: "addNode", nodeType: action.nodeType, data: action.data, after: { nodeId: anchor.node.id, handle: anchor.handle }, position });
+      }
+      // Nothing above to hang it off: it lands unconnected and its handles invite a connection.
+      const taken = new Set(state.nodes.map((n) => n.id));
+      const id = uniqueId(ID_PREFIX[action.nodeType], taken);
+      const data = action.data?.type === action.nodeType ? action.data : newNodeData(action.nodeType);
+      const node: BuilderNode = { id, type: action.nodeType, position, data, deletable: true, selected: true };
+      return { ...state, nodes: [...withSelection(state.nodes, null), node], selectedNodeId: id };
     }
 
     case "updateNodeData": {
@@ -499,7 +560,97 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
       for (const item of action.items) mediaById[item.externalId] = item;
       return { ...state, mediaById };
     }
+
+    // History is handled by `builderReducer`; these never reach here.
+    case "undo":
+    case "redo":
+      return state;
   }
+}
+
+// ───────────────────────── Undo ─────────────────────────
+
+const HISTORY_LIMIT = 60;
+/** Edits to the same field closer together than this are one undo step. */
+const GROUP_MS = 900;
+
+function capture(state: BuilderState): Snapshot {
+  return { settings: state.settings, nodes: state.nodes, edges: state.edges };
+}
+
+type HistoryEntry = { group?: string; dragStart?: boolean } | null;
+
+/** Whether an action is an edit worth undoing, and which edits it merges with. */
+function recordFor(state: BuilderState, action: BuilderAction): HistoryEntry {
+  switch (action.type) {
+    case "settings":
+      return { group: `settings:${Object.keys(action.patch).sort().join(",")}` };
+    case "updateNodeData":
+      return { group: `data:${action.id}` };
+    case "nodesChange": {
+      if (action.changes.some((c) => c.type === "remove")) return {};
+      const dragStart = action.changes.some((c) => c.type === "position" && c.dragging) && !state.history.dragging;
+      return dragStart ? { dragStart: true } : null;
+    }
+    case "edgesChange":
+      return action.changes.some((c) => c.type === "remove") ? {} : null;
+    case "arrange":
+      return action.rebaseline ? null : {};
+    case "connect":
+    case "addNode":
+    case "dropNode":
+    case "removeNode":
+    case "removeEdge":
+      return {};
+    default:
+      return null;
+  }
+}
+
+function restore(state: BuilderState, snap: Snapshot, history: History): BuilderState {
+  return {
+    ...state,
+    settings: snap.settings,
+    nodes: snap.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+    edges: snap.edges,
+    selectedNodeId: null,
+    history,
+  };
+}
+
+/** The builder's reducer: the edit itself, plus an undo history of the settings and the graph. */
+export function builderReducer(state: BuilderState, action: BuilderAction): BuilderState {
+  const h = state.history;
+  if (action.type === "undo") {
+    const previous = h.past[h.past.length - 1];
+    if (!previous) return state;
+    return restore(state, previous, { past: h.past.slice(0, -1), future: [capture(state), ...h.future].slice(0, HISTORY_LIMIT), dragging: false, group: null, groupAt: 0 });
+  }
+  if (action.type === "redo") {
+    const next = h.future[0];
+    if (!next) return state;
+    return restore(state, next, { past: [...h.past, capture(state)].slice(-HISTORY_LIMIT), future: h.future.slice(1), dragging: false, group: null, groupAt: 0 });
+  }
+
+  const next = reduce(state, action);
+  if (next === state) return state;
+
+  const dragEnded = action.type === "nodesChange" && h.dragging && action.changes.some((c) => c.type === "position" && c.dragging === false);
+  const record = recordFor(state, action);
+  if (!record) return dragEnded ? { ...next, history: { ...next.history, dragging: false } } : next;
+
+  const now = Date.now();
+  const merge = Boolean(record.group && h.group === record.group && now - h.groupAt < GROUP_MS);
+  return {
+    ...next,
+    history: {
+      past: merge ? h.past : [...h.past, capture(state)].slice(-HISTORY_LIMIT),
+      future: [],
+      dragging: record.dragStart ? true : dragEnded ? false : h.dragging,
+      group: record.group ?? null,
+      groupAt: now,
+    },
+  };
 }
 
 // ───────────────────────── Derived helpers ─────────────────────────

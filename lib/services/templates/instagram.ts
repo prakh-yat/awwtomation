@@ -38,7 +38,7 @@ const autoDmLinks: AutomationTemplate = {
 const leadsFromStories: AutomationTemplate = {
   id: "ig-leads-from-stories",
   name: "Generate leads with stories",
-  description: "Use limited-time offers in your stories to convert leads.",
+  description: "Send a limited-time offer to people who reply to your story.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "STORY_REPLY",
@@ -81,7 +81,7 @@ const leadsFromStories: AutomationTemplate = {
 const respondToAllDms: AutomationTemplate = {
   id: "ig-respond-to-all-dms",
   name: "Respond to all your DMs",
-  description: "Auto-send customized replies when people DM you.",
+  description: "Reply to DMs with the answer that fits the keyword.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
   triggerType: "DM",
@@ -129,7 +129,7 @@ const respondToAllDms: AutomationTemplate = {
 const growFollowersFromComments: AutomationTemplate = {
   id: "ig-grow-followers-from-comments",
   name: "Grow followers from comments",
-  description: "Incentivize a follow to grow your account.",
+  description: "Send a reward to people who follow you.",
   platform: "INSTAGRAM",
   goal: "Grow your followers",
   triggerType: "COMMENT",
@@ -160,7 +160,7 @@ const growFollowersFromComments: AutomationTemplate = {
 const affiliateLinks: AutomationTemplate = {
   id: "ig-affiliate-links",
   name: "Send affiliate product links",
-  description: "Include a product card with photos and links from your affiliate collabs.",
+  description: "Send a product card with photos and your affiliate links.",
   platform: "INSTAGRAM",
   goal: "Sell more",
   triggerType: "COMMENT",
@@ -192,7 +192,7 @@ const affiliateLinks: AutomationTemplate = {
 const guidedConversation: AutomationTemplate = {
   id: "ig-guided-conversation",
   name: "Guide the conversation",
-  description: "Collect what you need, pitch the offer and point people at the right product.",
+  description: "Ask a few questions, then send the product that fits.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
   triggerType: "DM",
@@ -282,7 +282,7 @@ const commentReplyInDm: AutomationTemplate = {
 const autoSendLinksInDm: AutomationTemplate = {
   id: "ig-auto-send-links-in-dm",
   name: "Auto-send links in DM",
-  description: "Send followers to your website instead of saying link in bio.",
+  description: "Send your website link in a DM instead of pointing to your bio.",
   platform: "INSTAGRAM",
   goal: "Drive traffic",
   triggerType: "DM",
@@ -382,7 +382,7 @@ const growEmailList: AutomationTemplate = {
 const runGiveaway: AutomationTemplate = {
   id: "ig-run-giveaway",
   name: "Run a giveaway",
-  description: "Run a giveaway to grow Instagram followers. Every comment is an entry.",
+  description: "Every comment is an entry. Tag entrants and confirm it by DM.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
   triggerType: "COMMENT",
@@ -410,8 +410,8 @@ const runGiveaway: AutomationTemplate = {
 
 const routeDmQuestions: AutomationTemplate = {
   id: "ig-route-dm-questions",
-  name: "Recognize questions in DM",
-  description: "Identify and respond to the questions people ask most.",
+  name: "Answer common questions in DMs",
+  description: "Answer the questions people ask most.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
   triggerType: "DM",
@@ -455,7 +455,7 @@ const routeDmQuestions: AutomationTemplate = {
 
 const gamifyLive: AutomationTemplate = {
   id: "ig-gamify-live",
-  name: "Gamify Instagram live",
+  name: "Play a game during a live",
   description: "Turn comments during a live into DMs, entries and links.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
@@ -495,7 +495,7 @@ const gamifyLive: AutomationTemplate = {
 const collabsFromStoryReplies: AutomationTemplate = {
   id: "ig-collabs-from-story-replies",
   name: "Get more collabs from story replies",
-  description: "When your story sparks collab requests, the automation has the answers.",
+  description: "Reply to collab requests from your stories with your rates and a contact link.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "STORY_REPLY",
@@ -538,7 +538,7 @@ const collabsFromStoryReplies: AutomationTemplate = {
 const couponsInStories: AutomationTemplate = {
   id: "ig-coupons-in-stories",
   name: "Give coupons in stories",
-  description: "Someone watched your story? Treat them like a VIP with a coupon by DM.",
+  description: "Send a coupon to people who reply to your story.",
   platform: "INSTAGRAM",
   goal: "Sell more",
   triggerType: "STORY_REPLY",
@@ -566,7 +566,7 @@ const couponsInStories: AutomationTemplate = {
 const offersDuringLive: AutomationTemplate = {
   id: "ig-offers-during-live",
   name: "Send offers in DMs during live",
-  description: "Every where is this from moment is a missed sale unless the DM goes out.",
+  description: "Send the product link when someone asks where to buy it during a live.",
   platform: "INSTAGRAM",
   goal: "Sell more",
   triggerType: "COMMENT",
@@ -601,7 +601,7 @@ const offersDuringLive: AutomationTemplate = {
 const sellFromReelComments: AutomationTemplate = {
   id: "ig-sell-from-reel-comments",
   name: "Sell from Reel comments",
-  description: "A reel got people talking. Slide into their DMs with something worth buying.",
+  description: "Send a product link to people who comment on a reel.",
   platform: "INSTAGRAM",
   goal: "Sell more",
   triggerType: "COMMENT",
@@ -637,7 +637,7 @@ const sellFromReelComments: AutomationTemplate = {
 const commentsToRsvp: AutomationTemplate = {
   id: "ig-comments-to-rsvp",
   name: "Turn comments into RSVPs",
-  description: "Comment to join becomes you are registered. No forms, no fuss.",
+  description: "Register people for an event when they comment. No form needed.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "COMMENT",
@@ -673,7 +673,7 @@ const commentsToRsvp: AutomationTemplate = {
 const qualifyWithQuiz: AutomationTemplate = {
   id: "ig-qualify-with-quiz",
   name: "Qualify with a quiz",
-  description: "People love talking about themselves. Quiz them, tag them and send the right thing.",
+  description: "Ask a short quiz in DMs, tag the answers and send the matching product.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "DM",
@@ -728,8 +728,8 @@ const qualifyWithQuiz: AutomationTemplate = {
 
 const dmYourCourse: AutomationTemplate = {
   id: "ig-dm-your-course",
-  name: "DM your course like a closer",
-  description: "Give followers early access to a launch without the launch day chaos.",
+  name: "Send a course to people who ask",
+  description: "Send early access to your course when someone comments.",
   platform: "INSTAGRAM",
   goal: "Sell more",
   triggerType: "COMMENT",
@@ -764,8 +764,8 @@ const dmYourCourse: AutomationTemplate = {
 
 const dmsDuringIgLive: AutomationTemplate = {
   id: "ig-dms-during-live",
-  name: "Trigger DMs during IG Live",
-  description: "Use lives to spark DMs, drop links and collect leads while people are watching.",
+  name: "Send links during a live",
+  description: "Send links and collect leads from comments during a live.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "COMMENT",
@@ -808,7 +808,7 @@ const dmsDuringIgLive: AutomationTemplate = {
 const faqFromStoryReplies: AutomationTemplate = {
   id: "ig-faq-from-story-replies",
   name: "Answer FAQs from story replies",
-  description: "Reply to your followers questions as soon as they ask them.",
+  description: "Answer common questions in DMs as soon as they come in.",
   platform: "INSTAGRAM",
   goal: "Engage your audience",
   triggerType: "STORY_REPLY",
@@ -877,7 +877,7 @@ const welcomeFirstDm: AutomationTemplate = {
 const waitlistFromComments: AutomationTemplate = {
   id: "ig-waitlist-from-comments",
   name: "Build a waitlist from comments",
-  description: "Turn a comment into a name on the list before the thing is even out.",
+  description: "Add people to a waitlist when they comment.",
   platform: "INSTAGRAM",
   goal: "Capture leads",
   triggerType: "COMMENT",

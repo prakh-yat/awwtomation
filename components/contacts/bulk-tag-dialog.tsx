@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
 
@@ -55,17 +55,12 @@ function BulkTagDialog({ open, onOpenChange, mode, ids, suggestions, onApplied }
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{mode === "add" ? "Add tags" : "Remove tags"}</DialogTitle>
-          <DialogDescription>
-            {mode === "add"
-              ? `Tags are appended to ${noun}; existing tags are kept.`
-              : `Selected tags are removed from ${noun}. Contacts without them are left untouched.`}
-          </DialogDescription>
+          <DialogTitle>{mode === "add" ? `Add tags to ${noun}` : `Remove tags from ${noun}`}</DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <Label htmlFor="bulk-tags-input">{mode === "add" ? "Tags to add" : "Tags to remove"}</Label>
+          <Label htmlFor="bulk-tags-input">Tags</Label>
           <TagInput
             id="bulk-tags-input"
             value={tags}
@@ -75,11 +70,9 @@ function BulkTagDialog({ open, onOpenChange, mode, ids, suggestions, onApplied }
             placeholder={mode === "add" ? "Type a tag and press Enter" : "Pick tags to remove"}
             autoFocus
           />
-          {mode === "remove" && suggestions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">None of the selected contacts have tags.</p>
-          ) : null}
+          {mode === "remove" && suggestions.length === 0 ? <p className="text-[12px] text-muted-foreground">None of the selected contacts have tags.</p> : null}
         </div>
-        <DialogFooter className="mt-2 gap-2 sm:gap-0">
+        <DialogFooter className="mt-2">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>

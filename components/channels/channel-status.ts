@@ -13,29 +13,30 @@ export type StatusVariant = "success" | "warning" | "destructive" | "secondary";
 export type ChannelStatusView = {
   label: string;
   variant: StatusVariant;
-  /** One sentence under the stats saying what's going on, or null when all is well. */
+  /** One line on what's wrong and what to do about it, or null when all is well. */
   detail: string | null;
   /** True when the only fix is signing in with Meta again. */
   needsReconnect: boolean;
 };
+
+function signsOutIn(daysLeft: number | null): string {
+  if (daysLeft === null) return "Signs out soon.";
+  if (daysLeft <= 1) return "Signs out within a day.";
+  return `Signs out in ${daysLeft} days.`;
+}
 
 export function channelStatusView(channel: Pick<ChannelView, "platform" | "health">): ChannelStatusView {
   const platform = channel.platform === "INSTAGRAM" ? "Instagram" : "Facebook";
   const { state, daysLeft, problem } = channel.health;
   switch (state) {
     case "disconnected":
-      return { label: "Disconnected", variant: "secondary", detail: "Automations on this account are off until you reconnect it.", needsReconnect: true };
+      return { label: "Disconnected", variant: "destructive", detail: "Automations on this account are off until you reconnect it.", needsReconnect: true };
     case "reconnect":
       return { label: "Reconnect needed", variant: "destructive", detail: problem ?? `${platform} signed this account out. Reconnect to keep automations running.`, needsReconnect: true };
     case "not_receiving":
-      return { label: "Not receiving", variant: "warning", detail: problem ?? "New comments and messages aren't reaching Awwtomation. Reconnecting usually fixes this.", needsReconnect: true };
+      return { label: "Not receiving", variant: "warning", detail: problem ?? "New comments and messages aren't coming in. Reconnect to fix it.", needsReconnect: true };
     case "expiring":
-      return {
-        label: "Reconnect soon",
-        variant: "warning",
-        detail: `${platform} asks you to sign in again every 60 days. ${daysLeft === 1 ? "One day" : `${daysLeft} days`} left.`,
-        needsReconnect: false,
-      };
+      return { label: "Reconnect soon", variant: "warning", detail: `${signsOutIn(daysLeft)} Reconnect to keep automations running.`, needsReconnect: false };
     case "ok":
     default:
       return { label: "Connected", variant: "success", detail: null, needsReconnect: false };

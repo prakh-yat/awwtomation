@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertCircle, ExternalLink, Info, MousePointerClick, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, ExternalLink, MousePointerClick, Plus, Trash2, X } from "lucide-react";
+import type { ChannelPlatform } from "@prisma/client";
 
 import { DmPreview } from "@/components/automations/dm-preview";
 import { StageDot } from "@/components/pipelines/stage-badge";
@@ -29,7 +30,8 @@ import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
 import { charCount, followPromptMessage, renderPreviewMessage, utf8Bytes, type BuilderAction, type BuilderNode } from "./builder-state";
-import { STEP_INFO } from "./step-catalog";
+import { STEP_INFO, StepIcon } from "./step-catalog";
+import { TONES } from "@/components/ui/tone";
 
 // ───────────────────────── Shared bits ─────────────────────────
 
@@ -63,26 +65,20 @@ function lengthUsage(text: string, hasButtons: boolean): { value: number; max: n
 
 function Field({ label, htmlFor, right, children, hint }: { label: string; htmlFor?: string; right?: React.ReactNode; children: React.ReactNode; hint?: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <div className="flex items-center justify-between text-[12px]">
-        <Label htmlFor={htmlFor} className="text-[12px] text-muted-foreground">
-          {label}
-        </Label>
+        <Label htmlFor={htmlFor}>{label}</Label>
         {right}
       </div>
       {children}
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-[12px] text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }
 
-function Callout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-2 rounded-md border bg-secondary/50 p-2.5 text-[11px] leading-relaxed text-muted-foreground">
-      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-      <div>{children}</div>
-    </div>
-  );
+/** A short note in the builder's yellow, for the one thing a step needs you to know. */
+function Note({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-xl bg-yellow-soft px-3 py-2 text-[12px] leading-relaxed text-ink">{children}</p>;
 }
 
 /** Textarea with {{variable}} chips that insert at the caret (falls back to appending). */
@@ -123,14 +119,14 @@ function TemplateTextarea({
     <>
       <Textarea id={id} ref={ref} value={value} rows={rows} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid || undefined} className="text-[13px]" />
       <div className="flex flex-wrap items-center gap-1">
-        <span className="mr-1 text-[11px] text-muted-foreground">Insert</span>
         {TEMPLATE_VARS.map((v) => (
           <button
             key={v.token}
             type="button"
             onClick={() => insertVar(v.token)}
-            className="rounded-md border bg-background px-1.5 py-0.5 text-[11px] transition-colors hover:bg-secondary"
+            className="inline-flex items-center gap-1 rounded-full bg-purple-soft px-2 py-0.5 text-[11px] font-semibold text-purple-ink transition-colors hover:bg-purple hover:text-white"
           >
+            <Plus className="h-2.5 w-2.5" strokeWidth={3} />
             {v.label}
           </button>
         ))}
@@ -212,7 +208,7 @@ function MessageEditor({ id, data, update }: { id: string; data: MessageData; up
       >
         <div className="space-y-2">
           {buttons.map((b, i) => (
-            <div key={i} className="space-y-1.5 rounded-md border p-2">
+            <div key={i} className="space-y-1.5 rounded-xl border bg-fog/50 p-2">
               <div className="flex items-center gap-1.5">
                 <Select value={b.type} onValueChange={(v) => setButton(i, { type: v as OutboundButton["type"] })}>
                   <SelectTrigger className="h-8 w-[118px] text-[12px]" aria-label={`Button ${i + 1} type`}>
@@ -254,7 +250,7 @@ function MessageEditor({ id, data, update }: { id: string; data: MessageData; up
                   className="h-8 text-[12px]"
                 />
               ) : (
-                <p className="text-[11px] text-muted-foreground">Continues the flow. Connect this button to the next step on the canvas.</p>
+                <p className="text-[11px] text-muted-foreground">Leads to the step it is connected to on the canvas.</p>
               )}
               <p className="text-right text-[10px] text-muted-foreground tabular-nums">
                 {charCount(b.title)}/{MAX_BUTTON_TITLE_CHARS}
@@ -262,18 +258,14 @@ function MessageEditor({ id, data, update }: { id: string; data: MessageData; up
             </div>
           ))}
           {buttons.length < MAX_BUTTONS ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMessage({ buttons: [...buttons, { type: "web_url", title: "Open link", url: "" }] })}
-            >
+            <Button variant="secondary" size="sm" onClick={() => setMessage({ buttons: [...buttons, { type: "web_url", title: "Open link", url: "" }] })}>
               <Plus /> Add button
             </Button>
           ) : null}
         </div>
       </Field>
 
-      <Field label="Image URL" htmlFor={`${id}-image`} hint="Sent before the text as a separate image message.">
+      <Field label="Image link" htmlFor={`${id}-image`} hint="Sent before the text.">
         <Input
           id={`${id}-image`}
           type="url"
@@ -291,7 +283,7 @@ function MessageEditor({ id, data, update }: { id: string; data: MessageData; up
             {quick.length}/{MAX_QUICK_REPLIES}
           </span>
         }
-        hint="Tappable pills under the message. Each one has its own connection on the canvas."
+        hint="Each one can lead to its own step."
       >
         <div className="space-y-1.5">
           {quick.map((q, i) => (
@@ -310,17 +302,13 @@ function MessageEditor({ id, data, update }: { id: string; data: MessageData; up
             </div>
           ))}
           {quick.length < MAX_QUICK_REPLIES ? (
-            <Button variant="outline" size="sm" onClick={() => setMessage({ quickReplies: [...quick, { title: "", payload: `qr:${quick.length}` }] })}>
+            <Button variant="secondary" size="sm" onClick={() => setMessage({ quickReplies: [...quick, { title: "", payload: `qr:${quick.length}` }] })}>
               <Plus /> Add quick reply
             </Button>
           ) : null}
         </div>
       </Field>
 
-      <Callout>
-        The flow pauses after this message. It continues along the bottom connection when they reply, or along a button&apos;s connection when they
-        tap it.
-      </Callout>
     </div>
   );
 }
@@ -398,7 +386,7 @@ function AskQuestionEditor({ id, data, update }: { id: string; data: AskQuestion
             {quick.length}/{MAX_QUICK_REPLIES}
           </span>
         }
-        hint="Shown as tappable pills under the question. Typing a reply works too."
+        hint="They can also type their own answer."
       >
         <div className="space-y-1.5">
           {quick.map((q, i) => (
@@ -426,14 +414,14 @@ function AskQuestionEditor({ id, data, update }: { id: string; data: AskQuestion
             </div>
           ))}
           {quick.length < MAX_QUICK_REPLIES ? (
-            <Button variant="outline" size="sm" onClick={() => setPrompt({ quickReplies: [...quick, { title: "", payload: `qr:${quick.length}` }] })}>
+            <Button variant="secondary" size="sm" onClick={() => setPrompt({ quickReplies: [...quick, { title: "", payload: `qr:${quick.length}` }] })}>
               <Plus /> Add suggestion
             </Button>
           ) : null}
         </div>
       </Field>
 
-      <Field label="Save answer to" htmlFor={`${id}-save-to`}>
+      <Field label="Save answer to" htmlFor={`${id}-save-to`} hint={data.saveTo ? <>Use it in later messages as <span className="font-mono text-ink">{`{{${data.saveTo}}}`}</span></> : undefined}>
         <Select value={custom ? CUSTOM_FIELD : data.saveTo} onValueChange={chooseField}>
           <SelectTrigger id={`${id}-save-to`} aria-label="Save answer to">
             <SelectValue placeholder="Choose a field" />
@@ -457,12 +445,12 @@ function AskQuestionEditor({ id, data, update }: { id: string; data: AskQuestion
               onChange={(e) => patch({ saveTo: sanitizeFieldKey(e.target.value) })}
               className="h-8 font-mono text-[12px]"
             />
-            <p className="text-[11px] text-muted-foreground">Lowercase letters, digits and underscores. Appears under Custom fields on the contact.</p>
+            <p className="text-[11px] text-muted-foreground">Lowercase letters, digits and underscores.</p>
           </div>
         ) : null}
       </Field>
 
-      <Field label="Check the answer" htmlFor={`${id}-validation`} hint="Answers that fail the check get the retry prompt.">
+      <Field label="Check the answer" htmlFor={`${id}-validation`}>
         <Select value={data.validation ?? "none"} onValueChange={(v) => patch({ validation: v as AnswerValidation })}>
           <SelectTrigger id={`${id}-validation`} aria-label="Answer validation">
             <SelectValue />
@@ -489,7 +477,7 @@ function AskQuestionEditor({ id, data, update }: { id: string; data: AskQuestion
         />
       </Field>
 
-      <Field label="Max retries" htmlFor={`${id}-retries`} hint="After this many wrong answers the flow moves on without saving.">
+      <Field label="Tries before moving on" htmlFor={`${id}-retries`}>
         <Input
           id={`${id}-retries`}
           type="number"
@@ -501,11 +489,6 @@ function AskQuestionEditor({ id, data, update }: { id: string; data: AskQuestion
         />
       </Field>
 
-      <Callout>
-        The flow waits for their reply. The answer is saved on the contact, where you can see it under Contacts, and you can use it in later
-        messages as <span className="font-mono text-foreground">{`{{${data.saveTo || "field"}}}`}</span>. While a question is pending, their
-        reply never triggers another automation.
-      </Callout>
     </div>
   );
 }
@@ -530,7 +513,7 @@ function DelayEditor({ id, seconds, update }: { id: string; seconds: number; upd
   const { amount, unit } = splitSeconds(seconds);
   return (
     <div className="space-y-4">
-      <Field label="Wait for" htmlFor={`${id}-amount`} hint="Up to 7 days. The contact must still be inside the 24h messaging window for the next message to send.">
+      <Field label="Wait for" htmlFor={`${id}-amount`} hint="Up to 7 days.">
         <div className="flex gap-1.5">
           <Input
             id={`${id}-amount`}
@@ -554,13 +537,14 @@ function DelayEditor({ id, seconds, update }: { id: string; seconds: number; upd
           </Select>
         </div>
       </Field>
+      {seconds > 23 * 3600 ? <Note>A message sent more than 24 hours after their last reply is not delivered, so put a question or button before a long wait.</Note> : null}
     </div>
   );
 }
 
 function TagEditor({ id, type, tag, update }: { id: string; type: "add_tag" | "remove_tag"; tag: string; update: (next: FlowNodeData) => void }) {
   return (
-    <Field label="Tag" htmlFor={`${id}-tag`} hint={type === "add_tag" ? "Added to the contact instantly; use it to build broadcast audiences." : "Removed from the contact if present."}>
+    <Field label="Tag" htmlFor={`${id}-tag`}>
       <Input id={`${id}-tag`} value={tag} maxLength={64} placeholder="lead" onChange={(e) => update({ type, tag: e.target.value })} />
     </Field>
   );
@@ -569,9 +553,9 @@ function TagEditor({ id, type, tag, update }: { id: string; type: "add_tag" | "r
 type PipelineStepData = Extract<FlowNodeData, { type: "add_to_pipeline" | "move_stage" | "remove_from_pipeline" }>;
 
 const PIPELINE_STEP_HINT: Record<PipelineStepData["type"], string> = {
-  add_to_pipeline: "Contacts already in this pipeline keep the stage they're at.",
-  move_stage: "Contacts who aren't in the pipeline yet are added at this stage.",
-  remove_from_pipeline: "Nothing happens for contacts who aren't in this pipeline.",
+  add_to_pipeline: "Contacts already in it keep their stage.",
+  move_stage: "Adds them to the pipeline if they are not in it.",
+  remove_from_pipeline: "",
 };
 
 function AiReplyEditor({
@@ -589,13 +573,12 @@ function AiReplyEditor({
 
   if (agents.length === 0) {
     return (
-      <p className="rounded-lg border bg-secondary/40 px-3 py-2.5 text-[13px] text-muted-foreground">
-        This workspace has no AI agents yet.{" "}
-        <Link href="/ai" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+      <Note>
+        No AI agents yet.{" "}
+        <Link href="/ai" target="_blank" className="font-semibold underline underline-offset-2">
           Create one
-        </Link>{" "}
-        and it will appear here.
-      </p>
+        </Link>
+      </Note>
     );
   }
 
@@ -616,25 +599,21 @@ function AiReplyEditor({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-[12px] text-muted-foreground">
-          Its prompt, rules and model live under{" "}
-          <Link href="/ai" target="_blank" className="font-medium text-foreground underline underline-offset-2">
-            AI
-          </Link>
-          .
-        </p>
+        <Link href="/ai" target="_blank" className="inline-block text-[12px] font-semibold text-purple-ink hover:underline">
+          Edit agents
+        </Link>
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor={`${id}-instruction`}>Extra instruction for this step</Label>
+        <Label htmlFor={`${id}-instruction`}>Instruction for this step</Label>
         <Textarea
           id={`${id}-instruction`}
           rows={3}
           value={data.instruction ?? ""}
           onChange={(e) => update({ ...data, instruction: e.target.value })}
-          placeholder="Optional. For example: only talk about the autumn collection, and get their size."
+          placeholder="Only talk about the autumn collection, and ask for their size."
         />
-        <p className="text-[12px] text-muted-foreground">Added to the agent&apos;s prompt here only, so one agent can play several parts.</p>
+        <p className="text-[12px] text-muted-foreground">Optional. Applies to this step only.</p>
       </div>
 
       <div className="space-y-1.5">
@@ -650,10 +629,7 @@ function AiReplyEditor({
             update({ ...data, maxTurns: Number.isFinite(next) ? Math.min(Math.max(Math.round(next), 1), MAX_AI_TURNS) : DEFAULT_AI_TURNS });
           }}
         />
-        <p className="text-[12px] text-muted-foreground">
-          Each reply costs a DM from your plan and tokens from your own API key. The flow leaves through <strong>Done</strong> when the
-          agent finishes or the count runs out, and through <strong>Needs a human</strong> when it says it cannot help.
-        </p>
+
       </div>
     </div>
   );
@@ -676,13 +652,12 @@ function PipelineStepEditor({ id, data, pipelines, update }: { id: string; data:
 
   if (pipelines.length === 0) {
     return (
-      <Callout>
-        This workspace has no pipelines yet.{" "}
-        <Link href="/contacts/pipelines" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+      <Note>
+        No pipelines yet.{" "}
+        <Link href="/contacts/pipelines" target="_blank" className="font-semibold underline underline-offset-2">
           Create one
-        </Link>{" "}
-        in a new tab, then come back and pick it here.
-      </Callout>
+        </Link>
+      </Note>
     );
   }
 
@@ -727,30 +702,38 @@ function PipelineStepEditor({ id, data, pipelines, update }: { id: string; data:
         </Field>
       ) : null}
 
-      <Callout>
-        {PIPELINE_STEP_HINT[data.type]} Every move shows on the contact&apos;s timeline.{" "}
-        <Link href="/contacts/pipelines" target="_blank" className="font-medium text-foreground underline underline-offset-2">
+      <p className="text-[12px] text-muted-foreground">
+        {PIPELINE_STEP_HINT[data.type]}{" "}
+        <Link href="/contacts/pipelines" target="_blank" className="font-semibold text-purple-ink hover:underline">
           Edit pipelines
         </Link>
-      </Callout>
+      </p>
     </div>
   );
 }
 
-function FollowEditor({ id, retryPrompt, update, accountHandle }: { id: string; retryPrompt?: string; update: (next: FlowNodeData) => void; accountHandle: string }) {
+function FollowEditor({
+  id,
+  retryPrompt,
+  update,
+  accountHandle,
+  platform,
+}: {
+  id: string;
+  retryPrompt?: string;
+  update: (next: FlowNodeData) => void;
+  accountHandle: string;
+  platform: ChannelPlatform | null;
+}) {
   const value = retryPrompt ?? "";
   return (
     <div className="space-y-4">
-      <Callout>
-        Checks whether the contact follows <span className="font-medium text-foreground">{accountHandle}</span>. Connect &ldquo;Following&rdquo; to the
-        reward and &ldquo;Not following&rdquo; to a message with a button that checks again. Facebook has no followers in this sense, so Messenger
-        contacts always pass.
-      </Callout>
+      {platform === "FACEBOOK" ? <Note>Facebook has no followers, so everyone on Messenger takes the Following path.</Note> : null}
       <Field
-        label="Retry prompt"
+        label="Ask them to follow"
         htmlFor={`${id}-prompt`}
         right={<Counter value={utf8Bytes(value)} max={MAX_TEXT_BYTES} />}
-        hint="Sent with an “I'm following” button when nothing is connected to “Not following”. Leave it empty to use the default."
+        hint="Sent with an “I'm following” button when Not following has no step."
       >
         <Textarea
           id={`${id}-prompt`}
@@ -773,6 +756,7 @@ export type InspectorProps = {
   dispatch: React.Dispatch<BuilderAction>;
   accountHandle: string;
   accountAvatarUrl: string | null;
+  platform: ChannelPlatform | null;
   conversation: OutboundMessage[];
   contactText: string | null;
   contactLabel: string;
@@ -786,6 +770,7 @@ export function Inspector({
   dispatch,
   accountHandle,
   accountAvatarUrl,
+  platform,
   conversation,
   contactText,
   contactLabel,
@@ -800,7 +785,7 @@ export function Inspector({
   );
 
   let preview: OutboundMessage[] = conversation;
-  let previewTitle = "Flow preview";
+  let previewTitle = "Conversation";
   if (node?.data.type === "send_message") {
     preview = [renderPreviewMessage(node.data.message)];
     previewTitle = "This message";
@@ -809,46 +794,54 @@ export function Inspector({
     previewTitle = "This question";
   } else if (node?.data.type === "condition_follow") {
     preview = [followPromptMessage(node.data.retryPrompt, accountHandle)];
-    previewTitle = "Retry prompt";
+    previewTitle = "If they don't follow";
   }
 
   return (
     <div className="flex flex-col">
-      <div className="border-b px-5 py-4">
-        {node ? (
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h2 className="text-sm font-medium">{STEP_INFO[node.data.type].label}</h2>
-              <p className="mt-0.5 text-[12px] text-muted-foreground">{STEP_INFO[node.data.type].hint}</p>
+      {node ? (
+        <div className={cn("px-5 py-4", node.data.type === "trigger" ? TONES.yellow.solid : node.data.type === "ai_reply" ? "bg-ink text-white" : TONES[STEP_INFO[node.data.type].tone].soft)}>
+          <div className="flex items-center gap-3">
+            <StepIcon type={node.data.type} size={36} className={node.data.type === "trigger" ? "bg-ink text-yellow" : node.data.type === "ai_reply" ? "bg-white text-ink" : undefined} />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-[15px] font-semibold leading-tight">{STEP_INFO[node.data.type].label}</h2>
+              <p className="truncate text-[12px] leading-tight opacity-70">{STEP_INFO[node.data.type].hint}</p>
             </div>
             {node.data.type !== "trigger" ? (
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => dispatch({ type: "removeNode", id: node.id })}>
-                <Trash2 /> Delete
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete this step"
+                title="Delete this step"
+                className={cn("shrink-0", node.data.type === "ai_reply" ? "text-white hover:bg-white/10" : "hover:bg-white/60 hover:text-destructive")}
+                onClick={() => dispatch({ type: "removeNode", id: node.id })}
+              >
+                <Trash2 />
               </Button>
             ) : null}
           </div>
-        ) : (
-          <div>
-            <h2 className="text-sm font-medium">Inspector</h2>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">Select a step on the canvas to edit it.</p>
-          </div>
-        )}
-        {errors.length > 0 ? (
-          <ul className="mt-3 space-y-1">
-            {errors.map((e) => (
-              <li key={e} className="flex items-start gap-1.5 text-[12px] text-destructive">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {e}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
+          {errors.length > 0 ? (
+            <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2">
+              {errors.map((e) => (
+                <li key={e} className="flex items-start gap-1.5 text-[12px] text-destructive">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {e}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : (
+        <div className="border-b px-5 py-4">
+          <h2 className="text-[15px] font-semibold">No step selected</h2>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">Click a step on the canvas to edit it.</p>
+        </div>
+      )}
 
       {node ? (
         <div className="border-b px-5 py-5">
           {node.data.type === "trigger" ? (
-            <p className="text-[13px] text-muted-foreground">Set the account, keywords, posts and comment replies in the left panel.</p>
+            <p className="text-[13px] text-muted-foreground">Account, keywords and posts are in the left panel.</p>
           ) : node.data.type === "send_message" ? (
             <MessageEditor id={node.id} data={node.data} update={update} />
           ) : node.data.type === "ask_question" ? (
@@ -858,7 +851,7 @@ export function Inspector({
           ) : node.data.type === "delay" ? (
             <DelayEditor id={node.id} seconds={node.data.seconds} update={update} />
           ) : node.data.type === "condition_follow" ? (
-            <FollowEditor id={node.id} retryPrompt={node.data.retryPrompt} update={update} accountHandle={accountHandle} />
+            <FollowEditor id={node.id} retryPrompt={node.data.retryPrompt} update={update} accountHandle={accountHandle} platform={platform} />
           ) : node.data.type === "add_tag" || node.data.type === "remove_tag" ? (
             <TagEditor id={node.id} type={node.data.type} tag={node.data.tag} update={update} />
           ) : (
@@ -869,10 +862,10 @@ export function Inspector({
 
       <div className="px-5 py-5">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-[13px] font-medium">{previewTitle}</h3>
-          <span className="text-[11px] text-muted-foreground">As seen by Sita Rai</span>
+          <h3 className="brand-label text-muted-foreground">{previewTitle}</h3>
+          <span className="text-[11px] text-muted-foreground">What they see</span>
         </div>
-        <DmPreview messages={preview} accountHandle={accountHandle} accountAvatarUrl={accountAvatarUrl} contactText={contactText} contactLabel={contactLabel} />
+        <DmPreview messages={preview} accountHandle={accountHandle} accountAvatarUrl={accountAvatarUrl} platform={platform} contactText={contactText} contactLabel={contactLabel} />
       </div>
     </div>
   );

@@ -90,6 +90,33 @@ export async function reserveDmQuota(workspaceId: string, n = 1): Promise<QuotaR
 }
 
 /**
+ * Gives back quota reserved for a DM that never went out.
+ *
+ * `reserveDmQuota` runs before the Meta call, because a quota check after the
+ * fact cannot stop anything. When the call then fails, or is deferred and will
+ * be attempted again, the reservation has to come back: otherwise a channel
+ * with an expired token, or one Meta is throttling, spends a month's allowance
+ * on messages nobody received.
+ *
+ * Clamped at zero and conditional on the period so a release arriving after the
+ * monthly reset cannot push the new period's counter negative.
+ */
+export async function releaseDmQuota(workspaceId: string, n = 1): Promise<void> {
+  if (!Number.isInteger(n) || n < 1) return;
+  const periodStart = currentPeriodStart();
+  try {
+    const organizationId = await organizationIdFor(workspaceId);
+    await prisma.organization.updateMany({
+      where: { id: organizationId, usagePeriodStart: { gte: periodStart }, dmsSentThisPeriod: { gte: n } },
+      data: { dmsSentThisPeriod: { decrement: n } },
+    });
+  } catch (err) {
+    // Never let bookkeeping break a send path that is already failing.
+    logger.warn("billing.dm_quota_release_failed", { workspaceId, n, error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/**
  * Read-only snapshot for dashboards and the billing page. If the stored
  * period is stale we report zero DMs used rather than writing: the next
  * `reserveDmQuota` call performs the real reset.

@@ -1,6 +1,8 @@
 import * as React from "react";
 import { ExternalLink, MessageSquare, Tag, Zap, type LucideIcon } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { TONES, type Tone } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 import { Avatar, Chip, Panel } from "./mock-parts";
@@ -8,26 +10,22 @@ import { Avatar, Chip, Panel } from "./mock-parts";
 function FlowStep({
   icon: Icon,
   title,
-  solid = false,
+  tone,
   children,
 }: {
   icon: LucideIcon;
   title: string;
-  solid?: boolean;
+  /** The step's colour in the builder: trigger yellow, send message purple, tags green. */
+  tone: Tone;
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border bg-background shadow-[0_1px_2px_rgb(24_24_27/0.05)]">
+    <div className="rounded-xl border bg-background shadow-[0_1px_2px_rgb(15_15_15/0.05)]">
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        <span
-          className={cn(
-            "flex size-5 items-center justify-center rounded-[5px]",
-            solid ? "bg-foreground text-background" : "border text-foreground",
-          )}
-        >
+        <span className={cn("flex size-5 items-center justify-center rounded-md", TONES[tone].solid)}>
           <Icon aria-hidden className="size-3" strokeWidth={2.25} />
         </span>
-        <p className="text-[12px] font-medium">{title}</p>
+        <p className="text-[12px] font-semibold">{title}</p>
       </div>
       <div className="px-3 py-2.5 text-[12px] leading-[1.5] text-muted-foreground">{children}</div>
     </div>
@@ -37,7 +35,7 @@ function FlowStep({
 function Connector() {
   return (
     <div aria-hidden className="flex justify-center">
-      <span className="h-5 w-px bg-foreground/35" />
+      <span className="h-5 w-px bg-ink/35" />
     </div>
   );
 }
@@ -51,13 +49,12 @@ function AutomationPanel({ className }: { className?: string }) {
           <p className="truncate text-[13px] font-semibold">Autumn collection link</p>
           <p className="text-[11px] text-muted-foreground">@himalayanthreads, 2 posts</p>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium leading-5">
-          <span className="size-1.5 rounded-full bg-foreground" />
+        <Badge variant="success" dot="pulse" className="shrink-0">
           Active
-        </span>
+        </Badge>
       </div>
-      <div className="flex-1 bg-muted/30 bg-[radial-gradient(hsl(var(--border))_1px,transparent_1px)] px-4 py-5 [background-size:14px_14px]">
-        <FlowStep icon={Zap} title="Comment trigger" solid>
+      <div className="bg-dots flex-1 bg-fog/60 px-4 py-5">
+        <FlowStep icon={Zap} title="Comment trigger" tone="yellow">
           <p>Comment contains</p>
           <p className="mt-1.5 flex flex-wrap gap-1">
             <Chip>link</Chip>
@@ -66,17 +63,17 @@ function AutomationPanel({ className }: { className?: string }) {
           <p className="mt-2">Public reply: 3 variations</p>
         </FlowStep>
         <Connector />
-        <FlowStep icon={MessageSquare} title="Send message">
-          <p className="text-foreground">
-            Namaste {"{{first_name}}"}! Here’s the autumn collection. Delivery is free inside the valley this month.
+        <FlowStep icon={MessageSquare} title="Send message" tone="purple">
+          <p className="text-ink">
+            Namaste {"{{first_name}}"}, here’s the autumn collection. Delivery is free inside the valley this month.
           </p>
-          <p className="-mx-3 mt-2.5 flex items-center gap-1.5 border-t px-3 pt-2 font-medium text-foreground">
+          <p className="-mx-3 mt-2.5 flex items-center gap-1.5 border-t px-3 pt-2 font-semibold text-ink">
             <ExternalLink aria-hidden className="size-3" strokeWidth={2.25} />
             Shop the collection
           </p>
         </FlowStep>
         <Connector />
-        <FlowStep icon={Tag} title="Add tag">
+        <FlowStep icon={Tag} title="Add tag" tone="green">
           <Chip>autumn-collection</Chip>
         </FlowStep>
       </div>
@@ -90,11 +87,11 @@ const activity: Array<{ time: string; body: React.ReactNode }> = [
     time: "4:12 PM",
     body: (
       <>
-        Got a DM from <span className="font-medium text-foreground">Autumn collection link</span>
+        Got a DM from <span className="font-semibold text-ink">Autumn collection link</span>
       </>
     ),
   },
-  { time: "4:12 PM", body: <>Public reply posted: “Sent it to your DMs, Sita.”</> },
+  { time: "4:12 PM", body: <>Public reply posted: “Sent it to your DMs, Sita.”</> },
   {
     time: "4:12 PM",
     body: (
@@ -107,22 +104,22 @@ const activity: Array<{ time: string; body: React.ReactNode }> = [
     time: "4:14 PM",
     body: (
       <>
-        Opened <span className="font-medium text-foreground">Shop the collection</span>
+        Opened <span className="font-semibold text-ink">Shop the collection</span>
       </>
     ),
   },
-  { time: "4:31 PM", body: <>Replied: “Do you have the rust kurta in M?”</> },
+  { time: "4:31 PM", body: <>Replied: “Do you have the rust kurta in M?”</> },
   {
     time: "4:36 PM",
     body: (
       <>
-        <span className="font-medium text-foreground">Bikash Thapa</span> moved her from New to Lead
+        <span className="font-semibold text-ink">Bikash Thapa</span> moved her from New to Lead
       </>
     ),
   },
 ];
 
-/** The contact record Awwtomation created for Sita, with its activity log. */
+/** The contact record the automation created for Sita, with its activity log. */
 function ActivityPanel({ className }: { className?: string }) {
   return (
     <Panel className={cn("flex flex-col", className)}>
@@ -134,11 +131,11 @@ function ActivityPanel({ className }: { className?: string }) {
         </div>
         <div className="text-right leading-tight">
           <p className="text-[11px] text-muted-foreground">Stage</p>
-          <p className="text-[12px] font-medium">Lead</p>
+          <p className="text-[12px] font-semibold">Lead</p>
         </div>
       </div>
       <div className="px-4 pb-5 pt-3.5">
-        <p className="text-[12px] font-medium">Notes and activity</p>
+        <p className="text-[12px] font-semibold">Notes and activity</p>
         <ol className="relative mt-3.5 space-y-3.5 before:absolute before:bottom-1.5 before:left-[3px] before:top-1.5 before:w-px before:bg-border">
           {activity.map((item, i) => (
             <li key={i} className="relative flex gap-3 pl-5">
@@ -146,7 +143,7 @@ function ActivityPanel({ className }: { className?: string }) {
                 aria-hidden
                 className={cn(
                   "absolute left-0 top-[5px] size-[7px] rounded-full ring-2 ring-background",
-                  i === 0 ? "bg-foreground" : "bg-foreground/35",
+                  i === 0 ? "bg-ink" : "bg-ink/30",
                 )}
               />
               <p className="min-w-0 flex-1 text-[12px] leading-[1.5] text-muted-foreground">{item.body}</p>

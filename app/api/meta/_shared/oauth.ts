@@ -2,7 +2,7 @@
  * Shared plumbing for the Instagram / Facebook OAuth start + callback routes.
  * Both platforms follow the same shape: sign a state bound to the workspace
  * and user, pin it with a nonce cookie, and on return verify all three before
- * touching Meta. Every failure ends in a redirect to /channels?error=… so the
+ * touching Meta. Every failure ends in a redirect to /dashboard?error=… so the
  * user always lands back in the app with a toast rather than raw JSON.
  */
 import type { ChannelPlatform, User } from "@prisma/client";
@@ -28,7 +28,7 @@ export const OAUTH_NONCE_COOKIE = "or_oauth_nonce";
 const NONCE_MAX_AGE_SECONDS = 15 * 60;
 /** Per-IP cap on the start routes: each hit mints a state + nonce and bounces to Meta. */
 export const OAUTH_START_LIMIT_PER_MINUTE = 20;
-/** Longest error detail forwarded to the channels toast; Meta's messages are one sentence. */
+/** Longest error detail forwarded to the dashboard toast; Meta's messages are one sentence. */
 const MAX_REDIRECT_MESSAGE_CHARS = 200;
 
 function nonceCookieOptions() {
@@ -47,9 +47,9 @@ export function callbackUri(platform: ChannelPlatform): string {
   return appUrl(`/api/meta/${platform.toLowerCase()}/callback`);
 }
 
-/** Redirect back to the channels page with query flags the page turns into toasts. */
-export function channelsRedirect(params: Record<string, string | undefined> = {}): NextResponse {
-  const url = new URL(appUrl("/channels"));
+/** Redirect back to the dashboard with query flags its accounts bar turns into toasts. */
+export function accountsRedirect(params: Record<string, string | undefined> = {}): NextResponse {
+  const url = new URL(appUrl("/dashboard"));
   for (const [key, value] of Object.entries(params)) {
     if (value) url.searchParams.set(key, value);
   }
@@ -75,15 +75,15 @@ function safeMessage(message: string): string | undefined {
 
 function errorRedirect(err: unknown, platform: ChannelPlatform): NextResponse {
   if (err instanceof ApiError) {
-    return channelsRedirect({ error: (err.code ?? "error").toLowerCase(), message: safeMessage(err.message) });
+    return accountsRedirect({ error: (err.code ?? "error").toLowerCase(), message: safeMessage(err.message) });
   }
   if (err instanceof MetaApiError) {
     logger.warn("meta.oauth_callback_meta_error", { platform, code: err.code, subcode: err.subcode, message: err.message });
     // Meta's own wording stays in the logs; the toast gets the translated explanation.
-    return channelsRedirect({ error: "meta", message: safeMessage(categorise(err).description) });
+    return accountsRedirect({ error: "meta", message: safeMessage(categorise(err).description) });
   }
   logger.error("meta.oauth_callback_failed", { platform, error: err });
-  return channelsRedirect({ error: "unknown" });
+  return accountsRedirect({ error: "unknown" });
 }
 
 /**
@@ -92,13 +92,13 @@ function errorRedirect(err: unknown, platform: ChannelPlatform): NextResponse {
  * this URL is reached by a plain link click.
  */
 export async function startOAuth(ctx: WorkspaceContext, platform: ChannelPlatform): Promise<NextResponse> {
-  if (!roleAtLeast(ctx.role, "ADMIN")) return channelsRedirect({ error: "forbidden" });
+  if (!roleAtLeast(ctx.role, "ADMIN")) return accountsRedirect({ error: "forbidden" });
 
   const configured = isMetaConfigured();
   const ready = platform === "INSTAGRAM" ? configured.instagram : configured.facebook;
-  if (!ready) return channelsRedirect({ error: "not_configured", platform: platform.toLowerCase() });
+  if (!ready) return accountsRedirect({ error: "not_configured", platform: platform.toLowerCase() });
 
-  if (!(await canStartConnect(ctx.workspace.id, platform))) return channelsRedirect({ error: "plan_limit" });
+  if (!(await canStartConnect(ctx.workspace.id, platform))) return accountsRedirect({ error: "plan_limit" });
 
   const nonce = newOAuthNonce();
   const state = buildOAuthState({ workspaceId: ctx.workspace.id, userId: ctx.user.id, platform, nonce });
@@ -135,34 +135,34 @@ export async function runOAuthCallback(
   const metaError = params.get("error");
   if (metaError) {
     logger.info("meta.oauth_denied", { platform, error: metaError, reason: params.get("error_reason"), description: params.get("error_description") });
-    return clearNonce(channelsRedirect({ error: "denied" }));
+    return clearNonce(accountsRedirect({ error: "denied" }));
   }
 
   const code = params.get("code");
   const rawState = params.get("state");
-  if (!code || !rawState) return clearNonce(channelsRedirect({ error: "invalid_state" }));
+  if (!code || !rawState) return clearNonce(accountsRedirect({ error: "invalid_state" }));
 
   let state: OAuthStatePayload;
   try {
     state = parseOAuthState(rawState);
   } catch (err) {
     logger.warn("meta.oauth_bad_state", { platform, error: err instanceof Error ? err.message : String(err) });
-    return clearNonce(channelsRedirect({ error: "invalid_state" }));
+    return clearNonce(accountsRedirect({ error: "invalid_state" }));
   }
-  if (state.platform !== platform) return clearNonce(channelsRedirect({ error: "invalid_state" }));
+  if (state.platform !== platform) return clearNonce(accountsRedirect({ error: "invalid_state" }));
 
   const nonce = req.cookies.get(OAUTH_NONCE_COOKIE)?.value;
   if (!nonce || !constantTimeEqual(nonce, state.nonce)) {
     logger.warn("meta.oauth_nonce_mismatch", { platform, hasCookie: Boolean(nonce) });
-    return clearNonce(channelsRedirect({ error: "invalid_state" }));
+    return clearNonce(accountsRedirect({ error: "invalid_state" }));
   }
 
   const user = await getCurrentUser();
-  if (!user) return clearNonce(NextResponse.redirect(appUrl("/login?next=%2Fchannels")));
-  if (user.id !== state.userId) return clearNonce(channelsRedirect({ error: "session" }));
+  if (!user) return clearNonce(NextResponse.redirect(appUrl("/login?next=%2Fdashboard")));
+  if (user.id !== state.userId) return clearNonce(accountsRedirect({ error: "session" }));
 
   const access = await assertMembership(state.workspaceId, user.id, "MEMBER").catch(() => null);
-  if (!access || !roleAtLeast(access.role, "ADMIN")) return clearNonce(channelsRedirect({ error: "forbidden" }));
+  if (!access || !roleAtLeast(access.role, "ADMIN")) return clearNonce(accountsRedirect({ error: "forbidden" }));
 
   try {
     const res = await onAuthorized({ state, user, code, redirectUri: callbackUri(platform) });

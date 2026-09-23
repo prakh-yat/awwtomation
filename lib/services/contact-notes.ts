@@ -85,6 +85,10 @@ function notFound(): ApiError {
 
 export async function listNotes(workspaceId: string, contactId: string, opts: { limit?: number } = {}): Promise<ContactNoteSummary[]> {
   const limit = Math.min(Math.max(opts.limit ?? NOTES_DEFAULT_LIMIT, 1), NOTES_MAX_LIMIT);
+  // A contact from another workspace would otherwise read as one with no notes;
+  // the rest of the API answers 404 for an id that isn't ours, so this does too.
+  const contact = await prisma.contact.findFirst({ where: { id: contactId, workspaceId }, select: { id: true } });
+  if (!contact) throw new ApiError(404, "Contact not found", "NOT_FOUND");
   const rows = await prisma.contactNote.findMany({
     where: { workspaceId, contactId },
     select: noteSelect,

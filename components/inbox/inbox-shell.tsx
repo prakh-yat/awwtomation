@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MessageSquare, Plug } from "lucide-react";
+import { MessageSquare, MessagesSquare, Plug } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -88,27 +88,27 @@ function setUrlConversation(id: string | null) {
 
 function ThreadSkeleton() {
   return (
-    <div className="flex h-full flex-col" aria-busy="true">
-      <div className="flex h-14 items-center gap-3 border-b px-4">
-        <Skeleton className="h-8 w-8 rounded-full" />
+    <div className="flex h-full flex-col" aria-busy="true" aria-label="Loading conversation">
+      <div className="flex h-16 shrink-0 items-center gap-3 border-b px-3 sm:px-5">
+        <Skeleton className="h-10 w-10 rounded-full" />
         <div className="space-y-1.5">
           <Skeleton className="h-3.5 w-32" />
-          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <div className="ml-auto flex gap-1.5">
+          <Skeleton className="h-9 w-24 rounded-full" />
+          <Skeleton className="hidden h-9 w-20 rounded-full sm:block" />
         </div>
       </div>
-      <div className="flex-1 space-y-3 px-6 py-5">
-        <div className="flex justify-start">
-          <Skeleton className="h-10 w-56 rounded-2xl" />
-        </div>
-        <div className="flex justify-end">
-          <Skeleton className="h-10 w-64 rounded-2xl" />
-        </div>
-        <div className="flex justify-start">
-          <Skeleton className="h-10 w-40 rounded-2xl" />
-        </div>
+      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col justify-end gap-1 px-4 py-4 sm:px-6">
+        <Skeleton className="mb-2 h-6 w-20 self-center rounded-full" />
+        <Skeleton className="h-10 w-56 rounded-[20px] rounded-bl-md" />
+        <Skeleton className="h-10 w-40 rounded-[20px] rounded-bl-md" />
+        <Skeleton className="mt-3 h-10 w-64 self-end rounded-[20px] rounded-br-md" />
+        <Skeleton className="mt-3 h-16 w-72 max-w-[80%] rounded-[20px] rounded-bl-md" />
       </div>
-      <div className="border-t p-3">
-        <Skeleton className="h-20 w-full rounded-lg" />
+      <div className="px-3 pb-3 pt-1 sm:px-5 sm:pb-4">
+        <Skeleton className="mx-auto h-[88px] w-full max-w-4xl rounded-3xl" />
       </div>
     </div>
   );
@@ -260,13 +260,13 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
           setDetail((prev) => mergeDetail(prev, res.conversation));
         }
         if (!opts.silent) {
-          if (!res.found) toast.info("Meta has no conversation with this contact yet");
-          else if (res.imported > 0) toast.success(`Imported ${res.imported} new message${res.imported === 1 ? "" : "s"}`);
+          if (!res.found) toast.info("No messages found");
+          else if (res.imported > 0) toast.success(`Loaded ${res.imported} new message${res.imported === 1 ? "" : "s"}`);
           else toast.success("Already up to date");
         }
         void fetchList({ silent: true });
       } catch (err) {
-        if (!opts.silent) toast.error(errorMessage(err, "Couldn't refresh from Meta"));
+        if (!opts.silent) toast.error(errorMessage(err, "Couldn't refresh messages"));
       } finally {
         setBusyFlag("sync", false);
       }
@@ -464,24 +464,25 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
       <div className="flex h-full items-center justify-center p-6">
         {channels.length === 0 ? (
           <EmptyState
+            tone="magenta"
             icon={Plug}
-            title="Connect an account"
-            description="Connect an Instagram account or Facebook Page and every DM it receives lands here, next to your automations' replies."
+            title="No accounts connected"
             action={
-              <Button asChild size="sm">
-                <Link href="/channels">Connect an account</Link>
+              <Button asChild variant="highlight">
+                <Link href="/dashboard?accounts=1">Connect account</Link>
               </Button>
             }
-            className="w-full max-w-sm border-0"
+            className="w-full max-w-md"
           />
         ) : (
-          <EmptyState icon={MessageSquare} title="Select a conversation" description="Pick a thread on the left to read and reply." className="w-full max-w-sm border-0" />
+          <EmptyState tone="magenta" icon={MessagesSquare} title="Select a conversation" className="w-full max-w-md" />
         )}
       </div>
     );
   } else if (detail) {
     center = (
       <Thread
+        key={detail.id}
         conversation={detail}
         members={members}
         now={now}
@@ -499,6 +500,7 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
     center = (
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
+          tone="magenta"
           icon={MessageSquare}
           title="Conversation unavailable"
           description={detailError}
@@ -512,7 +514,7 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
               </Button>
             </div>
           }
-          className="w-full max-w-sm border-0"
+          className="w-full max-w-md"
         />
       </div>
     );
@@ -552,7 +554,7 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
             .finally(() => setLoadingMore(false));
         }}
         now={now}
-        className={cn("w-full border-r md:w-[340px] md:shrink-0", selectedId ? "hidden md:flex" : "flex")}
+        className={cn("w-full border-r md:w-[320px] md:shrink-0 lg:w-[360px]", selectedId ? "hidden md:flex" : "flex")}
       />
 
       <div className={cn("min-w-0 flex-1 flex-col", selectedId ? "flex" : "hidden md:flex")}>{center}</div>
@@ -561,10 +563,11 @@ function InboxShell({ workspaceId, channels, initialPage, initialCounts, initial
         <ContactPanel conversation={detail} now={now} onTagsChange={onTagsChange} className="hidden w-[300px] shrink-0 border-l xl:flex" />
       ) : selectedId ? (
         // Reserve the pane while the thread loads so the center column doesn't jump in width.
-        <aside className="hidden w-[300px] shrink-0 flex-col items-center gap-3 border-l px-5 py-6 xl:flex" aria-hidden="true">
-          <Skeleton className="h-14 w-14 rounded-full" />
-          <Skeleton className="h-4 w-28" />
+        <aside className="hidden w-[300px] shrink-0 flex-col items-center gap-2 border-l px-5 pt-7 xl:flex" aria-hidden="true">
+          <Skeleton className="h-16 w-16 rounded-full" />
+          <Skeleton className="mt-1 h-4 w-28" />
           <Skeleton className="h-3 w-20" />
+          <Skeleton className="mt-2 h-5 w-24 rounded-full" />
         </aside>
       ) : null}
     </InboxFrame>

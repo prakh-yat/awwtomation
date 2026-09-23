@@ -5,12 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AutomationStatus, TriggerType } from "@prisma/client";
 import { formatDistanceToNowStrict } from "date-fns";
-import { BarChart3, Copy, LayoutTemplate, MessageCircle, MessageSquare, MoreHorizontal, Pencil, Search, Sparkles, Trash2 } from "lucide-react";
+import { BarChart3, ChevronRight, Copy, LayoutTemplate, MoreHorizontal, Pencil, Plug, Search, SearchX, Trash2, Workflow } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
+import { AutomationStatusBadge, TriggerBadge } from "@/components/automations/badges";
+import { ChannelLabel } from "@/components/automations/channel-label";
 import { NewAutomationButton } from "@/components/automations/new-automation-button";
 import { useOpenTemplates } from "@/components/automations/templates-launcher";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -20,8 +21,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FilterMenu } from "@/components/ui/filter-menu";
 import { Input } from "@/components/ui/input";
-import { PlatformIcon } from "@/components/ui/platform-icon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
@@ -42,65 +44,100 @@ export type AutomationsTableProps = {
   firstActiveChannelId: string | null;
 };
 
-const STATUS_TABS: Array<{ value: "" | AutomationStatus; label: string }> = [
+type StatusFilterValue = "" | AutomationStatus;
+
+/** Each status with its badge colour, as the dot beside it in the filter menu. */
+const STATUS_TABS: Array<{ value: StatusFilterValue; label: string; dot?: string }> = [
   { value: "", label: "All" },
-  { value: "ACTIVE", label: "Active" },
-  { value: "PAUSED", label: "Paused" },
-  { value: "DRAFT", label: "Drafts" },
+  { value: "ACTIVE", label: "Active", dot: "bg-green" },
+  { value: "PAUSED", label: "Paused", dot: "bg-yellow ring-1 ring-inset ring-ink/20" },
+  { value: "DRAFT", label: "Drafts", dot: "bg-mute/50" },
 ];
+
+/** Stands in for "every status": Radix menus can't represent an empty value. */
+const ALL_STATUSES = "ALL";
 
 const ALL_CHANNELS = "__all__";
 
-const TRIGGER_ICON: Record<TriggerType, typeof MessageSquare> = {
-  COMMENT: MessageSquare,
-  DM: MessageCircle,
-  STORY_REPLY: Sparkles,
-};
+const ANY_LABEL: Record<TriggerType, string> = { COMMENT: "Any comment", DM: "Any DM", STORY_REPLY: "Any story reply" };
 
-function handle(channel: Pick<ChannelOption, "username" | "name" | "platform">): string {
-  if (channel.username) return `@${channel.username.replace(/^@/, "")}`;
-  return channel.name ?? (channel.platform === "INSTAGRAM" ? "Instagram account" : "Facebook Page");
+/** Stagger for the `rise` entrance, capped so a long list does not keep the last rows waiting. */
+function riseStyle(index: number): React.CSSProperties {
+  return { "--i": Math.min(index, 12) } as React.CSSProperties;
 }
 
-/** "Comment on any post", "Any DM", "Story reply": what starts the automation, in words. */
-function triggerText(item: AutomationListItem): string {
+function lastRun(at: string | null): string {
+  return at ? formatDistanceToNowStrict(new Date(at), { addSuffix: true }) : "Never";
+}
+
+/** The trigger as a coloured chip, then up to three keywords and the post limit. */
+function TriggerSummary({ item, className }: { item: AutomationListItem; className?: string }) {
   const any = item.matchMode === "ANY";
-  const posts = item.postCount === 1 ? "1 post" : `${item.postCount} posts`;
-  switch (item.triggerType) {
-    case "COMMENT":
-      if (item.postCount > 0) return any ? `Any comment on ${posts}` : `Comment on ${posts}`;
-      return any ? "Any comment" : "Comment on any post";
-    case "DM":
-      return any ? "Any DM" : "DM";
-    case "STORY_REPLY":
-      return any ? "Any story reply" : "Story reply";
-  }
-}
-
-function TriggerLine({ item }: { item: AutomationListItem }) {
-  const Icon = TRIGGER_ICON[item.triggerType];
-  const keywords = item.matchMode === "ANY" ? [] : item.keywords;
+  const keywords = any ? [] : item.keywords;
   const shown = keywords.slice(0, 3);
   const extra = keywords.length - shown.length;
+  const posts =
+    item.triggerType === "COMMENT" && item.postCount > 0 ? (item.postCount === 1 ? "on 1 post" : `on ${item.postCount} posts`) : null;
   return (
-    <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-      <Icon className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden />
-      <span className="shrink-0">{triggerText(item)}</span>
-      {shown.length > 0 ? (
-        <>
-          <span aria-hidden>·</span>
-          <span className="truncate">
-            {shown.map((k, i) => (
-              <React.Fragment key={k}>
-                {i > 0 ? ", " : null}
-                <span className="text-foreground/80">{k}</span>
-              </React.Fragment>
-            ))}
-            {extra > 0 ? ` +${extra}` : null}
-          </span>
-        </>
-      ) : null}
-    </span>
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-1", className)}>
+      <TriggerBadge trigger={item.triggerType} label={any ? ANY_LABEL[item.triggerType] : undefined} />
+      {shown.map((keyword, i) => (
+        <span key={`${keyword}-${i}`} className="max-w-[9rem] truncate rounded-full border bg-background px-2 py-px text-[11px] font-semibold leading-4 text-ink">
+          {keyword}
+        </span>
+      ))}
+      {extra > 0 ? <span className="px-0.5 text-[11px] font-semibold text-muted-foreground">+{extra}</span> : null}
+      {posts ? <span className="px-0.5 text-[11px] text-muted-foreground">{posts}</span> : null}
+    </div>
+  );
+}
+
+function RowMenu({ item, onDuplicate, onDelete }: { item: AutomationListItem; onDuplicate: () => void; onDelete: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="text-muted-foreground hover:text-ink data-[state=open]:bg-fog data-[state=open]:text-ink"
+          aria-label={`Actions for ${item.name}`}
+        >
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuItem asChild>
+          <Link href={`/automations/${item.id}`}>
+            <Pencil /> Edit
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/automations/${item.id}/analytics`}>
+            <BarChart3 /> Analytics
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDuplicate}>
+          <Copy /> Duplicate
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem destructive onSelect={onDelete}>
+          <Trash2 /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Small number with its label, for the phone layout where there are no column headers. */
+function MiniStat({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="min-w-0">
+      {/* "Last run" is relative time, which can tick over between the server render and hydration. */}
+      <p suppressHydrationWarning className={cn("truncate text-[15px] font-semibold leading-none tabular-nums", muted ? "text-muted-foreground" : "text-ink")}>
+        {value}
+      </p>
+      <p className="brand-label mt-1.5 truncate text-muted-foreground">{label}</p>
+    </div>
   );
 }
 
@@ -179,204 +216,253 @@ export function AutomationsTable({ automations, channels, filters, statusCounts,
     }
   }
 
-  const total = statusCounts.ACTIVE + statusCounts.PAUSED + statusCounts.DRAFT;
+  function clearFilters() {
+    setSearch("");
+    startTransition(() => router.replace(pathname, { scroll: false }));
+  }
+
+  /** A click anywhere on a row opens it, unless it landed on one of the row's own controls. */
+  function openFromRow(event: React.MouseEvent<HTMLElement>, href: string) {
+    const target = event.target as Element;
+    // Menus render in a portal: their clicks bubble through React to the row without being inside it.
+    if (!event.currentTarget.contains(target)) return;
+    if (target.closest("a, button, input, [role='switch'], [role='menuitem']")) return;
+    // Selecting a name to copy it is not a request to open it.
+    if (window.getSelection()?.toString()) return;
+    if (event.metaKey || event.ctrlKey) window.open(href, "_blank", "noopener");
+    else router.push(href);
+  }
+
+  const counts: Record<StatusFilterValue, number> = {
+    "": statusCounts.ACTIVE + statusCounts.PAUSED + statusCounts.DRAFT,
+    ACTIVE: statusCounts.ACTIVE,
+    PAUSED: statusCounts.PAUSED,
+    DRAFT: statusCounts.DRAFT,
+  };
   const isFiltered = Boolean(filters.q || filters.channelId || filters.status);
   const showAccount = channels.length > 1;
-  const activeTab = STATUS_TABS.some((t) => t.value === filters.status) ? filters.status : "";
+  const activeTab: StatusFilterValue = STATUS_TABS.find((t) => t.value === filters.status)?.value ?? "";
 
   if (!hasAny) {
     return (
-      <div className="rounded-lg border bg-card px-6 py-12 text-center shadow-card">
-        <h2 className="text-base font-semibold tracking-tight">No automations yet</h2>
-        <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-          An automation replies for you when someone comments a keyword, sends a DM or answers your story. Start from a
-          template, or build one yourself.
-        </p>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-          {openTemplates ? (
-            <Button onClick={openTemplates}>
-              <LayoutTemplate /> Browse templates
-            </Button>
-          ) : null}
-          <NewAutomationButton channelId={firstActiveChannelId} label="Start from scratch" variant="outline" />
-        </div>
-      </div>
+      <EmptyState
+        tone="purple"
+        icon={Workflow}
+        title="Create your first automation"
+        action={
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {firstActiveChannelId ? (
+              <>
+                {openTemplates ? (
+                  <Button onClick={openTemplates}>
+                    <LayoutTemplate /> Start from a template
+                  </Button>
+                ) : null}
+                <NewAutomationButton channelId={firstActiveChannelId} label="Start from scratch" variant="outline" />
+              </>
+            ) : (
+              // Nothing can be created without an account, so that comes first.
+              <>
+                <Button variant="highlight" asChild>
+                  <Link href="/dashboard?accounts=1">
+                    <Plug /> Connect account
+                  </Link>
+                </Button>
+                {openTemplates ? (
+                  <Button variant="outline" onClick={openTemplates}>
+                    <LayoutTemplate /> Browse templates
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </div>
+        }
+      />
     );
   }
 
   return (
     <div className={cn("space-y-4 transition-opacity", pending && "opacity-70")} aria-busy={pending || undefined}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or keyword"
-              aria-label="Search automations"
-              className="pl-8"
-            />
-          </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or keyword"
+            aria-label="Search automations"
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
           {showAccount ? (
             <Select value={filters.channelId || ALL_CHANNELS} onValueChange={(v) => setParam("channel", v === ALL_CHANNELS ? "" : v)}>
-              <SelectTrigger className="w-full sm:w-56" aria-label="Filter by account">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-60 sm:flex-none" aria-label="Filter by account">
                 <SelectValue placeholder="All accounts" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL_CHANNELS}>All accounts</SelectItem>
                 {channels.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    <span className="flex items-center gap-2">
-                      <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
-                      {handle(c)}
-                    </span>
+                    <ChannelLabel channel={c} size={16} />
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           ) : null}
-        </div>
-
-        <div role="tablist" aria-label="Status" className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-1">
-          {STATUS_TABS.map((t) => {
-            const selected = activeTab === t.value;
-            const count = t.value === "" ? total : statusCounts[t.value];
-            return (
-              <button
-                key={t.label}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setParam("status", t.value)}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                  selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.label}
-                <span className={cn("tabular-nums", selected ? "text-muted-foreground" : "text-muted-foreground/70")}>{count}</span>
-              </button>
-            );
-          })}
+          <FilterMenu
+            label="Status"
+            align="start"
+            value={activeTab || ALL_STATUSES}
+            onChange={(value) => setParam("status", value === ALL_STATUSES ? "" : value)}
+            defaultValue={ALL_STATUSES}
+            options={STATUS_TABS.map((tab) => ({ value: tab.value || ALL_STATUSES, label: tab.label, count: counts[tab.value], dot: tab.dot }))}
+          />
         </div>
       </div>
 
       {automations.length === 0 ? (
-        <div className="rounded-lg border border-dashed px-6 py-12 text-center">
-          <p className="text-sm font-medium">No automations match</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">Try another search{showAccount ? ", account" : ""} or status.</p>
-          {isFiltered ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={() => {
-                setSearch("");
-                startTransition(() => router.replace(pathname, { scroll: false }));
-              }}
-            >
-              Clear filters
-            </Button>
-          ) : null}
-        </div>
+        <EmptyState
+          compact
+          tone="purple"
+          icon={SearchX}
+          title="No automations match"
+          action={
+            isFiltered ? (
+              <Button variant="outline" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card shadow-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-5 md:min-w-[260px]">Automation</TableHead>
-                {showAccount ? <TableHead className="hidden min-w-[170px] lg:table-cell">Account</TableHead> : null}
-                <TableHead className="hidden w-[100px] text-right sm:table-cell">DMs sent</TableHead>
-                <TableHead className="hidden w-[100px] text-right md:table-cell">Link clicks</TableHead>
-                <TableHead className="hidden w-[150px] pl-6 lg:table-cell">Last run</TableHead>
-                <TableHead className="w-[90px]">Status</TableHead>
-                <TableHead className="w-[52px] pr-3">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {automations.map((item) => {
-                const status = statusOverride[item.id] ?? item.status;
-                return (
-                  <TableRow key={item.id} className="group">
-                    <TableCell className="max-w-[200px] py-3 pl-5 sm:max-w-[420px]">
-                      <Link href={`/automations/${item.id}`} className="block truncate font-medium underline-offset-4 hover:underline">
-                        {item.name}
-                      </Link>
-                      <TriggerLine item={item} />
-                    </TableCell>
-                    {showAccount ? (
-                      <TableCell className="hidden lg:table-cell">
-                        <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                          <PlatformIcon platform={item.channel.platform} size={13} className="shrink-0" />
-                          <span className="truncate">{handle(item.channel)}</span>
-                        </span>
+        <>
+          <div className="hidden overflow-hidden rounded-2xl border bg-card md:block">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-5">Automation</TableHead>
+                  {showAccount ? <TableHead className="hidden w-[200px] lg:table-cell">Account</TableHead> : null}
+                  <TableHead className="w-[100px] whitespace-nowrap text-right">DMs · 7d</TableHead>
+                  <TableHead className="w-[112px] whitespace-nowrap text-right">Clicks · 7d</TableHead>
+                  <TableHead className={cn("hidden w-[140px] pl-6", showAccount ? "xl:table-cell" : "lg:table-cell")}>Last run</TableHead>
+                  <TableHead className="w-[150px] pl-6">Status</TableHead>
+                  <TableHead className="w-[84px] pr-4">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {automations.map((item, i) => {
+                  const status = statusOverride[item.id] ?? item.status;
+                  const href = `/automations/${item.id}`;
+                  return (
+                    <TableRow key={item.id} className="rise group cursor-pointer" style={riseStyle(i)} onClick={(e) => openFromRow(e, href)}>
+                      {/* max-w-0 lets the name truncate inside the column the table gives it. */}
+                      <TableCell className="w-full max-w-0 py-3.5 pl-5">
+                        <Link
+                          href={href}
+                          className="block w-fit max-w-full truncate rounded-md text-[14px] font-semibold text-ink underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {item.name}
+                        </Link>
+                        <TriggerSummary item={item} className="mt-1.5" />
                       </TableCell>
-                    ) : null}
-                    <TableCell className={cn("hidden text-right tabular-nums sm:table-cell", item.sent7d === 0 && "text-muted-foreground")}>{formatNumber(item.sent7d)}</TableCell>
-                    <TableCell className={cn("hidden text-right tabular-nums md:table-cell", item.clicks7d === 0 && "text-muted-foreground")}>
-                      {formatNumber(item.clicks7d)}
-                    </TableCell>
-                    <TableCell className="hidden pl-6 text-muted-foreground lg:table-cell">
-                      {item.lastTriggeredAt ? formatDistanceToNowStrict(new Date(item.lastTriggeredAt), { addSuffix: true }) : "Never"}
-                    </TableCell>
-                    <TableCell>
-                      {status === "DRAFT" ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Link href={`/automations/${item.id}`} className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                              <Badge variant="secondary">Draft</Badge>
-                            </Link>
-                          </TooltipTrigger>
-                          <TooltipContent>Finish it in the builder to turn it on</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <Switch
-                          checked={status === "ACTIVE"}
-                          disabled={busyId === item.id}
-                          onCheckedChange={(on) => toggleStatus(item, on)}
-                          aria-label={status === "ACTIVE" ? `Pause ${item.name}` : `Turn on ${item.name}`}
-                          title={status === "ACTIVE" ? "On" : "Paused"}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell className="pr-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" aria-label={`Actions for ${item.name}`}>
-                            <MoreHorizontal />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/automations/${item.id}`}>
-                              <Pencil /> Edit
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/automations/${item.id}/analytics`}>
-                              <BarChart3 /> Analytics
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => duplicate(item)}>
-                            <Copy /> Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem destructive onSelect={() => setDeleteTarget(item)}>
-                            <Trash2 /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-          <p className="border-t bg-muted/30 px-5 py-2.5 text-xs text-muted-foreground">DMs sent and link clicks cover the last 7 days.</p>
-        </div>
+                      {showAccount ? (
+                        <TableCell className="hidden max-w-[200px] text-muted-foreground lg:table-cell">
+                          <ChannelLabel channel={item.channel} size={20} />
+                        </TableCell>
+                      ) : null}
+                      <TableCell className={cn("text-right text-[14px] tabular-nums", item.sent7d === 0 ? "text-muted-foreground" : "font-semibold text-ink")}>
+                        {formatNumber(item.sent7d)}
+                      </TableCell>
+                      <TableCell className={cn("text-right text-[14px] tabular-nums", item.clicks7d === 0 ? "text-muted-foreground" : "font-semibold text-ink")}>
+                        {formatNumber(item.clicks7d)}
+                      </TableCell>
+                      <TableCell className={cn("hidden whitespace-nowrap pl-6 text-muted-foreground", showAccount ? "xl:table-cell" : "lg:table-cell")}>
+                        <span suppressHydrationWarning>{lastRun(item.lastTriggeredAt)}</span>
+                      </TableCell>
+                      <TableCell className="pl-6">
+                        <div className="flex items-center justify-between gap-3">
+                          {status === "DRAFT" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Link href={href} className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                  <AutomationStatusBadge status="DRAFT" />
+                                </Link>
+                              </TooltipTrigger>
+                              <TooltipContent>Finish it in the builder to turn it on</TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <>
+                              <AutomationStatusBadge status={status} />
+                              <Switch
+                                checked={status === "ACTIVE"}
+                                disabled={busyId === item.id}
+                                onCheckedChange={(on) => toggleStatus(item, on)}
+                                aria-label={status === "ACTIVE" ? `Pause ${item.name}` : `Turn on ${item.name}`}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="pr-4">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <RowMenu item={item} onDuplicate={() => void duplicate(item)} onDelete={() => setDeleteTarget(item)} />
+                          {/* The name is the keyboard path in; this is only the visible cue that the row opens. */}
+                          <ChevronRight
+                            aria-hidden
+                            className="h-4 w-4 text-muted-foreground/40 transition-[color,transform] duration-200 ease-soft group-hover:text-ink motion-safe:group-hover:translate-x-0.5"
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <ul className="space-y-2.5 md:hidden">
+            {automations.map((item, i) => {
+              const status = statusOverride[item.id] ?? item.status;
+              return (
+                <li key={item.id} className="rise" style={riseStyle(i)}>
+                  {/* The name's link covers the card; the switch and the menu sit above it. */}
+                  <div className="lift relative rounded-2xl border bg-card p-4 hover:border-ink/25">
+                    <div className="flex items-center justify-between gap-3">
+                      <AutomationStatusBadge status={status} />
+                      <div className="relative z-10 -my-1 -mr-1.5 flex items-center gap-1.5">
+                        {status === "DRAFT" ? null : (
+                          <Switch
+                            checked={status === "ACTIVE"}
+                            disabled={busyId === item.id}
+                            onCheckedChange={(on) => toggleStatus(item, on)}
+                            aria-label={status === "ACTIVE" ? `Pause ${item.name}` : `Turn on ${item.name}`}
+                          />
+                        )}
+                        <RowMenu item={item} onDuplicate={() => void duplicate(item)} onDelete={() => setDeleteTarget(item)} />
+                      </div>
+                    </div>
+                    <Link
+                      href={`/automations/${item.id}`}
+                      className="mt-2 block truncate text-[15px] font-semibold text-ink outline-none after:absolute after:inset-0 after:rounded-2xl focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                    >
+                      {item.name}
+                    </Link>
+                    <TriggerSummary item={item} className="mt-1.5" />
+                    {showAccount ? <ChannelLabel channel={item.channel} size={16} className="mt-2 text-[12px] text-muted-foreground" /> : null}
+                    <div className="mt-3.5 grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-6 border-t pt-3">
+                      <MiniStat label="DMs · 7d" value={formatNumber(item.sent7d)} muted={item.sent7d === 0} />
+                      <MiniStat label="Clicks · 7d" value={formatNumber(item.clicks7d)} muted={item.clicks7d === 0} />
+                      <MiniStat label="Last run" value={lastRun(item.lastTriggeredAt)} muted={!item.lastTriggeredAt} />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       <ConfirmDialog
@@ -386,7 +472,7 @@ export function AutomationsTable({ automations, channels, filters, statusCounts,
           if (!open) setDeleteTarget(null);
         }}
         title={deleteTarget ? `Delete “${deleteTarget.name}”?` : "Delete automation?"}
-        description="It stops replying straight away, including in conversations it already started. Its past messages stay in Logs."
+        description="It stops replying straight away, even mid-conversation. Past messages stay in Logs."
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {

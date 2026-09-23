@@ -1,9 +1,9 @@
 "use client";
 
 import type { PlanTier } from "@prisma/client";
-import { Check } from "lucide-react";
 
 import { IntervalToggle } from "@/components/billing/interval-toggle";
+import { FeatureCheck, PlanSwatch } from "@/components/billing/plan-badge";
 import { LogoMark, Wordmark } from "@/components/ui/logo";
 import {
   annualSavingsPercent,
@@ -29,6 +29,7 @@ export function OrderSummary({
 }) {
   const plan = PLANS[tier];
   const price = planPriceCents(tier, interval);
+  const annual = interval === "ANNUAL";
   const included = [
     `${plan.channels} connected account${plan.channels === 1 ? "" : "s"}`,
     `${formatNumber(plan.automations)} automations`,
@@ -39,59 +40,53 @@ export function OrderSummary({
 
   return (
     <aside className="flex h-full flex-col">
-      <div className="mb-8 flex items-center gap-0.5" aria-label={brand.name}>
+      {/* On phones the logo sits above the form instead. */}
+      <div className="mb-8 hidden items-center gap-0.5 lg:flex" aria-label={brand.name}>
         <LogoMark size={22} />
         <Wordmark height={10} />
       </div>
 
-      <div className="rounded-lg border bg-card p-5 shadow-card">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[13px] text-muted-foreground">Order summary</p>
-            <h2 className="mt-0.5 text-lg font-semibold tracking-tight">{plan.label} plan</h2>
-            <p className="mt-1 text-[13px] text-muted-foreground">{plan.description}</p>
-          </div>
-        </div>
+      <div className="rounded-3xl bg-card p-6 shadow-card">
+        <p className="brand-label text-muted-foreground">Order summary</p>
+        <h2 className="font-display mt-3 flex items-center gap-2.5 text-[32px] leading-none">
+          <PlanSwatch plan={tier} />
+          {plan.label}
+        </h2>
+        <p className="mt-2 text-[13px] text-muted-foreground">{plan.description}</p>
 
-        <div className="mt-4">
-          <IntervalToggle value={interval} onChange={onIntervalChange} savingsPercent={annualSavingsPercent(tier)} size="sm" />
-        </div>
+        <IntervalToggle value={interval} onChange={onIntervalChange} savingsPercent={annualSavingsPercent(tier)} size="sm" className="mt-5" />
 
-        <div className="mt-5 flex items-baseline gap-1">
-          <span className="text-3xl font-semibold tracking-tight tabular-nums">{formatUsd(price)}</span>
-          <span className="text-sm text-muted-foreground">{intervalSuffix(interval)}</span>
-        </div>
-        {interval === "ANNUAL" ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatUsd(monthlyEquivalentCents(tier, interval))}/month, billed once a year.
-          </p>
-        ) : (
-          <p className="mt-1 text-xs text-muted-foreground">Billed every month. Cancel any time.</p>
-        )}
+        <p className="mt-6 flex items-baseline gap-1.5">
+          <span className="font-display text-[44px] leading-none tabular-nums">{formatUsd(price)}</span>
+          <span className="brand-label text-muted-foreground">{intervalSuffix(interval)}</span>
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {annual ? `${formatUsd(monthlyEquivalentCents(tier, interval))}/month, billed once a year.` : "Billed every month."}
+        </p>
 
-        <dl className="mt-5 space-y-2 border-t pt-4 text-[13px]">
-          <div className="flex items-center justify-between">
+        <dl className="mt-6 space-y-2.5 border-t pt-4 text-[13px]">
+          <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">
-              {plan.label} · {interval === "ANNUAL" ? "annual" : "monthly"}
+              {plan.label} · {annual ? "annual" : "monthly"}
             </dt>
             <dd className="tabular-nums">{formatUsd(price)}</dd>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">Tax</dt>
-            <dd className="text-muted-foreground">Calculated at checkout</dd>
+            <dd className="text-muted-foreground">Added in the next step</dd>
           </div>
-          <div className="flex items-center justify-between border-t pt-2 font-medium">
-            <dt>Due today</dt>
-            <dd className="tabular-nums">{formatUsd(price)}</dd>
+          <div className="flex items-baseline justify-between gap-3 border-t pt-3">
+            <dt className="font-semibold">Due today</dt>
+            <dd className="font-display text-[20px] leading-none tabular-nums">{formatUsd(price)}</dd>
           </div>
         </dl>
 
-        <div className="mt-5 border-t pt-4">
-          <p className="text-xs font-medium text-muted-foreground">What&apos;s included</p>
-          <ul className="mt-2 space-y-1.5 text-[13px]">
+        <div className="mt-6 border-t pt-4">
+          <p className="brand-label text-muted-foreground">Included</p>
+          <ul className="mt-3 space-y-2 text-[13px]">
             {included.map((item) => (
-              <li key={item} className="flex items-start gap-2">
-                <Check size={14} strokeWidth={2.5} className="mt-0.5 shrink-0" aria-hidden />
+              <li key={item} className="flex items-start gap-2.5">
+                <FeatureCheck />
                 <span>{item}</span>
               </li>
             ))}
@@ -100,8 +95,7 @@ export function OrderSummary({
       </div>
 
       <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-        Prices in USD. Tax is added at checkout where required by your country. Your plan renews automatically until
-        cancelled; usage limits reset on the 1st of each month.
+        Prices in USD. Renews until you cancel.
       </p>
     </aside>
   );

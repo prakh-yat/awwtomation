@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LegalPage } from "@/components/marketing/section";
 import { brand } from "@/lib/brand";
 import { findDataDeletionRecord, type DataDeletionRecord } from "@/lib/services/channels";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Data Deletion",
@@ -19,17 +20,23 @@ const UPDATED = "September 7, 2026";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** Status box for the confirmation code Meta shows after a data deletion request. */
+/**
+ * Status box for the confirmation code Meta shows after a data deletion
+ * request: green once the deletion is done, yellow when the code is unknown.
+ */
 function DeletionStatus({ code, record }: { code: string; record: DataDeletionRecord | null }) {
   return (
-    <div className="mt-8 rounded-lg border bg-muted/40 px-5 py-4 text-sm">
-      <p className="text-[13px] font-medium text-muted-foreground">Deletion request status</p>
-      <p className="mt-2">
+    <div
+      role="status"
+      className={cn("rounded-2xl px-5 py-5 text-[15px] leading-[1.65] text-ink sm:px-6", record ? "bg-green-soft" : "bg-yellow-soft")}
+    >
+      <p className="brand-label text-ink/75">Deletion request status</p>
+      <p className="mt-3">
         Confirmation code <code className="rounded bg-background px-1.5 py-0.5 font-mono text-[13px]">{code}</code>
       </p>
       {record ? (
         <p className="mt-2">
-          <span className="font-medium text-foreground">Completed</span> on {record.completedAt.toUTCString()}.{" "}
+          <span className="font-semibold text-ink">Completed</span> on {record.completedAt.toUTCString()}.{" "}
           {record.channels === 0
             ? "No connected account matched the request, so there was nothing left to delete."
             : `${record.channels} connected account${record.channels === 1 ? " was" : "s were"} permanently deleted together with all associated data.`}

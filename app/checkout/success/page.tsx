@@ -45,16 +45,20 @@ export default async function CheckoutSuccessPage({ searchParams }: { searchPara
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-fog px-4 py-12">
       <div className="w-full max-w-md animate-fade-in">
-        <div className="mb-6 text-center">
-          <Link href="/dashboard" aria-label={brand.name} className="inline-flex items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <div className="mb-6 flex flex-col items-center">
+          <Link
+            href="/dashboard"
+            aria-label={brand.name}
+            className="inline-flex items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <LogoMark size={26} />
             <Wordmark height={12} />
           </Link>
-          <p className="mt-2 text-xs text-muted-foreground">{(switchTo ?? ctx.organization).name}</p>
+          <p className="brand-label mt-3 text-muted-foreground">{(switchTo ?? ctx.organization).name}</p>
         </div>
-        <div className="rounded-lg border bg-card p-8 shadow-card">
+        <div className="rounded-3xl bg-card px-6 py-10 shadow-card sm:px-10">
           <ActivationPoller ids={ids} switchToOrganizationId={switchTo?.id} providerStatus={first(params.status)} retryHref={retryHref} />
         </div>
       </div>

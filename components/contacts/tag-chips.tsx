@@ -9,7 +9,7 @@ export interface TagChipsProps {
   className?: string;
 }
 
-/** Compact tag list for table cells. */
+/** Compact tag list for table cells and board cards. Tags are green wherever they appear. */
 function TagChips({ tags, max = 3, className }: TagChipsProps) {
   if (tags.length === 0) return <span className="text-muted-foreground">–</span>;
   const visible = tags.slice(0, max);
@@ -17,8 +17,8 @@ function TagChips({ tags, max = 3, className }: TagChipsProps) {
   return (
     <div className={cn("flex flex-wrap items-center gap-1", className)}>
       {visible.map((tag) => (
-        <Badge key={tag} variant="secondary" className="max-w-[10rem] truncate">
-          {tag}
+        <Badge key={tag} variant="green" className="max-w-[9rem]">
+          <span className="min-w-0 truncate">{tag}</span>
         </Badge>
       ))}
       {hidden.length > 0 ? (

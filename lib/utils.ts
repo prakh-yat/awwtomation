@@ -1,5 +1,20 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/**
+ * The background patterns in globals.css are not colours. Left to the default
+ * rules, `cn("bg-yellow", "bg-grid")` would drop the yellow, so each pattern
+ * gets a group of its own.
+ */
+const twMerge = extendTailwindMerge<"bg-grid" | "bg-grid-light" | "bg-dots">({
+  extend: {
+    classGroups: {
+      "bg-grid": ["bg-grid"],
+      "bg-grid-light": ["bg-grid-light"],
+      "bg-dots": ["bg-dots"],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

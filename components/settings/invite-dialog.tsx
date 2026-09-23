@@ -18,11 +18,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Segmented } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/sonner";
 import { canAssignRole, roleLabel } from "@/lib/workspace/permissions";
 
 import { apiFetch, errorMessage, isPlanLimitError } from "./client-api";
+import { RoleBadge } from "./role-badge";
 
 export interface InviteDialogProps {
   actorRole: WorkspaceRole;
@@ -39,7 +40,7 @@ type InviteResponse = {
 
 const ROLE_HINTS: Record<WorkspaceRole, string> = {
   MEMBER: "Builds automations, uses the inbox and manages contacts.",
-  ADMIN: "Everything a member can do, plus connecting accounts, the team and billing.",
+  ADMIN: "Everything a member does, plus accounts, the team and billing.",
   OWNER: "Full control, including billing and deleting the organization.",
 };
 
@@ -115,28 +116,30 @@ export function InviteDialog({ actorRole, seats, trigger }: InviteDialogProps) {
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         {created ? (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <DialogHeader>
               <DialogTitle>Share the invite link</DialogTitle>
               <DialogDescription>
-                No email is sent. Copy this link and share it with {created.invitation.email}. It only works for that
-                address and expires in 7 days.
+                No email is sent. It only works for {created.invitation.email} and expires in 7 days.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="invite-url">Invite link</Label>
-              <div className="flex items-center gap-2">
-                <Input id="invite-url" readOnly value={created.inviteUrl} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
-                <CopyButton value={created.inviteUrl} label="Copy" successMessage="Invite link copied" className="shrink-0" />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                They&apos;ll join as {roleLabel(created.invitation.role).toLowerCase()}. You can change that from the members
-                list once they accept.
-              </p>
+            <div className="flex items-center gap-2 rounded-2xl bg-fog p-1.5 pl-3 focus-within:ring-2 focus-within:ring-ring/40">
+              <Input
+                id="invite-url"
+                aria-label="Invite link"
+                readOnly
+                value={created.inviteUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="h-8 border-0 bg-transparent px-0 font-mono text-xs focus-visible:ring-0"
+              />
+              <CopyButton value={created.inviteUrl} label="Copy" successMessage="Invite link copied" variant="default" className="shrink-0" />
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <p className="-mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              Joins as <RoleBadge role={created.invitation.role} />
+            </p>
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={reset}>
                 Invite another
               </Button>
@@ -146,11 +149,11 @@ export function InviteDialog({ actorRole, seats, trigger }: InviteDialogProps) {
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
             <DialogHeader>
-              <DialogTitle>Invite a team member</DialogTitle>
+              <DialogTitle>Invite a teammate</DialogTitle>
               <DialogDescription>
-                You&apos;ll get a link to share. {seats.used} of {seats.limit} seats are in use.
+                You get a link to send them. {seats.used} of {seats.limit} seats in use.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
@@ -164,27 +167,29 @@ export function InviteDialog({ actorRole, seats, trigger }: InviteDialogProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={pending}
+                aria-describedby="invite-email-hint"
                 required
               />
-              <p className="text-xs text-muted-foreground">They must sign in with Google using this exact address.</p>
+              <p id="invite-email-hint" className="text-xs text-muted-foreground">
+                They sign in with Google using this exact address.
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select value={role} onValueChange={(v) => setRole(v as WorkspaceRole)} disabled={pending}>
-                <SelectTrigger id="invite-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {roleLabel(r)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <p className="text-[13px] font-medium leading-none">Role</p>
+              {roles.length > 1 ? (
+                <Segmented<WorkspaceRole>
+                  value={role}
+                  onChange={setRole}
+                  disabled={pending}
+                  aria-label="Role"
+                  options={roles.map((r) => ({ value: r, label: roleLabel(r) }))}
+                />
+              ) : (
+                <p className="text-sm font-semibold">{roleLabel(role)}</p>
+              )}
               <p className="text-xs text-muted-foreground">{ROLE_HINTS[role]}</p>
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={pending}>
                 Cancel
               </Button>

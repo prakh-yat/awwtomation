@@ -34,7 +34,7 @@ export function CreateOrganizationForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+    <form onSubmit={handleSubmit} className="space-y-6" noValidate>
       <div className="space-y-2">
         <Label htmlFor="organization-name">Organization name</Label>
         <Input
@@ -48,18 +48,19 @@ export function CreateOrganizationForm() {
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "organization-name-error" : "organization-name-hint"}
           disabled={pending}
+          className="h-12 rounded-2xl px-4 text-[16px]"
         />
         {error ? (
-          <p id="organization-name-error" role="alert" className="text-xs text-destructive">
+          <p id="organization-name-error" role="alert" className="text-[12px] text-destructive">
             {error}
           </p>
         ) : (
-          <p id="organization-name-hint" className="text-xs text-muted-foreground">
-            Usually the business or agency that pays. Its first workspace gets the same name.
+          <p id="organization-name-hint" className="text-[12px] text-muted-foreground">
+            Usually the business or agency that pays.
           </p>
         )}
       </div>
-      <Button type="submit" className="w-full" loading={pending}>
+      <Button type="submit" size="lg" className="h-12 w-full" loading={pending}>
         Create organization
       </Button>
     </form>

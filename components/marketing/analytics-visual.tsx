@@ -14,8 +14,8 @@ const funnel = [
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
-/** Five steps of ink, lightest to darkest. Written out in full so Tailwind keeps them. */
-const SHADES = ["bg-foreground/[0.05]", "bg-foreground/15", "bg-foreground/30", "bg-foreground/55", "bg-foreground/85"];
+/** Five steps of the Analytics blue, lightest to darkest. Written out in full so Tailwind keeps them. */
+const SHADES = ["bg-blue/[0.06]", "bg-blue/20", "bg-blue/40", "bg-blue/65", "bg-blue"];
 
 /**
  * A believable week for a clothing shop in Kathmandu: quiet overnight, a bump
@@ -57,19 +57,19 @@ function AnalyticsVisual({ className }: { className?: string }) {
                 <div className="flex items-baseline justify-between gap-3 text-[12px]">
                   <p className="text-muted-foreground">{step.label}</p>
                   <p className="tabular-nums">
-                    <span className="font-medium text-foreground">{step.value}</span>
+                    <span className="font-semibold text-ink">{step.value}</span>
                     <span className="ml-2 inline-block w-8 text-right text-muted-foreground">
                       {prev ? `${Math.round((step.value / prev) * 100)}%` : ""}
                     </span>
                   </p>
                 </div>
-                {/* Lavender shows where the previous step reached, so the drop-off is visible at a glance. */}
-                <div className="relative mt-1.5 h-2 rounded-sm bg-muted">
+                {/* The soft tint shows where the previous step reached, so the drop-off is visible at a glance. */}
+                <div className="relative mt-1.5 h-2 rounded-full bg-fog">
                   {prev ? (
-                    <div className="absolute inset-y-0 left-0 rounded-sm bg-lavender" style={{ width: `${(prev / top) * 100}%` }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-blue-soft" style={{ width: `${(prev / top) * 100}%` }} />
                   ) : null}
                   <div
-                    className="absolute inset-y-0 left-0 rounded-sm bg-foreground"
+                    className="absolute inset-y-0 left-0 rounded-full bg-blue"
                     style={{ width: `${Math.max(2, (step.value / top) * 100)}%` }}
                   />
                 </div>
@@ -80,7 +80,7 @@ function AnalyticsVisual({ className }: { className?: string }) {
 
         <div className="mt-6 border-t pt-4">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="text-[12px] font-medium">Busiest times</p>
+            <p className="text-[12px] font-semibold">Busiest times</p>
             <p className="text-[11px] text-muted-foreground">Nepal Time</p>
           </div>
           <div className="mt-3 space-y-[3px]">

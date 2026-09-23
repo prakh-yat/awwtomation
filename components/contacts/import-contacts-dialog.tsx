@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { FileUp } from "lucide-react";
+import { Check, FileSpreadsheet, FileUp, LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import type { ImportMapping, ImportPreview, ImportResult } from "@/lib/services/contact-import";
@@ -122,12 +122,12 @@ export function ImportContactsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className={cn(step.kind === "map" ? "max-w-2xl" : "max-w-md")}>
+      <DialogContent className={cn("max-h-[calc(100dvh-2rem)] overflow-y-auto", step.kind === "map" ? "max-w-2xl" : "max-w-md")}>
         {step.kind === "file" ? (
           <>
             <DialogHeader>
               <DialogTitle>Import contacts</DialogTitle>
-              <DialogDescription>Upload a CSV file with a header row, for example exported from a spreadsheet or another tool. Up to 5,000 contacts per file.</DialogDescription>
+              <DialogDescription>A CSV file with a header row. Up to 5,000 contacts and 2 MB.</DialogDescription>
             </DialogHeader>
             <button
               type="button"
@@ -145,13 +145,20 @@ export function ImportContactsDialog({
               }}
               disabled={busy}
               className={cn(
-                "flex w-full flex-col items-center justify-center rounded-lg border border-dashed px-6 py-10 text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                dragging ? "border-foreground bg-muted/60" : "hover:bg-muted/40",
+                "group relative flex w-full flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed px-6 py-12 text-center outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring",
+                dragging ? "border-green bg-green-soft" : "border-border hover:border-ink/30 hover:bg-fog/60",
               )}
             >
-              <FileUp className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} aria-hidden />
-              <span className="mt-3 text-sm font-medium">{busy ? "Reading file…" : "Choose a CSV file"}</span>
-              <span className="mt-1 text-xs text-muted-foreground">or drop it here</span>
+              <span
+                className={cn(
+                  "flex h-12 w-12 items-center justify-center rounded-2xl bg-green text-white shadow-[0_10px_24px_-12px_rgb(15_15_15/0.45)] transition-transform duration-300 ease-soft",
+                  dragging ? "-translate-y-1 rotate-0" : "rotate-[-4deg] group-hover:rotate-0",
+                )}
+              >
+                {busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <FileUp className="h-5 w-5" strokeWidth={2} aria-hidden />}
+              </span>
+              <span className="mt-4 text-[15px] font-semibold">{busy ? "Reading file…" : dragging ? "Drop to upload" : "Choose a CSV file"}</span>
+              <span className="mt-1 text-[13px] text-muted-foreground">or drop it here</span>
             </button>
             <input
               ref={inputRef}
@@ -172,18 +179,23 @@ export function ImportContactsDialog({
           <>
             <DialogHeader>
               <DialogTitle>Match your columns</DialogTitle>
-              <DialogDescription>
-                {step.fileName} has {plural(step.preview.rowCount, "contact")}. Pick the column that holds each detail. Rows that match an existing email or username are skipped.
+              <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-ink">
+                  <FileSpreadsheet className="h-4 w-4 shrink-0 text-green-ink" aria-hidden />
+                  <span className="truncate">{step.fileName}</span>
+                </span>
+                <span aria-hidden>·</span>
+                <span>{plural(step.preview.rowCount, "contact")}</span>
               </DialogDescription>
             </DialogHeader>
 
-            <div className="overflow-hidden rounded-lg border">
+            <div className="overflow-hidden rounded-2xl border">
               <table className="w-full text-[13px]">
-                <thead className="bg-muted/50 text-xs text-muted-foreground">
+                <thead className="bg-fog/60">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Detail</th>
-                    <th className="px-3 py-2 text-left font-medium">Column in your file</th>
-                    <th className="hidden px-3 py-2 text-left font-medium sm:table-cell">First row</th>
+                    <th className="brand-label px-3 py-2.5 text-left font-normal text-muted-foreground">Detail</th>
+                    <th className="brand-label px-3 py-2.5 text-left font-normal text-muted-foreground">Column in your file</th>
+                    <th className="brand-label hidden px-3 py-2.5 text-left font-normal text-muted-foreground sm:table-cell">First row</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -192,13 +204,20 @@ export function ImportContactsDialog({
                     const sample = index === null ? "" : (step.preview.rows[0]?.[index] ?? "");
                     return (
                       <tr key={field.key}>
-                        <td className="px-3 py-2 font-medium">{field.label}</td>
+                        <td className="px-3 py-2 font-semibold">
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              aria-hidden
+                              className={cn("flex h-4 w-4 items-center justify-center rounded-full transition-colors", index === null ? "bg-fog" : "bg-green text-white")}
+                            >
+                              {index === null ? null : <Check className="h-2.5 w-2.5" strokeWidth={3.5} />}
+                            </span>
+                            {field.label}
+                          </span>
+                        </td>
                         <td className="px-3 py-1.5">
-                          <Select
-                            value={index === null ? SKIP : String(index)}
-                            onValueChange={(v) => setMapping((m) => ({ ...m, [field.key]: v === SKIP ? null : Number(v) }))}
-                          >
-                            <SelectTrigger className="h-8 text-[13px]" aria-label={`Column for ${field.label}`}>
+                          <Select value={index === null ? SKIP : String(index)} onValueChange={(v) => setMapping((m) => ({ ...m, [field.key]: v === SKIP ? null : Number(v) }))}>
+                            <SelectTrigger className="h-9 text-[13px]" aria-label={`Column for ${field.label}`}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -235,7 +254,7 @@ export function ImportContactsDialog({
                       {channels.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           <span className="flex items-center gap-2">
-                            <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
+                            <PlatformMark platform={c.platform} size={16} />
                             {accountLabel(c)}
                           </span>
                         </SelectItem>
@@ -253,9 +272,7 @@ export function ImportContactsDialog({
                     onChange={setPlace}
                     stageLabel={mapping.stage === null ? "Stage" : "Stage when a row has none"}
                   />
-                  {mapping.stage !== null && !place.pipelineId ? (
-                    <p className="text-xs text-muted-foreground">Pick a pipeline to use the Stage column from your file.</p>
-                  ) : null}
+                  {mapping.stage !== null && !place.pipelineId ? <p className="text-[12px] text-muted-foreground">Pick a pipeline to use the Stage column from your file.</p> : null}
                 </div>
               ) : null}
               <div className="space-y-1.5 sm:col-span-2">
@@ -264,36 +281,49 @@ export function ImportContactsDialog({
               </div>
             </div>
 
-            <DialogFooter className="items-center sm:justify-between">
-              <Button type="button" variant="ghost" onClick={() => setStep({ kind: "file" })} disabled={busy}>
-                Choose another file
-              </Button>
-              <Button type="button" onClick={() => void runImport()} loading={busy} disabled={!mapped || !channelId}>
-                Import {plural(step.preview.rowCount, "contact")}
-              </Button>
-            </DialogFooter>
-            {!mapped ? <p className="-mt-2 text-right text-xs text-muted-foreground">Match at least a name, username, email or phone column.</p> : null}
+            <div className="space-y-2">
+              <DialogFooter className="sm:items-center sm:justify-between">
+                <Button type="button" variant="ghost" onClick={() => setStep({ kind: "file" })} disabled={busy}>
+                  Choose another file
+                </Button>
+                <Button type="button" onClick={() => void runImport()} loading={busy} disabled={!mapped || !channelId}>
+                  Import {plural(step.preview.rowCount, "contact")}
+                </Button>
+              </DialogFooter>
+              {!mapped ? <p className="text-right text-[12px] text-muted-foreground">Match at least a name, username, email or phone column.</p> : null}
+            </div>
           </>
         ) : null}
 
         {step.kind === "done" ? (
           <>
-            <DialogHeader>
-              <DialogTitle>{step.result.created > 0 ? `Imported ${plural(step.result.created, "contact")}` : "No contacts were imported"}</DialogTitle>
-              <DialogDescription>
-                {[
-                  step.result.duplicates > 0 ? `${plural(step.result.duplicates, "row")} matched someone already in your contacts.` : null,
-                  step.result.invalid > 0 ? `${plural(step.result.invalid, "row")} couldn't be read.` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" ") || "Every row was added."}
-              </DialogDescription>
-            </DialogHeader>
+            <div className="flex items-start gap-4">
+              <span
+                aria-hidden
+                className={cn(
+                  "flex h-12 w-12 shrink-0 rotate-[-4deg] items-center justify-center rounded-2xl shadow-[0_10px_24px_-12px_rgb(15_15_15/0.45)] motion-safe:animate-pop",
+                  step.result.created > 0 ? "bg-green text-white" : "bg-fog text-ink",
+                )}
+              >
+                {step.result.created > 0 ? <Check className="h-6 w-6" strokeWidth={2.5} /> : <FileSpreadsheet className="h-5 w-5" />}
+              </span>
+              <DialogHeader className="min-w-0 pt-0.5">
+                <DialogTitle>{step.result.created > 0 ? `Imported ${plural(step.result.created, "contact")}` : "No contacts were imported"}</DialogTitle>
+                <DialogDescription>
+                  {[
+                    step.result.duplicates > 0 ? `${plural(step.result.duplicates, "row")} matched someone already in your contacts.` : null,
+                    step.result.invalid > 0 ? `${plural(step.result.invalid, "row")} couldn't be read.` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || "Every row was added."}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
             {step.result.errors.length > 0 ? (
-              <ul className="max-h-48 divide-y overflow-auto rounded-lg border text-[13px]">
+              <ul className="max-h-48 divide-y overflow-auto rounded-2xl border text-[13px]">
                 {step.result.errors.map((e) => (
                   <li key={`${e.row}-${e.reason}`} className="flex gap-3 px-3 py-2">
-                    <span className="w-14 shrink-0 tabular-nums text-muted-foreground">Row {e.row}</span>
+                    <span className="brand-label w-16 shrink-0 pt-0.5 tabular-nums text-muted-foreground">Row {e.row}</span>
                     <span className="min-w-0 break-words">{e.reason}</span>
                   </li>
                 ))}

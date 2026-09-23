@@ -1,15 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Ban, ChevronDown, Tag } from "lucide-react";
+import { Ban, ChevronDown, Search, Tag } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import type { ContactTagCount, TagMatchMode } from "@/lib/services/contacts";
-import { cn } from "@/lib/utils";
+
+import { filterPill, PillCount } from "./filter-pill";
 
 export interface TagFilterPopoverProps {
   options: ContactTagCount[];
@@ -19,6 +20,11 @@ export interface TagFilterPopoverProps {
   /** "Exclude tags" variant: contacts carrying any selected tag are hidden; no match-mode toggle. */
   exclude?: boolean;
 }
+
+const MODES: SegmentedOption<TagMatchMode>[] = [
+  { value: "all", label: "Match all" },
+  { value: "any", label: "Match any" },
+];
 
 /** Multi-select tag filter with an all/any toggle. Selected tags that no longer exist stay listed so they can be unticked. */
 function TagFilterPopover({ options, selected, mode, onChange, exclude = false }: TagFilterPopoverProps) {
@@ -41,65 +47,51 @@ function TagFilterPopover({ options, selected, mode, onChange, exclude = false }
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("gap-1.5", selected.length > 0 && "border-foreground")}>
+        <Button variant="outline" size="sm" className={filterPill(selected.length > 0)}>
           {exclude ? <Ban /> : <Tag />}
           {exclude ? "Exclude" : "Tags"}
-          {selected.length > 0 ? (
-            <Badge variant="default" className="ml-0.5 h-4 min-w-4 justify-center px-1 tabular-nums">
-              {selected.length}
-            </Badge>
-          ) : null}
-          <ChevronDown className="text-muted-foreground" />
+          {selected.length > 0 ? <PillCount count={selected.length} /> : null}
+          <ChevronDown className="-mr-0.5 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-0">
-        <div className="border-b p-2">
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a tag…" className="h-8 text-[13px]" autoFocus />
+      <PopoverContent align="start" className="w-72 overflow-hidden p-0">
+        <div className="relative border-b p-2">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a tag…"
+            aria-label="Find a tag"
+            className="h-8 rounded-full pl-8 text-[13px]"
+            autoFocus
+          />
         </div>
-        <div className="max-h-60 overflow-auto p-1">
+        <div className="max-h-64 overflow-auto p-1.5">
           {rows.length === 0 ? (
-            <p className="px-2 py-6 text-center text-xs text-muted-foreground">{options.length === 0 ? "No tags yet" : "No matching tags"}</p>
+            <p className="px-2 py-8 text-center text-[13px] text-muted-foreground">{options.length === 0 ? "No tags yet" : "No matching tags"}</p>
           ) : (
             rows.map((row) => {
               const checked = selected.includes(row.tag);
               const id = `${idPrefix}-${row.tag}`;
               return (
-                <label
-                  key={row.tag}
-                  htmlFor={id}
-                  className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] transition-colors hover:bg-accent"
-                >
+                <label key={row.tag} htmlFor={id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] transition-colors hover:bg-fog">
                   <Checkbox id={id} checked={checked} onCheckedChange={(v) => toggle(row.tag, v === true)} />
-                  <span className="flex-1 truncate">{row.tag}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{row.tag}</span>
                   <span className="text-[11px] tabular-nums text-muted-foreground">{row.count}</span>
                 </label>
               );
             })
           )}
         </div>
-        <div className="flex items-center justify-between gap-2 border-t p-2">
+        <div className="flex items-center justify-between gap-2 border-t bg-fog/50 p-2">
           {exclude ? (
             <span className="px-1 text-[12px] text-muted-foreground">Hides contacts with any of these</span>
           ) : (
-            <div className="inline-flex h-7 items-center rounded-md bg-muted p-0.5 text-[12px]" role="radiogroup" aria-label="Match mode">
-              {(["all", "any"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === m}
-                  onClick={() => onChange({ tags: selected, mode: m })}
-                  className={cn(
-                    "h-6 rounded-[5px] px-2 font-medium transition-colors",
-                    mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {m === "all" ? "Match all" : "Match any"}
-                </button>
-              ))}
+            <div className="w-44">
+              <Segmented size="sm" value={mode} onChange={(m) => onChange({ tags: selected, mode: m })} options={MODES} aria-label="Match mode" />
             </div>
           )}
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={selected.length === 0} onClick={() => onChange({ tags: [], mode })}>
+          <Button variant="ghost" size="sm" className="px-3 text-muted-foreground hover:text-ink" disabled={selected.length === 0} onClick={() => onChange({ tags: [], mode })}>
             Clear
           </Button>
         </div>

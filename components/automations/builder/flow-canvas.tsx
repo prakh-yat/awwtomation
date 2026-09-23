@@ -6,63 +6,146 @@ import * as React from "react";
 import {
   Background,
   BackgroundVariant,
-  Controls,
+  ConnectionLineType,
   MiniMap,
   Panel,
   ReactFlow,
   useNodesInitialized,
   useReactFlow,
+  useViewport,
   type Connection,
   type EdgeChange,
+  type FinalConnectionState,
   type NodeChange,
 } from "@xyflow/react";
-import { Expand, LayoutList, Maximize2, Plus, Shrink } from "lucide-react";
+import type { ChannelPlatform } from "@prisma/client";
+import { Expand, LayoutList, Maximize2, Minus, Plus, Redo2, Shrink, Undo2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TONE_HEX } from "@/components/ui/tone";
 import type { PipelineSummary } from "@/lib/services/pipelines";
+import { cn } from "@/lib/utils";
 
-import { EDGE_DEFAULTS, hasCrowdedNodes, prefilledNodeData, tidyPositions, type BuilderAction, type BuilderEdge, type BuilderNode } from "./builder-state";
+import {
+  EDGE_DEFAULTS,
+  hasCrowdedNodes,
+  NODE_WIDTH,
+  prefilledNodeData,
+  tidyPositions,
+  type AddableNodeType,
+  type BuilderAction,
+  type BuilderEdge,
+  type BuilderNode,
+} from "./builder-state";
+import { edgeTypes } from "./insertable-edge";
 import { nodeTypes } from "./nodes";
-import { AddStepMenu } from "./step-catalog";
+import { STEP_DRAG_TYPE, STEP_INFO, StepList } from "./step-catalog";
+import { StepPalette } from "./step-palette";
 
 export type FlowCanvasProps = {
   nodes: BuilderNode[];
   edges: BuilderEdge[];
   pipelines: PipelineSummary[];
+  platform: ChannelPlatform | null;
   dispatch: React.Dispatch<BuilderAction>;
+  canUndo: boolean;
+  canRedo: boolean;
   /** True while the side panels are hidden. */
   canvasOnly: boolean;
   onCanvasOnlyChange: (next: boolean) => void;
 };
 
-/** Room around the flow: the toolbar sits top left and the + under the last steps needs space below. */
-const FIT = { padding: { top: "72px", bottom: "88px", x: "48px" }, maxZoom: 1, duration: 200 } as const;
+/** Room around the flow: the palette sits top left and the toolbar along the bottom. */
+const FIT = { padding: { top: "56px", bottom: "96px", left: "220px", right: "48px" }, maxZoom: 1, duration: 300 } as const;
+
+/** The connection under a point, if any: where a dragged step would be inserted. */
+function edgeAt(x: number, y: number): string | null {
+  for (const el of document.elementsFromPoint(x, y)) {
+    const edge = el.closest(".react-flow__edge");
+    if (edge) return edge.getAttribute("data-id");
+  }
+  return null;
+}
+
+function ToolButton({ label, shortcut, onClick, disabled, active, children }: { label: string; shortcut?: string; onClick: () => void; disabled?: boolean; active?: boolean; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          aria-label={label}
+          aria-pressed={active}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-full text-ink outline-none transition-colors hover:bg-fog focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4",
+            active && "bg-ink text-white hover:bg-ink/85",
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="flex items-center gap-1.5">
+        {label}
+        {shortcut ? <Kbd className="border-white/20 bg-white/10 text-white">{shortcut}</Kbd> : null}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+type PendingConnection = { x: number; y: number; flow: { x: number; y: number }; nodeId: string; handle: string };
 
 /**
  * React Flow surface. Everything mutable goes through `dispatch`; the canvas
- * itself is stateless apart from the viewport, which React Flow owns.
+ * itself only holds the viewport and what is being dragged over it.
  */
-export function FlowCanvas({ nodes, edges, pipelines, dispatch, canvasOnly, onCanvasOnlyChange }: FlowCanvasProps) {
-  const { fitView } = useReactFlow();
-  const nodeCount = nodes.length;
-  const hasSelection = nodes.some((n) => n.selected);
-
-  React.useEffect(() => {
-    // Re-frame when the graph grows so a freshly added step is never off-screen.
-    const t = setTimeout(() => fitView(FIT), 30);
-    return () => clearTimeout(t);
-  }, [nodeCount, fitView]);
-
-  // The canvas is resizable (window, sidebar); keep the flow framed when its box changes.
+export function FlowCanvas({ nodes, edges, pipelines, platform, dispatch, canUndo, canRedo, canvasOnly, onCanvasOnlyChange }: FlowCanvasProps) {
+  const { fitView, screenToFlowPosition, zoomIn, zoomOut, setCenter, getViewport } = useReactFlow();
+  const { zoom } = useViewport();
   const boxRef = React.useRef<HTMLDivElement>(null);
+  const [dropEdgeId, setDropEdgeId] = React.useState<string | null>(null);
+  const [pending, setPending] = React.useState<PendingConnection | null>(null);
+
+  // A new step that lands off screen is brought into view without refitting
+  // the whole flow, so the canvas never jumps under the pointer.
+  const nodeCount = nodes.length;
+  const previousCount = React.useRef(nodeCount);
+  React.useEffect(() => {
+    const grew = nodeCount > previousCount.current;
+    previousCount.current = nodeCount;
+    if (!grew) return;
+    const added = nodes.find((n) => n.selected) ?? nodes[nodes.length - 1];
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!added || !box) return;
+    const t = setTimeout(() => {
+      const vp = getViewport();
+      const w = (added.measured?.width ?? NODE_WIDTH) * vp.zoom;
+      const h = (added.measured?.height ?? 140) * vp.zoom;
+      const left = added.position.x * vp.zoom + vp.x;
+      const top = added.position.y * vp.zoom + vp.y;
+      const visible = left >= 16 && top >= 16 && left + w <= box.width - 16 && top + h <= box.height - 80;
+      if (!visible) {
+        void setCenter(added.position.x + (added.measured?.width ?? NODE_WIDTH) / 2, added.position.y + (added.measured?.height ?? 140) / 2, { zoom: vp.zoom, duration: 350 });
+      }
+    }, 40);
+    return () => clearTimeout(t);
+  }, [nodeCount, nodes, getViewport, setCenter]);
+
+  // The canvas is resizable (window, side panels); keep the flow framed when its box changes size.
   React.useEffect(() => {
     const el = boxRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let first = true;
     const observer = new ResizeObserver(() => {
+      if (first) {
+        first = false;
+        return;
+      }
       clearTimeout(timer);
-      timer = setTimeout(() => fitView({ ...FIT, duration: 0 }), 120);
+      timer = setTimeout(() => void fitView({ ...FIT, duration: 250 }), 120);
     });
     observer.observe(el);
     return () => {
@@ -79,93 +162,188 @@ export function FlowCanvas({ nodes, edges, pipelines, dispatch, canvasOnly, onCa
     tidiedOnOpen.current = true;
     if (!hasCrowdedNodes(nodes)) return;
     dispatch({ type: "arrange", positions: tidyPositions(nodes, edges), rebaseline: true });
-    setTimeout(() => fitView({ ...FIT, duration: 0 }), 60);
+    setTimeout(() => void fitView({ ...FIT, duration: 0 }), 60);
   }, [nodesInitialized, nodes, edges, dispatch, fitView]);
 
   function tidyUp() {
     dispatch({ type: "arrange", positions: tidyPositions(nodes, edges) });
-    setTimeout(() => fitView(FIT), 60);
+    setTimeout(() => void fitView(FIT), 60);
   }
+
+  const addStep = React.useCallback(
+    (nodeType: AddableNodeType) => dispatch({ type: "addNode", nodeType, data: prefilledNodeData(nodeType, pipelines) }),
+    [dispatch, pipelines],
+  );
 
   const onNodesChange = React.useCallback((changes: NodeChange<BuilderNode>[]) => dispatch({ type: "nodesChange", changes }), [dispatch]);
   const onEdgesChange = React.useCallback((changes: EdgeChange<BuilderEdge>[]) => dispatch({ type: "edgesChange", changes }), [dispatch]);
   const onConnect = React.useCallback((connection: Connection) => dispatch({ type: "connect", connection }), [dispatch]);
 
+  // Letting go of a connection over empty canvas offers the steps to add right there.
+  const onConnectEnd = React.useCallback(
+    (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (state.isValid || !state.fromNode || !state.fromHandle || state.fromHandle.type !== "source") return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      setPending({
+        x: point.clientX,
+        y: point.clientY,
+        flow: screenToFlowPosition({ x: point.clientX, y: point.clientY }),
+        nodeId: state.fromNode.id,
+        handle: state.fromHandle.id ?? "next",
+      });
+    },
+    [screenToFlowPosition],
+  );
+
+  function onDragOver(event: React.DragEvent) {
+    if (!event.dataTransfer.types.includes(STEP_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const id = edgeAt(event.clientX, event.clientY);
+    setDropEdgeId((current) => (current === id ? current : id));
+  }
+
+  function onDrop(event: React.DragEvent) {
+    const type = event.dataTransfer.getData(STEP_DRAG_TYPE) as AddableNodeType;
+    setDropEdgeId(null);
+    if (!type || !(type in STEP_INFO)) return;
+    event.preventDefault();
+    dispatch({
+      type: "dropNode",
+      nodeType: type,
+      data: prefilledNodeData(type, pipelines),
+      position: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+      edgeId: edgeAt(event.clientX, event.clientY),
+    });
+  }
+
+  const shownEdges = React.useMemo(
+    () => (dropEdgeId ? edges.map((e) => (e.id === dropEdgeId ? { ...e, data: { ...e.data, dropTarget: true } } : e)) : edges),
+    [edges, dropEdgeId],
+  );
+
   return (
     <div
       ref={boxRef}
-      className={[
-        "h-full w-full bg-[#f7f7f8]",
-        // Monochrome overrides for React Flow's default chrome.
-        "[&_.react-flow__controls]:overflow-hidden [&_.react-flow__controls]:rounded-lg [&_.react-flow__controls]:border [&_.react-flow__controls]:shadow-card",
-        "[&_.react-flow__controls-button]:h-7 [&_.react-flow__controls-button]:w-7 [&_.react-flow__controls-button]:border-b [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:bg-white [&_.react-flow__controls-button:hover]:bg-secondary",
-        "[&_.react-flow__controls-button_svg]:fill-foreground",
-        "[&_.react-flow__minimap]:overflow-hidden [&_.react-flow__minimap]:rounded-lg [&_.react-flow__minimap]:border [&_.react-flow__minimap]:shadow-card",
-        "[&_.react-flow__edge.selected_.react-flow__edge-path]:!stroke-[2.5px]",
-        "[&_.react-flow__edge:hover_.react-flow__edge-path]:!stroke-[2.25px]",
-        "[&_.react-flow__connectionline]:stroke-foreground",
-      ].join(" ")}
+      className="flow-canvas relative h-full w-full bg-[#fafafa]"
+      onDragOver={onDragOver}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropEdgeId(null);
+      }}
+      onDrop={onDrop}
     >
       <ReactFlow<BuilderNode, BuilderEdge>
         nodes={nodes}
-        edges={edges}
+        edges={shownEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onPaneClick={() => dispatch({ type: "select", id: null })}
+        onConnectEnd={onConnectEnd}
+        onPaneClick={() => {
+          dispatch({ type: "select", id: null });
+          setPending(null);
+        }}
+        isValidConnection={(c) => c.source !== c.target}
         defaultEdgeOptions={EDGE_DEFAULTS}
-        connectionLineStyle={{ stroke: "#0a0a0a", strokeWidth: 1.5 }}
+        connectionLineType={ConnectionLineType.SmoothStep}
+        connectionRadius={32}
         fitView
         fitViewOptions={{ padding: FIT.padding, maxZoom: FIT.maxZoom }}
         minZoom={0.25}
         maxZoom={1.5}
         snapToGrid
         snapGrid={[8, 8]}
+        nodeDragThreshold={3}
+        panOnScroll
+        zoomOnScroll={false}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
         deleteKeyCode={["Backspace", "Delete"]}
         multiSelectionKeyCode={null}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d0d0d6" />
-        <Controls showInteractive={false} showFitView={false} position="bottom-left" />
-        {nodeCount > 5 ? (
-          <MiniMap position="bottom-right" pannable zoomable nodeColor="#e4e4e7" nodeStrokeColor="#a1a1aa" maskColor="rgb(247 247 248 / 0.7)" style={{ width: 168, height: 112 }} className="!mb-12 !mr-3 hidden xl:block" />
-        ) : null}
-        <Panel position="top-left" className="!m-3 flex items-center gap-2">
-          <AddStepMenu
-            onPick={(nodeType) => dispatch({ type: "addNode", nodeType, data: prefilledNodeData(nodeType, pipelines) })}
-            label={hasSelection ? "Adds after the selected step" : "Adds at the end of the flow"}
-          >
-            <Button size="sm" className="shadow-card">
-              <Plus /> Add step
-            </Button>
-          </AddStepMenu>
-          <Button size="sm" variant="outline" className="bg-white shadow-card" onClick={() => fitView(FIT)} aria-label="Fit the flow to the screen" title="Fit to screen">
-            <Maximize2 />
-          </Button>
-          <Button size="sm" variant="outline" className="bg-white shadow-card" onClick={tidyUp} aria-label="Tidy up the layout" title="Tidy up">
-            <LayoutList />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="bg-white shadow-card"
-            onClick={() => onCanvasOnlyChange(!canvasOnly)}
-            aria-pressed={canvasOnly}
-            title={canvasOnly ? "Show the side panels" : "Hide the side panels"}
-          >
-            {canvasOnly ? <Shrink /> : <Expand />}
-            {canvasOnly ? "Show panels" : "Full canvas"}
-          </Button>
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="rgb(15 15 15 / 0.16)" />
+
+        <Panel position="top-left" className="!m-3 flex max-h-[calc(100%-5.5rem)]">
+          <StepPalette platform={platform} onAdd={addStep} />
         </Panel>
-        <Panel position="bottom-right" className="!m-3 hidden items-center gap-2 rounded-md bg-white/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur lg:flex">
-          <span>Drag from a dot to connect</span>
-          <span aria-hidden>·</span>
-          <span className="inline-flex items-center gap-1">
-            <Kbd>⌫</Kbd> removes the selection
-          </span>
+
+        {nodeCount > 5 ? (
+          <MiniMap
+            position="bottom-right"
+            pannable
+            zoomable
+            nodeBorderRadius={10}
+            nodeColor={(n) => TONE_HEX[STEP_INFO[(n as BuilderNode).data.type].tone]}
+            nodeStrokeColor="rgba(15,15,15,0.25)"
+            maskColor="rgb(250 250 250 / 0.72)"
+            style={{ width: 168, height: 112 }}
+            className="!mb-3 !mr-3 hidden xl:block"
+          />
+        ) : null}
+
+        <Panel position="bottom-center" className="!mb-4">
+          <div className="flex items-center gap-0.5 rounded-full border bg-background/95 p-1 shadow-elevated backdrop-blur">
+            <ToolButton label="Zoom out" onClick={() => void zoomOut({ duration: 200 })}>
+              <Minus />
+            </ToolButton>
+            <button
+              type="button"
+              onClick={() => void fitView(FIT)}
+              className="h-8 min-w-[3.25rem] rounded-full px-2 text-[12px] font-semibold tabular-nums text-ink outline-none transition-colors hover:bg-fog focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Fit the flow to the screen"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <ToolButton label="Zoom in" onClick={() => void zoomIn({ duration: 200 })}>
+              <Plus />
+            </ToolButton>
+            <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+            <ToolButton label="Fit to screen" onClick={() => void fitView(FIT)}>
+              <Maximize2 />
+            </ToolButton>
+            <ToolButton label="Tidy up" onClick={tidyUp}>
+              <LayoutList />
+            </ToolButton>
+            <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+            <ToolButton label="Undo" shortcut="⌘Z" onClick={() => dispatch({ type: "undo" })} disabled={!canUndo}>
+              <Undo2 />
+            </ToolButton>
+            <ToolButton label="Redo" shortcut="⇧⌘Z" onClick={() => dispatch({ type: "redo" })} disabled={!canRedo}>
+              <Redo2 />
+            </ToolButton>
+            <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+            <ToolButton label={canvasOnly ? "Show panels" : "Full canvas"} onClick={() => onCanvasOnlyChange(!canvasOnly)} active={canvasOnly}>
+              {canvasOnly ? <Shrink /> : <Expand />}
+            </ToolButton>
+          </div>
         </Panel>
       </ReactFlow>
+
+      <Popover open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
+        <PopoverAnchor asChild>
+          <span aria-hidden className="pointer-events-none fixed h-px w-px" style={{ left: pending?.x ?? 0, top: pending?.y ?? 0 }} />
+        </PopoverAnchor>
+        <PopoverContent side="bottom" align="start" className="w-auto p-1.5">
+          <StepList
+            title="Add a step here"
+            platform={platform}
+            onPick={(nodeType) => {
+              if (!pending) return;
+              dispatch({
+                type: "addNode",
+                nodeType,
+                data: prefilledNodeData(nodeType, pipelines),
+                after: { nodeId: pending.nodeId, handle: pending.handle },
+                position: { x: Math.round(pending.flow.x - NODE_WIDTH / 2), y: Math.round(pending.flow.y) },
+              });
+              setPending(null);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

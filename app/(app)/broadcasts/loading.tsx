@@ -11,9 +11,9 @@ export default function BroadcastsLoading() {
         <Skeleton className="h-9 w-36" />
       </div>
       <Skeleton className="mb-6 h-16 w-full" />
-      <div className="mb-4 flex gap-2">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-9 w-40" />
+      <div className="mb-5 flex gap-2">
+        <Skeleton className="h-10 w-64 rounded-full" />
+        <Skeleton className="h-9 w-9 rounded-full" />
       </div>
       <div className="overflow-hidden rounded-lg border bg-card shadow-card">
         <div className="border-b px-3 py-3">

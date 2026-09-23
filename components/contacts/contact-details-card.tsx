@@ -2,20 +2,20 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { Plus, UserRound, X } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { Switch } from "@/components/ui/switch";
 import type { UpdateContactInput } from "@/lib/services/contacts";
 import { cn, initials } from "@/lib/utils";
 
 import { contactsApi, errorMessage } from "./api";
+import { Panel } from "./panel";
 import { TagInput } from "./tag-input";
 
 /** Serializable slice of the contact the editors need (the page derives it from ContactDetail). */
@@ -122,8 +122,8 @@ function InlineField({
   }
 
   return (
-    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3">
-      <Label htmlFor={id} className="text-[13px] font-normal text-muted-foreground">
+    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
+      <Label htmlFor={id} className="font-normal text-muted-foreground">
         {label}
       </Label>
       <Input
@@ -142,25 +142,27 @@ function InlineField({
             e.currentTarget.blur();
           }
         }}
-        className="h-8 border-transparent bg-transparent px-2 text-[13px] shadow-none hover:border-input focus-visible:border-foreground"
+        className="h-9 rounded-lg border-transparent bg-transparent px-2.5 text-[13px] font-medium hover:border-input hover:bg-fog/50 focus-visible:bg-background"
       />
     </div>
   );
 }
 
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3">
-      <span className="text-[13px] text-muted-foreground">{label}</span>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-/** Owner and the contact details a team fills in by hand. */
-export function ContactPropertiesCard({ contact, owners }: { contact: EditableContact; owners: OwnerOption[] }) {
-  const patch = useContactPatch(contact.id);
-  const [ownerId, setOwnerId] = useSyncedState(contact.ownerId);
+/** Who looks after this contact, as a pill that changes it in place. */
+export function ContactOwnerPicker({
+  contactId,
+  ownerId: savedOwnerId,
+  owner: savedOwner = null,
+  owners,
+}: {
+  contactId: string;
+  ownerId: string | null;
+  /** The saved owner as the contact carries it, for someone no longer in `owners`. */
+  owner?: OwnerOption | null;
+  owners: OwnerOption[];
+}) {
+  const patch = useContactPatch(contactId);
+  const [ownerId, setOwnerId] = useSyncedState(savedOwnerId);
 
   async function changeOwner(value: string) {
     const next = value === UNASSIGNED ? null : value;
@@ -171,33 +173,51 @@ export function ContactPropertiesCard({ contact, owners }: { contact: EditableCo
     if (!ok) setOwnerId(previous);
   }
 
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle>Details</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <PropertyRow label="Owner">
-          <Select value={ownerId ?? UNASSIGNED} onValueChange={(v) => void changeOwner(v)}>
-            <SelectTrigger className="h-8 border-transparent px-2 text-[13px] shadow-none hover:border-input" aria-label="Owner">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={UNASSIGNED}>
-                <span className="text-muted-foreground">Unassigned</span>
-              </SelectItem>
-              {owners.map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  <span className="flex items-center gap-2">
-                    <OwnerAvatar owner={o} />
-                    {ownerLabel(o)}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </PropertyRow>
+  const owner = owners.find((o) => o.id === ownerId) ?? (ownerId && ownerId === savedOwnerId ? savedOwner : null);
 
+  return (
+    <Select value={ownerId ?? UNASSIGNED} onValueChange={(v) => void changeOwner(v)}>
+      <SelectTrigger
+        className="h-8 w-auto max-w-[15rem] gap-1.5 rounded-full border-ink/10 bg-background py-0 pl-1 pr-2.5 text-[13px] font-semibold [&>svg]:h-3.5 [&>svg]:w-3.5"
+        aria-label="Owner"
+      >
+        {/* A div, not a span: the trigger line-clamps direct span children, which would stack the avatar over the name. */}
+        {owner ? (
+          <div className="flex min-w-0 items-center gap-1.5">
+            <OwnerAvatar owner={owner} className="h-6 w-6" />
+            <div className="truncate">{ownerLabel(owner)}</div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 pl-1 text-muted-foreground">
+            <UserRound className="h-4 w-4" aria-hidden />
+            Unassigned
+          </div>
+        )}
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={UNASSIGNED}>
+          <span className="text-muted-foreground">Unassigned</span>
+        </SelectItem>
+        {owners.map((o) => (
+          <SelectItem key={o.id} value={o.id}>
+            <span className="flex items-center gap-2">
+              <OwnerAvatar owner={o} />
+              {ownerLabel(o)}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The contact details a team fills in by hand. */
+export function ContactPropertiesCard({ contact }: { contact: EditableContact }) {
+  const patch = useContactPatch(contact.id);
+
+  return (
+    <Panel label="Details">
+      <div className="-mx-1 space-y-1">
         <InlineField
           id="contact-name"
           label="Name"
@@ -224,8 +244,8 @@ export function ContactPropertiesCard({ contact, owners }: { contact: EditableCo
           maxLength={32}
           onSave={(phone) => patch({ phone }, { error: "Couldn't save the phone number" })}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }
 
@@ -291,86 +311,81 @@ export function ContactTagsCard({ contact, allTags }: { contact: EditableContact
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle>Tags and fields</CardTitle>
-        <CardDescription>Tags decide who gets a broadcast. Automations can add them too.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="contact-tags" className="text-[13px]">
-              Tags
-            </Label>
-            {savingTags ? <span className="text-[11px] text-muted-foreground">Saving…</span> : null}
-          </div>
-          <TagInput id="contact-tags" value={tags} onChange={(next) => void saveTags(next)} suggestions={allTags} disabled={savingTags} placeholder="Add a tag and press Enter" />
-        </div>
+    <Panel label="Tags" action={savingTags ? <span className="text-[11px] text-muted-foreground">Saving…</span> : null}>
+      <Label htmlFor="contact-tags" className="sr-only">
+        Tags
+      </Label>
+      <TagInput id="contact-tags" value={tags} onChange={(next) => void saveTags(next)} suggestions={allTags} disabled={savingTags} placeholder="Add a tag and press Enter" />
 
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-[13px]">Fields</Label>
-            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setRows((prev) => [...prev, { id: nextRowId.current++, key: "", value: "" }])}>
-              <Plus />
-              Add field
+      <div className="mt-6 border-t pt-5">
+        <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+          <h3 className="brand-label text-muted-foreground">Fields</h3>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-mr-2"
+            onClick={() => setRows((prev) => [...prev, { id: nextRowId.current++, key: "", value: "" }])}
+          >
+            <Plus />
+            Add field
+          </Button>
+        </div>
+        {rows.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground">No fields yet</p>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((row) => {
+              const key = row.key.trim();
+              const invalid = !key || duplicateKeys.has(key);
+              return (
+                <div key={row.id} className="flex items-center gap-2 motion-safe:animate-fade-in">
+                  <Input
+                    value={row.key}
+                    onChange={(e) => setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, key: e.target.value } : r)))}
+                    placeholder="City"
+                    maxLength={64}
+                    aria-label="Field name"
+                    aria-invalid={invalid || undefined}
+                    className="h-9 w-2/5 rounded-lg bg-fog/60 text-[13px] font-semibold"
+                  />
+                  <Input
+                    value={row.value}
+                    onChange={(e) => setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)))}
+                    placeholder="Value"
+                    maxLength={1000}
+                    aria-label="Field value"
+                    className="h-9 flex-1 rounded-lg text-[13px]"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
+                    aria-label="Remove field"
+                  >
+                    <X />
+                  </Button>
+                </div>
+              );
+            })}
+            {duplicateKeys.size > 0 ? <p className="text-[12px] text-destructive">Each field needs a different name.</p> : null}
+            {emptyKeys ? <p className="text-[12px] text-destructive">Every field needs a name.</p> : null}
+          </div>
+        )}
+        {fieldsDirty ? (
+          <div className="flex justify-end gap-2 pt-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => setRows(toRows(contact.customFields))} disabled={savingFields}>
+              Discard
+            </Button>
+            <Button type="button" size="sm" onClick={() => void saveFields()} loading={savingFields} disabled={fieldsInvalid}>
+              Save fields
             </Button>
           </div>
-          {rows.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nothing yet. Keep things like their city, size or order number here.</p>
-          ) : (
-            <div className="space-y-2">
-              {rows.map((row) => {
-                const key = row.key.trim();
-                const invalid = !key || duplicateKeys.has(key);
-                return (
-                  <div key={row.id} className="flex items-center gap-2">
-                    <Input
-                      value={row.key}
-                      onChange={(e) => setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, key: e.target.value } : r)))}
-                      placeholder="Field"
-                      maxLength={64}
-                      aria-label="Field name"
-                      aria-invalid={invalid || undefined}
-                      className="h-8 w-2/5 text-[13px]"
-                    />
-                    <Input
-                      value={row.value}
-                      onChange={(e) => setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)))}
-                      placeholder="Value"
-                      maxLength={1000}
-                      aria-label="Field value"
-                      className="h-8 flex-1 text-[13px]"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground"
-                      onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
-                      aria-label="Remove field"
-                    >
-                      <X />
-                    </Button>
-                  </div>
-                );
-              })}
-              {duplicateKeys.size > 0 ? <p className="text-xs text-destructive">Each field needs a different name.</p> : null}
-              {emptyKeys ? <p className="text-xs text-destructive">Every field needs a name.</p> : null}
-            </div>
-          )}
-          {fieldsDirty ? (
-            <div className="flex justify-end gap-2 pt-1">
-              <Button type="button" variant="outline" size="sm" onClick={() => setRows(toRows(contact.customFields))} disabled={savingFields}>
-                Discard
-              </Button>
-              <Button type="button" size="sm" onClick={() => void saveFields()} loading={savingFields} disabled={fieldsInvalid}>
-                Save fields
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+        ) : null}
+      </div>
+    </Panel>
   );
 }
 
@@ -393,22 +408,17 @@ export function ContactMessagingCard({ contact, children }: { contact: EditableC
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle>Messaging</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {children}
-        <div className="flex items-start justify-between gap-4 border-t pt-4">
-          <div className="space-y-1">
-            <Label htmlFor="contact-opted-out" className="text-[13px]">
-              Stop all messages
-            </Label>
-            <p className="text-xs text-muted-foreground">Automations, broadcasts and Inbox replies skip this person. Use it when someone asks you to stop.</p>
-          </div>
-          <Switch id="contact-opted-out" checked={optedOut} onCheckedChange={(v) => void toggle(v)} disabled={saving} />
+    <Panel label="Messaging">
+      {children}
+      <div className={cn("flex items-start justify-between gap-4 rounded-xl p-3 transition-colors duration-200", children ? "mt-4" : null, optedOut ? "bg-orange-soft" : "bg-fog")}>
+        <div className="space-y-1">
+          <Label htmlFor="contact-opted-out" className="font-semibold">
+            Stop all messages
+          </Label>
+          <p className="text-[12px] text-muted-foreground">Automations, broadcasts and Inbox replies skip them.</p>
         </div>
-      </CardContent>
-    </Card>
+        <Switch id="contact-opted-out" checked={optedOut} onCheckedChange={(v) => void toggle(v)} disabled={saving} />
+      </div>
+    </Panel>
   );
 }

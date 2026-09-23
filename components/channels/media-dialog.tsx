@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { formatDistanceToNow } from "date-fns";
-import { ExternalLink, Images, MessageCircle, Play, RefreshCw, Search } from "lucide-react";
+import { ArrowUpRight, Images, MessageCircle, Play, RefreshCw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -50,7 +50,7 @@ export function MediaDialog({ channel, open, onOpenChange }: MediaDialogProps) {
         if (id !== requestId.current) return;
         setItems(data.media);
         setSyncedAt(data.syncedAt);
-        if (refresh) toast.success(`Synced ${data.media.length} post${data.media.length === 1 ? "" : "s"}`);
+        if (refresh) toast.success(`Loaded ${data.media.length} post${data.media.length === 1 ? "" : "s"}`);
       } catch (err) {
         if (id !== requestId.current) return;
         toast.error(errorMessage(err, "Couldn't load posts"));
@@ -84,19 +84,19 @@ export function MediaDialog({ channel, open, onOpenChange }: MediaDialogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when the query changes
   }, [query]);
 
-  const subject = channel.platform === "INSTAGRAM" ? "posts and reels" : "Page posts";
+  const platformName = channel.platform === "INSTAGRAM" ? "Instagram" : "Facebook";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Posts · {channelDisplayName(channel)}</DialogTitle>
+          <DialogTitle>Posts</DialogTitle>
           <DialogDescription>
-            Cached {subject} used by the automation post picker.
+            {channelDisplayName(channel)}
             {syncedAt ? (
               <>
-                {" "}
-                Synced <span suppressHydrationWarning>{formatDistanceToNow(new Date(syncedAt), { addSuffix: true })}</span>.
+                {" · Updated "}
+                <span suppressHydrationWarning>{formatDistanceToNow(new Date(syncedAt), { addSuffix: true })}</span>
               </>
             ) : null}
           </DialogDescription>
@@ -104,43 +104,40 @@ export function MediaDialog({ channel, open, onOpenChange }: MediaDialogProps) {
 
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search captions"
-              className="h-8 pl-8 text-[13px]"
+              className="h-9 rounded-full pl-9 text-[13px]"
               aria-label="Search captions"
             />
           </div>
-          <Button size="sm" variant="outline" onClick={() => void load(query.trim(), true)} loading={refreshing} disabled={loading}>
+          <Button variant="outline" onClick={() => void load(query.trim(), true)} loading={refreshing} disabled={loading}>
             {refreshing ? null : <RefreshCw />}
-            Sync now
+            Refresh
           </Button>
         </div>
 
-        <ScrollArea className="h-[440px] -mx-1 px-1">
+        <ScrollArea className="-mx-1 h-[min(440px,55vh)] px-1">
           {items === null || (loading && items.length === 0) ? (
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
               {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="aspect-square" />
+                <Skeleton key={i} className="aspect-[4/5] rounded-xl" />
               ))}
             </div>
           ) : items.length === 0 ? (
             <EmptyState
               icon={Images}
-              title={query ? "No posts match that search" : "No posts cached yet"}
-              description={
-                query
-                  ? "Try a different word from the caption."
-                  : `Sync now pulls the latest ${subject} from Meta. New accounts sync automatically within a minute.`
-              }
-              className="py-16"
+              tone="indigo"
+              compact
+              title={query ? "No posts match" : "No posts yet"}
+              description={query ? "Try another word from the caption." : "Refresh to load your latest posts."}
             />
           ) : (
-            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-busy={loading || undefined}>
-              {items.map((item) => (
-                <MediaTile key={item.id} item={item} />
+            <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-4" aria-busy={loading || undefined}>
+              {items.map((item, i) => (
+                <MediaTile key={item.id} item={item} index={i} platformName={platformName} />
               ))}
             </ul>
           )}
@@ -150,13 +147,13 @@ export function MediaDialog({ channel, open, onOpenChange }: MediaDialogProps) {
   );
 }
 
-function MediaTile({ item }: { item: MediaSummary }) {
+function MediaTile({ item, index, platformName }: { item: MediaSummary; index: number; platformName: string }) {
   const src = item.thumbnailUrl ?? item.mediaUrl;
   const isVideo = item.mediaType === "VIDEO" || item.mediaType === "REELS";
   const caption = item.caption?.trim() || "No caption";
   return (
-    <li className="group relative overflow-hidden rounded-md border bg-muted">
-      <div className="aspect-square w-full">
+    <li className="rise flex flex-col overflow-hidden rounded-xl border bg-card" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
+      <div className="relative aspect-square w-full bg-fog">
         {src ? (
           // Meta CDN hostnames vary per region/asset; a plain <img> avoids next/image host allow-list failures.
           // eslint-disable-next-line @next/next/no-img-element
@@ -167,18 +164,18 @@ function MediaTile({ item }: { item: MediaSummary }) {
           </div>
         )}
         {isVideo ? (
-          <span className="absolute right-1.5 top-1.5 rounded-full bg-black/70 p-1 text-white">
+          <span className="absolute right-2 top-2 rounded-full bg-ink/75 p-1 text-white" role="img" aria-label="Video">
             <Play className="h-3 w-3 fill-current" />
           </span>
         ) : null}
       </div>
-      <div className="space-y-1 border-t bg-background p-2">
+      <div className="flex flex-1 flex-col gap-1.5 p-2.5">
         <p className="line-clamp-2 text-[12px] leading-snug text-foreground" title={caption}>
           {truncate(caption, 120)}
         </p>
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1 tabular-nums">
-            <MessageCircle className="h-3 w-3" />
+        <div className="mt-auto flex items-center justify-between text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 tabular-nums" title="Comments">
+            <MessageCircle className="h-3 w-3" aria-hidden />
             {formatNumber(item.commentCount ?? 0)}
           </span>
           {item.permalink ? (
@@ -186,11 +183,11 @@ function MediaTile({ item }: { item: MediaSummary }) {
               href={item.permalink}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex items-center gap-1 hover:text-foreground"
-              aria-label="Open on Meta"
+              className="inline-flex items-center gap-0.5 rounded-full font-semibold text-ink outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Open on ${platformName}`}
             >
               Open
-              <ExternalLink className="h-3 w-3" />
+              <ArrowUpRight className="h-3 w-3" aria-hidden />
             </a>
           ) : null}
         </div>

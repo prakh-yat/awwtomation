@@ -1,19 +1,25 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlatformIcon } from "@/components/ui/platform-icon";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { CardLink } from "@/components/analytics/card-link";
+import { AutomationStatusBadge } from "@/components/automations/badges";
+import { stagger } from "@/components/charts/stagger";
+import { VIZ } from "@/components/charts/tokens";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import type { TopAutomation } from "@/lib/services/analytics";
 import { cn, formatNumber } from "@/lib/utils";
 
-import { AUTOMATION_STATUS_LABELS, contactHandle } from "./labels";
+import { contactHandle } from "./labels";
 
 function rate(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "0%";
   return `${(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`;
 }
 
+/**
+ * The automations that sent the most DMs, as a ranked list: each bar is
+ * scaled to the leader, and the figures beside it are exact.
+ */
 export function TopAutomations({
   automations,
   days,
@@ -22,65 +28,61 @@ export function TopAutomations({
 }: {
   automations: TopAutomation[];
   days: number;
-  /** Off when the workspace has a single account, where the column would repeat one handle. */
+  /** Off when the workspace has a single account, where the line would repeat one handle. */
   showAccount?: boolean;
   className?: string;
 }) {
+  const max = Math.max(1, ...automations.map((a) => a.sent));
+
   return (
-    <Card className={cn("overflow-hidden", className)}>
-      <CardHeader className="flex-row items-start justify-between space-y-0 pb-4">
-        <div className="space-y-1">
-          <CardTitle>Top automations</CardTitle>
-          <CardDescription>By DMs sent in the last {days} days</CardDescription>
-        </div>
-        <Link href="/automations" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-          All automations
-        </Link>
+    <Card className={cn("flex flex-col overflow-hidden", className)}>
+      <CardHeader className="shrink-0 flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle>Top automations</CardTitle>
+        <CardLink href="/automations">View all</CardLink>
       </CardHeader>
 
       {automations.length === 0 ? (
-        <div className="border-t px-5 py-8">
-          <p className="text-[13px] text-muted-foreground">No automation sent a DM in this period.</p>
-        </div>
+        <p className="flex-1 border-t px-5 py-8 text-[13px] text-muted-foreground">No automation sent a DM in the last {days} days.</p>
       ) : (
-        <div className="overflow-x-auto border-t">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-5">Automation</TableHead>
-                {showAccount ? <TableHead className="hidden md:table-cell">Account</TableHead> : null}
-                <TableHead className="text-right">DMs sent</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">Clicks</TableHead>
-                <TableHead className="pr-5 text-right">Click rate</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {automations.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell className="max-w-[260px] pl-5">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <Link href={`/automations/${a.id}`} className="truncate font-medium underline-offset-4 hover:underline" title={a.name}>
-                        {a.name}
-                      </Link>
-                      {a.status !== "ACTIVE" ? <Badge variant="secondary">{AUTOMATION_STATUS_LABELS[a.status]}</Badge> : null}
+        <ol className="scrollbar-thin min-h-0 flex-1 divide-y overflow-y-auto border-t">
+          {automations.map((a, i) => (
+            <li key={a.id} className="rise" style={stagger(i)}>
+              <Link
+                href={`/automations/${a.id}`}
+                className="flex items-center gap-3 px-5 py-3 outline-none transition-colors hover:bg-fog/70 focus-visible:bg-fog"
+              >
+                <span className="font-display w-5 shrink-0 text-[15px] text-muted-foreground tabular-nums">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[14px] font-semibold" title={a.name}>
+                      {a.name}
                     </span>
-                  </TableCell>
+                    {a.status !== "ACTIVE" ? <AutomationStatusBadge status={a.status} className="shrink-0" /> : null}
+                  </span>
                   {showAccount ? (
-                    <TableCell className="hidden max-w-[200px] md:table-cell">
-                      <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                        <PlatformIcon platform={a.channel.platform} size={13} className="shrink-0" />
-                        <span className="truncate">{contactHandle(a.channel.username, a.channel.name)}</span>
-                      </span>
-                    </TableCell>
+                    <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <PlatformMark platform={a.channel.platform} size={14} />
+                      <span className="truncate">{contactHandle(a.channel.username, a.channel.name)}</span>
+                    </span>
                   ) : null}
-                  <TableCell className="text-right font-medium tabular-nums">{formatNumber(a.sent)}</TableCell>
-                  <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatNumber(a.clicks)}</TableCell>
-                  <TableCell className="pr-5 text-right tabular-nums">{rate(a.ctr)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                  <span className="mt-2 block h-1.5 rounded-r-[4px] bg-fog" aria-hidden>
+                    <span
+                      className="block h-full rounded-r-[4px]"
+                      style={{ width: `${Math.max((a.sent / max) * 100, a.sent > 0 ? 2 : 0)}%`, backgroundColor: VIZ.accent }}
+                    />
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-[15px] font-semibold tabular-nums">
+                    {formatNumber(a.sent)}
+                    <span className="sr-only"> DMs sent</span>
+                  </span>
+                  <span className="block text-xs tabular-nums text-muted-foreground">{rate(a.ctr)} clicked</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ol>
       )}
     </Card>
   );

@@ -1,174 +1,152 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, PenLine } from "lucide-react";
+import { ArrowRight, ChevronRight, LoaderCircle, Magnet, MessagesSquare, MousePointerClick, ShoppingBag, UserPlus, type LucideIcon } from "lucide-react";
 
-import { apiFetch, errorMessage } from "@/components/automations/api";
-import { STEP_INFO } from "@/components/automations/builder/step-catalog";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "@/components/ui/sonner";
-import type { AutomationDetail, ChannelOption } from "@/lib/services/automations";
-import type { TemplateStep, TemplateSummary } from "@/lib/services/templates";
+import { StepIcon } from "@/components/automations/builder/step-catalog";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { TONES, type Tone } from "@/components/ui/tone";
+import type { TemplateGoal, TemplateStep, TemplateSummary } from "@/lib/services/templates";
 import { cn } from "@/lib/utils";
 
-function StepChain({ steps }: { steps: TemplateStep[] }) {
+/**
+ * A colour and an icon per goal, so the grid reads by what a template is for
+ * before any name is read. Written in the order the goal filters are listed.
+ */
+export const GOAL_STYLE: Record<TemplateGoal, { tone: Tone; icon: LucideIcon }> = {
+  "Grow your followers": { tone: "orange", icon: UserPlus },
+  "Engage your audience": { tone: "sky", icon: MessagesSquare },
+  "Drive traffic": { tone: "indigo", icon: MousePointerClick },
+  "Capture leads": { tone: "green", icon: Magnet },
+  "Sell more": { tone: "yellow", icon: ShoppingBag },
+};
+
+export const GOAL_ORDER = Object.keys(GOAL_STYLE) as TemplateGoal[];
+
+/** The template's main path as chips in the builder's step colours. Spans only: it sits inside the card's button. */
+export function StepChips({ steps, id, className }: { steps: TemplateStep[]; id?: string; className?: string }) {
   return (
-    <ol className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-      {steps.map((s, i) => {
-        const Icon = STEP_INFO[s.type].icon;
-        return (
-          <li key={i} className="flex items-center gap-1">
-            <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-foreground">
-              <Icon className="h-3 w-3" strokeWidth={1.75} />
-              {s.label}
-            </span>
-            {i < steps.length - 1 ? <ArrowRight className="h-3 w-3" /> : null}
-          </li>
-        );
-      })}
-    </ol>
+    <span id={id} className={cn("flex flex-wrap items-center gap-x-0.5 gap-y-1.5", className)}>
+      {steps.map((step, i) => (
+        <span key={i} className="flex min-w-0 items-center gap-0.5">
+          <span className="inline-flex min-w-0 max-w-[11rem] items-center gap-1.5 rounded-[8px] bg-fog py-0.5 pl-0.5 pr-2 text-[11px] font-semibold leading-5 text-ink">
+            <StepIcon type={step.type} size={20} />
+            <span className="truncate">{step.label}</span>
+          </span>
+          {i < steps.length - 1 ? <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden /> : null}
+        </span>
+      ))}
+    </span>
   );
 }
 
-const SCRATCH = "__scratch__";
-
-export function TemplateGallery({ templates, channels }: { templates: TemplateSummary[]; channels: ChannelOption[] }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [pending, setPending] = React.useState<string | null>(null);
-  // When several channels are active we ask which one; with one we just go.
-  const [pickFor, setPickFor] = React.useState<string | null>(null);
-  const [channelId, setChannelId] = React.useState(channels[0]?.id ?? "");
-  const autoStarted = React.useRef(false);
-
-  const create = React.useCallback(
-    async (templateId: string, chosenChannelId: string) => {
-      setPending(templateId);
-      try {
-        const { automation } = await apiFetch<{ automation: AutomationDetail }>("/api/automations", {
-          method: "POST",
-          json: { channelId: chosenChannelId, ...(templateId === SCRATCH ? {} : { templateId }) },
-        });
-        toast.success(`Created “${automation.name}”`);
-        router.push(`/automations/${automation.id}`);
-      } catch (err) {
-        toast.error(errorMessage(err, "Couldn't create the automation"));
-        setPending(null);
-      }
-    },
-    [router],
-  );
-
-  function choose(templateId: string) {
-    if (channels.length === 1) void create(templateId, channels[0].id);
-    else setPickFor(templateId);
-  }
-
-  React.useEffect(() => {
-    // /automations/templates?template=<id> (from the list page's empty state) skips the browse step.
-    const wanted = searchParams.get("template");
-    if (!wanted || autoStarted.current || channels.length === 0) return;
-    if (!templates.some((t) => t.id === wanted)) return;
-    autoStarted.current = true;
-    choose(wanted);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
-
-  const pickedTemplate = pickFor && pickFor !== SCRATCH ? templates.find((t) => t.id === pickFor) : null;
+export function TemplateCard({
+  template,
+  pending,
+  disabled,
+  onChoose,
+}: {
+  template: TemplateSummary;
+  /** This card's template is being created. */
+  pending: boolean;
+  disabled: boolean;
+  onChoose: () => void;
+}) {
+  const id = React.useId();
+  const goal = GOAL_STYLE[template.goal];
+  const GoalIcon = goal.icon;
 
   return (
-    <>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {templates.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            disabled={pending !== null}
-            onClick={() => choose(t.id)}
-            className={cn(
-              "group flex h-full flex-col rounded-lg border bg-card p-5 text-left shadow-card transition-colors",
-              "hover:border-foreground/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              "disabled:pointer-events-none disabled:opacity-60",
-            )}
-          >
-            <p className="text-sm font-medium">{t.name}</p>
-            <p className="mt-1 text-[13px] text-muted-foreground">{t.description}</p>
-            <div className="mt-4 flex-1 border-t pt-3">
-              <StepChain steps={t.steps} />
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3 text-[12px]">
-              <span className="truncate text-muted-foreground">
-                {t.matchMode === "ANY"
-                  ? `Any ${t.triggerType === "COMMENT" ? "comment" : t.triggerType === "DM" ? "DM" : "story reply"}`
-                  : `Keywords: ${t.keywords.join(", ")}`}
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium">
-                {pending === t.id ? "Creating…" : "Use template"}
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </div>
-          </button>
-        ))}
-
-        <button
-          type="button"
-          disabled={pending !== null}
-          onClick={() => choose(SCRATCH)}
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onChoose}
+      aria-labelledby={`${id}-name`}
+      aria-describedby={`${id}-description ${id}-steps`}
+      aria-busy={pending || undefined}
+      className={cn(
+        "lift group flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-card text-left",
+        "hover:border-ink/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "disabled:pointer-events-none",
+        disabled && !pending && "opacity-50",
+      )}
+    >
+      <span className={cn("relative flex h-[76px] w-full shrink-0 items-center gap-3 px-4", TONES[goal.tone].soft)}>
+        <span aria-hidden className="bg-grid pointer-events-none absolute inset-0 [--grid-size:22px]" />
+        <span
+          aria-hidden
           className={cn(
-            "group flex h-full min-h-[180px] flex-col items-center justify-center rounded-lg border border-dashed p-5 text-center transition-colors",
-            "hover:border-foreground/50 hover:bg-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            "disabled:pointer-events-none disabled:opacity-60",
+            "relative flex h-10 w-10 shrink-0 -rotate-6 items-center justify-center rounded-xl shadow-[0_10px_20px_-12px_rgb(15_15_15/0.55)] transition-transform duration-300 ease-soft motion-safe:group-hover:rotate-0",
+            TONES[goal.tone].solid,
           )}
         >
-          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border bg-background shadow-card">
-            <PenLine className="h-5 w-5" strokeWidth={1.75} />
-          </div>
-          <p className="text-sm font-medium">{pending === SCRATCH ? "Creating…" : "Start from scratch"}</p>
-          <p className="mt-1 max-w-[220px] text-[13px] text-muted-foreground">An empty canvas with just the trigger. Add the steps you need.</p>
-        </button>
-      </div>
+          <GoalIcon className="h-5 w-5" strokeWidth={2} />
+        </span>
+        {/* `relative` keeps these above the grid overlay, which is positioned. */}
+        <span className={cn("brand-label relative min-w-0 truncate", TONES[goal.tone].text)}>{template.goal}</span>
+        {template.popular ? <Badge className="relative ml-auto shrink-0">Popular</Badge> : null}
+      </span>
 
-      <Dialog open={pickFor !== null} onOpenChange={(open) => !open && pending === null && setPickFor(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Which account?</DialogTitle>
-            <DialogDescription>
-              {pickedTemplate ? `“${pickedTemplate.name}” will reply from this account.` : "The new automation will reply from this account."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="template-channel">Account</Label>
-            <Select value={channelId} onValueChange={setChannelId}>
-              <SelectTrigger id="template-channel">
-                <SelectValue placeholder="Pick an account" />
-              </SelectTrigger>
-              <SelectContent>
-                {channels.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.username ? `@${c.username}` : (c.name ?? "Unnamed")} · {c.platform === "INSTAGRAM" ? "Instagram" : "Facebook"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter className="mt-2 gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setPickFor(null)} disabled={pending !== null}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => pickFor && channelId && create(pickFor, channelId)}
-              disabled={!channelId}
-              loading={pending !== null}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+      <span className="flex w-full flex-1 flex-col p-4">
+        <span id={`${id}-name`} className="text-[15px] font-semibold leading-snug text-ink">
+          {template.name}
+        </span>
+        {/* One line is enough to tell two templates apart; the full text is on hover. */}
+        <span id={`${id}-description`} title={template.description} className="mt-1 truncate text-[13px] text-muted-foreground">
+          {template.description}
+        </span>
+        <StepChips id={`${id}-steps`} steps={template.steps} className="mt-4" />
+        <span className="mt-auto flex justify-end pt-4">
+          <span className={cn(buttonVariants({ variant: "outline", size: "sm" }), "group-hover:border-ink group-hover:bg-ink group-hover:text-white")}>
+            {pending ? <LoaderCircle className="animate-spin" aria-hidden /> : null}
+            {pending ? "Creating" : "Use template"}
+            {pending ? null : <ArrowRight className="transition-transform duration-200 ease-soft motion-safe:group-hover:translate-x-0.5" aria-hidden />}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+export type TemplateSection = { title?: string; templates: TemplateSummary[] };
+
+/** Template cards in titled sections; cards rise in turn, counted across sections. */
+export function TemplateGallery({
+  sections,
+  pendingId,
+  onChoose,
+}: {
+  sections: TemplateSection[];
+  /** The template being created, which disables the rest. */
+  pendingId: string | null;
+  onChoose: (templateId: string) => void;
+}) {
+  let index = 0;
+  return (
+    <div className="space-y-8">
+      {sections.map((section, s) =>
+        section.templates.length === 0 ? null : (
+          <section key={section.title ?? s}>
+            {section.title ? <h3 className="brand-label mb-3 text-muted-foreground">{section.title}</h3> : null}
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {section.templates.map((template) => {
+                const i = index++;
+                return (
+                  <li key={template.id} className="rise" style={{ "--i": Math.min(i, 12) } as React.CSSProperties}>
+                    <TemplateCard
+                      template={template}
+                      pending={pendingId === template.id}
+                      disabled={pendingId !== null}
+                      onChoose={() => onChoose(template.id)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ),
+      )}
+    </div>
   );
 }

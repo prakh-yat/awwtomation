@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { CenteredPage } from "@/components/layout/centered-page";
 import { OrganizationPicker } from "@/components/organizations/organization-picker";
@@ -26,24 +25,22 @@ export default async function OrganizationsPage() {
       logoHref="/dashboard"
       footer={
         <>
-          Signed in as <span className="font-medium text-foreground">{user.email}</span>
+          Signed in as <span className="font-medium text-ink">{user.email}</span>
           {" · "}
-          <Link href="/auth/signout" className="underline underline-offset-2 hover:text-foreground">
+          {/* A plain link: `/auth/signout` is a route handler, and a prefetch would sign you out. */}
+          <a href="/auth/signout" className="font-medium text-ink underline underline-offset-4 hover:text-ink/70">
             Sign out
-          </Link>
+          </a>
         </>
       }
     >
-      <div className="mb-6 space-y-1.5">
-        <h1 className="text-xl font-semibold tracking-tight">Your organizations</h1>
-        <p className="text-sm text-muted-foreground">
-          Each organization is billed on its own and has its own team and workspaces. Open one to work in it.
-        </p>
+      <h1 className="font-display text-[32px] leading-none">Your organizations</h1>
+      <div className="mt-7">
+        <OrganizationPicker
+          organizations={organizations.map((o) => ({ ...o, joinedAt: o.joinedAt.toISOString() }))}
+          currentId={currentId}
+        />
       </div>
-      <OrganizationPicker
-        organizations={organizations.map((o) => ({ ...o, joinedAt: o.joinedAt.toISOString() }))}
-        currentId={currentId}
-      />
     </CenteredPage>
   );
 }

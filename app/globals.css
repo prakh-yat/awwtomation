@@ -12,13 +12,18 @@
 
     /*
      * Brand palette, taken from the marketing site (Downloads/awwtomation):
-     * ink on paper, a fog grey for surfaces, and a set of flat accents that
-     * only ever appear as whole blocks, never as gradients.
+     * ink on paper, a fog grey for surfaces, and flat accents that appear as
+     * whole blocks, never as gradients.
      *
      *   ink #0f0f0f   paper #ffffff   fog #f5f5f5   mute #6b6b6b
      *   yellow #fff200   magenta #fb0df7   purple #7b34ce   indigo #3c42c4
-     *   green #007257   orange #ff4c00   lavender #d8bee3   sky #96dae3
-     *   blue #2b60f8   sage #edf2ee
+     *   blue #2b60f8   green #007257   orange #ff4c00   lavender #d8bee3
+     *   sky #96dae3   sage #edf2ee
+     *
+     * Every accent comes in three strengths: the solid block, a soft tint for
+     * chips and highlighted rows, and an "ink" step dark enough to set small
+     * text in on white. Yellow, sky, lavender and orange take ink text when
+     * solid; the others take white.
      */
     --background: 0 0% 100%;
     --foreground: 0 0% 6%;
@@ -36,47 +41,81 @@
     --secondary-foreground: 0 0% 6%;
 
     --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 42%;
+    --muted-foreground: 0 0% 40%;
 
     --accent: 0 0% 94%;
     --accent-foreground: 0 0% 6%;
 
-    /* Danger stays red: the site has no red, but orange here would read as a
-       warning rather than a destructive action. */
-    --destructive: 0 72% 46%;
+    /* Danger stays red: orange reads as a warning, not a destructive action. */
+    --destructive: 356 78% 48%;
     --destructive-foreground: 0 0% 100%;
 
     --success: 166 100% 22%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 18 100% 50%;
+    --warning: 18 100% 40%;
     --warning-foreground: 0 0% 6%;
 
-    --border: 0 0% 89%;
-    --input: 0 0% 85%;
+    --border: 0 0% 90%;
+    --input: 0 0% 86%;
     /* Magenta focus, as on the site. */
     --ring: 301 96% 52%;
 
-    /* Flat accents, for blocks and chart series. */
-    --brand-yellow: 57 100% 50%;
-    --brand-magenta: 301 96% 52%;
-    --brand-purple: 268 61% 51%;
-    --brand-indigo: 237 54% 50%;
-    --brand-blue: 224 94% 57%;
-    --brand-green: 166 100% 22%;
-    --brand-orange: 18 100% 50%;
-    --brand-lavender: 282 40% 82%;
-    --brand-sky: 187 58% 74%;
-    --brand-sage: 132 16% 94%;
+    --brand-ink: 0 0% 6%;
+    --brand-paper: 0 0% 100%;
     --brand-fog: 0 0% 96%;
+    --brand-mute: 0 0% 42%;
 
-    --radius: 0.875rem;
+    --brand-yellow: 57 100% 50%;
+    --brand-yellow-soft: 57 100% 88%;
+    --brand-yellow-ink: 50 100% 24%;
 
-    --sidebar-background: 0 0% 98%;
+    --brand-magenta: 301 96% 52%;
+    --brand-magenta-soft: 301 90% 95%;
+    --brand-magenta-ink: 305 100% 34%;
+
+    --brand-purple: 268 61% 51%;
+    --brand-purple-soft: 268 70% 95%;
+    --brand-purple-ink: 268 61% 42%;
+
+    --brand-indigo: 237 54% 50%;
+    --brand-indigo-soft: 237 60% 95%;
+    --brand-indigo-ink: 237 54% 42%;
+
+    --brand-blue: 224 94% 57%;
+    --brand-blue-soft: 224 94% 95%;
+    --brand-blue-ink: 224 76% 44%;
+
+    --brand-green: 166 100% 22%;
+    --brand-green-soft: 160 42% 91%;
+    --brand-green-ink: 166 100% 20%;
+
+    --brand-orange: 18 100% 50%;
+    --brand-orange-soft: 18 100% 94%;
+    --brand-orange-ink: 18 100% 36%;
+
+    --brand-lavender: 282 40% 82%;
+    --brand-lavender-soft: 283 45% 95%;
+    --brand-lavender-ink: 276 45% 38%;
+
+    --brand-sky: 187 58% 74%;
+    --brand-sky-soft: 187 60% 93%;
+    --brand-sky-ink: 188 80% 24%;
+
+    --brand-sage: 132 16% 94%;
+    --brand-sage-soft: 132 16% 97%;
+    --brand-sage-ink: 150 20% 26%;
+
+    --radius: 1rem;
+
+    --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 25%;
-    --sidebar-accent: 0 0% 94%;
+    --sidebar-accent: 0 0% 96%;
     --sidebar-accent-foreground: 0 0% 6%;
-    --sidebar-border: 0 0% 89%;
+    --sidebar-border: 0 0% 90%;
+
+    --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-brand: cubic-bezier(0.66, 0, 0.33, 1);
   }
 
   * {
@@ -96,6 +135,22 @@
   ::selection {
     background: hsl(var(--brand-yellow));
     color: hsl(var(--foreground));
+  }
+
+  :focus-visible {
+    outline-color: hsl(var(--ring));
+  }
+
+  /*
+   * Text kept for screen readers (`sr-only`) is absolutely positioned, so it
+   * belongs to the nearest positioned ancestor. In a scrolling list that is not
+   * positioned, that ancestor is the page, and the rows further down the list
+   * stretch the page until it scrolls. Every scroll container is therefore a
+   * containing block. `:where` keeps this at zero specificity, so `absolute`,
+   * `fixed` or `sticky` on the same element still win.
+   */
+  :where(.overflow-auto, .overflow-y-auto, .overflow-x-auto, .overflow-scroll, .overflow-y-scroll, .overflow-x-scroll) {
+    position: relative;
   }
 }
 
@@ -118,6 +173,50 @@
     line-height: 1.2;
     letter-spacing: 0.07em;
     text-transform: uppercase;
+  }
+
+  /*
+   * The site's faint square grid, for coloured blocks. `--grid-line` lets a
+   * dark block swap in white lines.
+   */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, var(--grid-line, rgb(15 15 15 / 0.08)) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line, rgb(15 15 15 / 0.08)) 1px, transparent 1px);
+    background-size: var(--grid-size, 32px) var(--grid-size, 32px);
+    background-position: -1px -1px;
+  }
+  .bg-grid-light {
+    --grid-line: rgb(255 255 255 / 0.12);
+  }
+
+  /* Dotted canvas behind the automation builder. */
+  .bg-dots {
+    background-image: radial-gradient(circle at 1px 1px, rgb(15 15 15 / 0.14) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  /* A hairline card that lifts a little under the pointer. */
+  .lift {
+    transition:
+      transform 0.25s var(--ease-soft),
+      box-shadow 0.25s var(--ease-soft),
+      border-color 0.2s ease;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 30px -18px rgb(15 15 15 / 0.35);
+  }
+
+  /*
+   * Entrance for lists and grids: children rise in turn. Set `--i` on each
+   * child (0, 1, 2...) to stagger them.
+   */
+  /* `backwards`, not `both`: once it has played, the element's own transform
+     (a hover lift) must win again. */
+  .rise {
+    animation: rise 0.45s var(--ease-soft) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
   }
 }
 
@@ -142,5 +241,146 @@
   }
   .text-balance {
     text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ───────────────────────── Automation builder canvas ───────────────────────── */
+
+/*
+ * React Flow's own chrome, restyled once here rather than through a long class
+ * string on the canvas. Edges are ink; the one being drawn or hovered takes the
+ * brand purple, and a selected edge animates so it is obvious which one a
+ * Delete key would remove.
+ */
+.flow-canvas .react-flow__edge-path {
+  stroke: hsl(var(--brand-ink) / 0.55);
+  stroke-width: 1.75px;
+  transition:
+    stroke 0.15s ease,
+    stroke-width 0.15s ease;
+}
+.flow-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: hsl(var(--brand-purple));
+  stroke-width: 2.25px;
+}
+.flow-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: hsl(var(--brand-purple));
+  stroke-width: 2.5px;
+  stroke-dasharray: 6 5;
+  animation: flow-dash 0.6s linear infinite;
+}
+.flow-canvas .react-flow__connection-path {
+  stroke: hsl(var(--brand-purple));
+  stroke-width: 2px;
+  stroke-dasharray: 6 5;
+  animation: flow-dash 0.6s linear infinite;
+}
+.flow-canvas .react-flow__node {
+  transition: filter 0.2s ease;
+}
+.flow-canvas .react-flow__node.dragging {
+  filter: drop-shadow(0 22px 28px rgb(15 15 15 / 0.22));
+  cursor: grabbing;
+}
+.flow-canvas .react-flow__node.dragging > * {
+  transform: rotate(-0.6deg) scale(1.015);
+  transition: transform 0.18s var(--ease-soft);
+}
+.flow-canvas .react-flow__handle {
+  transition:
+    transform 0.15s var(--ease-soft),
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+.flow-canvas .react-flow__handle.connectingto,
+.flow-canvas .react-flow__handle.valid {
+  transform: scale(1.6);
+  background: hsl(var(--brand-purple));
+  border-color: hsl(var(--brand-paper));
+}
+.flow-canvas .react-flow__controls {
+  overflow: hidden;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 24px -14px rgb(15 15 15 / 0.35);
+  background: hsl(var(--background));
+}
+.flow-canvas .react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: hsl(var(--background));
+}
+.flow-canvas .react-flow__controls-button:hover {
+  background: hsl(var(--secondary));
+}
+.flow-canvas .react-flow__controls-button svg {
+  fill: hsl(var(--foreground));
+  max-width: 11px;
+  max-height: 11px;
+}
+.flow-canvas .react-flow__minimap {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 24px -14px rgb(15 15 15 / 0.35);
+}
+.flow-canvas .react-flow__selection {
+  background: hsl(var(--brand-purple) / 0.06);
+  border: 1px dashed hsl(var(--brand-purple) / 0.6);
+  border-radius: 12px;
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+
+/* A step that was just added pops in. */
+@keyframes node-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.node-pop {
+  animation: node-pop 0.35s var(--ease-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lift,
+  .lift:hover {
+    transform: none;
+    transition: none;
+  }
+  .rise,
+  .node-pop {
+    animation: none;
+  }
+  .flow-canvas .react-flow__edge.selected .react-flow__edge-path,
+  .flow-canvas .react-flow__connection-path {
+    animation: none;
+  }
+  .flow-canvas .react-flow__node.dragging > * {
+    transform: none;
   }
 }

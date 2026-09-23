@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Lock } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +17,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 
 import { updateWorkspaceAction } from "@/app/(app)/settings/actions";
+import { SettingsCardBody, SettingsCardFooter, SettingsCardHeader } from "./settings-card";
 import { TIMEZONE_GROUPS, timezoneCity, timezoneOffset, withCurrentZone } from "./timezones";
 
 export interface GeneralFormProps {
@@ -66,15 +65,10 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
   }
 
   return (
-    <Card>
-      <form onSubmit={handleSubmit} noValidate className="flex h-full flex-col">
-        <CardHeader>
-          <CardTitle>Workspace</CardTitle>
-          <CardDescription>
-            The name shows in the sidebar and in invitations. Reports and scheduled broadcasts use the time zone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid flex-1 content-start gap-5 sm:grid-cols-2">
+    <Card className="rise flex flex-col rounded-3xl">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
+        <SettingsCardHeader label="Workspace" />
+        <SettingsCardBody className="grid content-start gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="workspace-name">Name</Label>
             <Input
@@ -102,6 +96,7 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
               <SelectTrigger
                 id="workspace-timezone"
                 aria-invalid={error?.field === "timezone" ? true : undefined}
+                aria-describedby="workspace-timezone-hint"
                 className="aria-[invalid=true]:border-destructive"
               >
                 <SelectValue placeholder="Choose a time zone" />
@@ -114,9 +109,7 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
                       <SelectItem key={zone} value={zone}>
                         <span className="flex items-center gap-2">
                           <span>{timezoneCity(zone)}</span>
-                          <span className="text-[11px] tabular-nums text-muted-foreground">
-                            {offsets.get(zone)}
-                          </span>
+                          <span className="text-[11px] tabular-nums text-muted-foreground">{offsets.get(zone)}</span>
                         </span>
                       </SelectItem>
                     ))}
@@ -127,29 +120,17 @@ export function GeneralForm({ workspace, canEdit }: GeneralFormProps) {
             {/* Radix Select is not a native form control; mirror its value for the server action. */}
             <input type="hidden" name="timezone" value={timezone} />
             {error?.field === "timezone" ? (
-              <p role="alert" className="text-xs text-destructive">
+              <p id="workspace-timezone-hint" role="alert" className="text-xs text-destructive">
                 {error.message}
               </p>
-            ) : null}
+            ) : (
+              <p id="workspace-timezone-hint" className="text-xs text-muted-foreground">
+                Scheduled broadcasts and reports use this time zone.
+              </p>
+            )}
           </div>
-        </CardContent>
-        <CardFooter className="justify-between gap-3 border-t pt-4">
-          {canEdit ? (
-            <p className="text-xs text-muted-foreground">
-              {dirty ? "You have unsaved changes." : "Changes apply to everyone in this workspace."}
-            </p>
-          ) : (
-            <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" aria-hidden />
-              Only admins and owners can change these settings.
-            </p>
-          )}
-          {canEdit ? (
-            <Button type="submit" size="sm" loading={pending} disabled={!dirty}>
-              Save changes
-            </Button>
-          ) : null}
-        </CardFooter>
+        </SettingsCardBody>
+        <SettingsCardFooter canEdit={canEdit} dirty={dirty} pending={pending} lockedLabel="Only admins and owners can change these." />
       </form>
     </Card>
   );

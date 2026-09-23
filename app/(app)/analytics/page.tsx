@@ -1,21 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
-import { Download, Workflow } from "lucide-react";
+import { BarChart3, Download } from "lucide-react";
 
 import { AnalyticsFrame, type FilterChannel } from "@/components/analytics/analytics-filters";
+import { CardLink } from "@/components/analytics/card-link";
+import { KpiStrip } from "@/components/analytics/kpi-strip";
 import { PipelineBreakdownCard } from "@/components/analytics/pipeline-breakdown";
+import { DATE_KEY, formatRate, minusDays, todayIn } from "@/components/analytics/range";
+import { AutomationStatusBadge } from "@/components/automations/badges";
 import { BarList } from "@/components/charts/bar-list";
-import { MetricTabs, type MetricTab } from "@/components/charts/metric-tabs";
-import { withPrevious } from "@/components/charts/series";
 import { FunnelChart } from "@/components/charts/funnel";
 import { Heatmap } from "@/components/charts/heatmap";
-import { Badge } from "@/components/ui/badge";
+import { MetricTabs, type MetricTab } from "@/components/charts/metric-tabs";
+import { withPrevious } from "@/components/charts/series";
+import { SplitBar } from "@/components/charts/split-bar";
+import { stagger } from "@/components/charts/stagger";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deliveryReason } from "@/lib/errors/customer-messages";
 import { getAnalytics, getAnalyticsFilterOptions } from "@/lib/services/analytics";
@@ -28,34 +33,14 @@ export const dynamic = "force-dynamic";
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 const PRESET_DAYS = new Set(["7", "30", "90"]);
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 function one(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** Today's YYYY-MM-DD in the workspace's time zone. */
-function todayIn(timeZone: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
-}
-
-function minusDays(key: string, days: number): string {
-  const [y, m, d] = key.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d - days)).toISOString().slice(0, 10);
-}
-
-function pct(value: number | null | undefined): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "–";
-  return `${(value * 100).toFixed(value > 0 && value < 0.1 ? 1 : 0)}%`;
-}
-
 function minutes(value: number | null): string {
   if (value === null) return "–";
-  if (value < 1) return "Under a minute";
+  if (value < 1) return "<1 min";
   if (value < 60) return `${Math.round(value)} min`;
   const hours = value / 60;
   if (hours < 24) return `${hours.toFixed(hours < 10 ? 1 : 0)} h`;
@@ -95,34 +80,34 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
   const automations = options.automations.map((a) => ({ id: a.id, name: a.name, channelId: a.channelId }));
 
   const rangeLabel = `${format(parseISO(report.range.from), "MMM d")} – ${format(parseISO(report.range.to), "MMM d")}`;
-  const compareHint = `vs ${format(parseISO(report.range.previousFrom), "MMM d")} – ${format(parseISO(report.range.previousTo), "MMM d")}`;
 
   const exportQuery = new URLSearchParams({ from: report.range.from, to: report.range.to });
   if (report.filters.channelId) exportQuery.set("channelId", report.filters.channelId);
   if (report.filters.automationId) exportQuery.set("automationId", report.filters.automationId);
 
-  const header = (
-    <PageHeader
-      title="Analytics"
-    />
-  );
+  const header = <PageHeader title="Analytics" />;
 
   if (!report.hasAnyData) {
     return (
       <div>
         {header}
         <EmptyState
-          icon={Workflow}
+          icon={BarChart3}
+          tone="blue"
           title="Nothing to measure yet"
           description={
-            channels.length === 0
-              ? "Connect an Instagram or Facebook account first. Numbers appear here once an automation replies to its first comment or message."
-              : "Numbers appear here once an automation replies to its first comment or message."
+            channels.length === 0 ? "Connect an account, then turn on an automation." : "Numbers show up after an automation's first reply."
           }
           action={
-            <Button asChild>
-              {channels.length === 0 ? <Link href="/channels">Connect an account</Link> : <Link href="/automations">Go to automations</Link>}
-            </Button>
+            channels.length === 0 ? (
+              <Button asChild variant="highlight">
+                <Link href="/dashboard?accounts=1">Connect account</Link>
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href="/automations">Open automations</Link>
+              </Button>
+            )
           }
         />
       </div>
@@ -137,7 +122,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
     {
       key: "ctr",
       label: "Click rate",
-      value: pct(totals.ctr),
+      value: formatRate(totals.ctr),
       delta: deltas.ctr,
       kind: "percent",
       data: withPrevious(series, previousSeries, (p) => (p.dmsSent > 0 ? p.clicks / p.dmsSent : 0)),
@@ -165,6 +150,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
     query.set("pipeline", pipelineId);
     return `/analytics?${query.toString()}`;
   };
+  const { inbox } = report;
+  const outbound = inbox.automatedMessages + inbox.humanReplies;
 
   return (
     <div>
@@ -173,18 +160,19 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
         channels={channels}
         automations={automations}
         rangeLabel={rangeLabel}
-        compareLabel={compareHint}
         today={today}
         actions={
           <Button asChild variant="outline" size="sm">
             <a href={`/api/analytics/export.csv?${exportQuery.toString()}`}>
-              <Download className="h-4 w-4" />
+              <Download />
               Export CSV
             </a>
           </Button>
         }
       >
         <div className="space-y-6">
+          <KpiStrip items={metrics} highlight="sent" tone="blue" />
+
           <Card className="overflow-hidden">
             <MetricTabs metrics={metrics} initialKey="sent" height={280} />
           </Card>
@@ -193,55 +181,51 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
             <Card>
               <CardHeader>
                 <CardTitle>From comment to lead</CardTitle>
-                <CardDescription>Each step as a share of the one before it.</CardDescription>
               </CardHeader>
               <CardContent>
                 <FunnelChart steps={report.funnel.steps} />
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Inbox</CardTitle>
-                <CardDescription>Conversations your team handled by hand.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">First reply, median</dt>
-                    <dd className="mt-1 text-xl font-semibold">{minutes(report.inbox.medianFirstResponseMinutes)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Messages received</dt>
-                    <dd className="mt-1 text-xl font-semibold">{formatNumber(report.inbox.inboundMessages)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Replies by your team</dt>
-                    <dd className="mt-1 text-xl font-semibold">{formatNumber(report.inbox.humanReplies)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Sent automatically</dt>
-                    <dd className="mt-1 text-xl font-semibold">{pct(report.inbox.automatedShare)}</dd>
-                  </div>
-                </dl>
-                <p className="mt-5 border-t pt-4 text-xs text-muted-foreground">
-                  {report.inbox.answeredThreads > 0
-                    ? `Based on ${formatNumber(report.inbox.answeredThreads)} conversation${report.inbox.answeredThreads === 1 ? "" : "s"} your team replied to.`
-                    : "No conversations were answered by hand in this range."}
-                </p>
-              </CardContent>
-            </Card>
+            <section aria-labelledby="inbox-title" className="rounded-2xl bg-fog p-5">
+              <h2 id="inbox-title" className="text-[15px] font-semibold leading-tight">
+                Inbox
+              </h2>
+              <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="brand-label text-muted-foreground">Median first reply</dt>
+                  <dd className="font-display mt-2 truncate text-[26px] leading-none">{minutes(inbox.medianFirstResponseMinutes)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="brand-label text-muted-foreground">Messages received</dt>
+                  <dd className="font-display mt-2 truncate text-[26px] leading-none">{formatNumber(inbox.inboundMessages)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="brand-label text-muted-foreground">Team replies</dt>
+                  <dd className="font-display mt-2 truncate text-[26px] leading-none">{formatNumber(inbox.humanReplies)}</dd>
+                </div>
+              </dl>
+              {outbound > 0 ? (
+                <SplitBar
+                  className="mt-6 border-t border-ink/10 pt-5"
+                  label="Messages sent"
+                  segments={[
+                    { key: "automated", label: "Sent automatically", share: inbox.automatedShare },
+                    { key: "team", label: "Sent by your team", share: 1 - inbox.automatedShare },
+                  ]}
+                />
+              ) : null}
+            </section>
           </div>
 
           <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>Automations</CardTitle>
-              <CardDescription>Ranked by DMs sent in this range.</CardDescription>
             </CardHeader>
             <div className="overflow-x-auto border-t">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableHead className="pl-5">Automation</TableHead>
                     <TableHead className="hidden lg:table-cell">Account</TableHead>
                     <TableHead className="hidden text-right sm:table-cell">Runs</TableHead>
@@ -253,35 +237,33 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
                 </TableHeader>
                 <TableBody>
                   {report.byAutomation.length === 0 ? (
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={7} className="py-8 text-center text-[13px] text-muted-foreground">
                         No automation ran in this range.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    report.byAutomation.map((row) => (
-                      <TableRow key={row.automation.id}>
-                        <TableCell className="max-w-[260px] pl-5">
-                          <div className="flex items-center gap-2">
-                            <Link href={`/automations/${row.automation.id}`} className="truncate font-medium underline-offset-4 hover:underline">
+                    report.byAutomation.map((row, i) => (
+                      <TableRow key={row.automation.id} className="rise" style={stagger(i)}>
+                        <TableCell className="max-w-[280px] pl-5">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Link href={`/automations/${row.automation.id}`} className="truncate font-semibold underline-offset-4 hover:underline">
                               {row.automation.name}
                             </Link>
-                            {row.automation.status !== "ACTIVE" ? (
-                              <Badge variant="secondary">{row.automation.status === "PAUSED" ? "Paused" : "Draft"}</Badge>
-                            ) : null}
+                            {row.automation.status !== "ACTIVE" ? <AutomationStatusBadge status={row.automation.status} className="shrink-0" /> : null}
                           </div>
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground lg:table-cell">
-                          <span className="inline-flex items-center gap-1.5">
-                            <PlatformIcon platform={row.channel.platform} size={13} />
+                          <span className="inline-flex items-center gap-2">
+                            <PlatformMark platform={row.channel.platform} size={16} />
                             {row.channel.username ? `@${row.channel.username}` : row.channel.name}
                           </span>
                         </TableCell>
                         <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatNumber(row.triggered)}</TableCell>
-                        <TableCell className="text-right tabular-nums font-medium">{formatNumber(row.sent)}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatNumber(row.sent)}</TableCell>
                         <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">{formatNumber(row.failed)}</TableCell>
                         <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatNumber(row.clicks)}</TableCell>
-                        <TableCell className="pr-5 text-right tabular-nums">{pct(row.ctr)}</TableCell>
+                        <TableCell className="pr-5 text-right tabular-nums">{formatRate(row.ctr)}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -294,12 +276,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
             <Card className="overflow-hidden">
               <CardHeader>
                 <CardTitle>Accounts</CardTitle>
-                <CardDescription>How each connected account compares.</CardDescription>
               </CardHeader>
               <div className="overflow-x-auto border-t">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-5">Account</TableHead>
                       <TableHead className="hidden text-right sm:table-cell">Runs</TableHead>
                       <TableHead className="text-right">DMs sent</TableHead>
@@ -309,18 +290,18 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {report.byChannel.map((row) => (
-                      <TableRow key={row.channel.id}>
-                        <TableCell className="pl-5 font-medium">
+                    {report.byChannel.map((row, i) => (
+                      <TableRow key={row.channel.id} className="rise" style={stagger(i)}>
+                        <TableCell className="pl-5 font-semibold">
                           <span className="inline-flex items-center gap-2">
-                            <PlatformIcon platform={row.channel.platform} size={14} className="text-muted-foreground" />
+                            <PlatformMark platform={row.channel.platform} size={18} />
                             {row.channel.username ? `@${row.channel.username}` : row.channel.name}
                           </span>
                         </TableCell>
                         <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatNumber(row.comments)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatNumber(row.dmsSent)}</TableCell>
                         <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatNumber(row.clicks)}</TableCell>
-                        <TableCell className="hidden text-right tabular-nums md:table-cell">{pct(row.ctr)}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums md:table-cell">{formatRate(row.ctr)}</TableCell>
                         <TableCell className="pr-5 text-right tabular-nums">{formatNumber(row.newContacts)}</TableCell>
                       </TableRow>
                     ))}
@@ -331,10 +312,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
           ) : null}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.6fr_1fr]">
-            <Card>
+            <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>Busiest times</CardTitle>
-                <CardDescription>When your automations run, by day and hour.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Heatmap grid={report.heatmap} unit="run" timezone={timezone} />
@@ -343,7 +323,6 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
             <Card>
               <CardHeader>
                 <CardTitle>Top keywords</CardTitle>
-                <CardDescription>The keywords that started the most automation runs.</CardDescription>
               </CardHeader>
               <CardContent>
                 <BarList items={keywordItems} valueLabel="runs" emptyLabel="No keyword matches in this range" />
@@ -354,21 +333,12 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <PipelineBreakdownCard pipelines={report.pipelines} selectedId={one(params.pipeline) ?? null} hrefFor={pipelineHref} />
             <Card>
-              <CardHeader>
+              <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
                 <CardTitle>Why DMs weren&apos;t sent</CardTitle>
-                <CardDescription>Held back by Instagram rules or your own settings, or refused by Instagram.</CardDescription>
+                {skipItems.length > 0 ? <CardLink href="/logs">Open Logs</CardLink> : null}
               </CardHeader>
               <CardContent>
                 <BarList items={skipItems} valueLabel="messages" emptyLabel="Every DM in this range went out" />
-                {skipItems.length > 0 ? (
-                  <p className="mt-4 text-xs text-muted-foreground">
-                    See individual messages in{" "}
-                    <Link href="/logs" className="font-medium text-foreground underline underline-offset-4 hover:no-underline">
-                      Logs
-                    </Link>
-                    .
-                  </p>
-                ) : null}
               </CardContent>
             </Card>
           </div>

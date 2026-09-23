@@ -16,15 +16,15 @@ function Toaster(props: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-elevated group-[.toaster]:rounded-lg group-[.toaster]:text-[13px]",
-          title: "group-[.toast]:font-medium",
+            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border group-[.toaster]:border-border group-[.toaster]:shadow-pop group-[.toaster]:rounded-2xl group-[.toaster]:text-[13px]",
+          title: "group-[.toast]:font-semibold",
           description: "group-[.toast]:text-muted-foreground group-[.toast]:text-xs",
-          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground group-[.toast]:text-xs",
+          actionButton: "group-[.toast]:!rounded-full group-[.toast]:!bg-ink group-[.toast]:!text-white group-[.toast]:text-xs",
           cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground group-[.toast]:text-xs",
           closeButton: "group-[.toast]:bg-background group-[.toast]:border-border group-[.toast]:text-muted-foreground",
-          success: "group-[.toaster]:[&_svg]:text-success",
+          success: "group-[.toaster]:[&_svg]:text-green",
           error: "group-[.toaster]:[&_svg]:text-destructive",
-          warning: "group-[.toaster]:[&_svg]:text-warning",
+          warning: "group-[.toaster]:[&_svg]:text-orange",
         },
       }}
       {...props}

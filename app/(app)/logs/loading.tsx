@@ -1,48 +1,40 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Mirrors the logs layout (header → filters → chips → table) so nothing jumps when data lands. */
+/** Mirrors the logs layout (header, filters, table) so nothing jumps when data lands. */
 export default function LogsLoading() {
   return (
     <div aria-busy="true" aria-label="Loading delivery logs">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-36" />
-          <Skeleton className="h-4 w-[420px] max-w-full" />
-        </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-8 w-28" />
-          <Skeleton className="h-8 w-28" />
+      <div className="mb-7 flex flex-wrap items-center gap-3">
+        <Skeleton className="h-9 w-9 rounded-xl" />
+        <Skeleton className="h-8 w-24" />
+        <div className="ml-auto flex gap-2">
+          <Skeleton className="h-8 w-32 rounded-full" />
+          <Skeleton className="h-8 w-28 rounded-full" />
         </div>
       </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-8 w-[200px]" />
-          <Skeleton className="h-8 w-[140px]" />
-          <Skeleton className="h-8 w-[190px]" />
-          <Skeleton className="h-8 w-[300px]" />
+          <Skeleton className="h-9 w-full rounded-full sm:w-64" />
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <Skeleton className="h-9 w-[calc(50%-4px)] rounded-full sm:w-[160px]" />
+          <Skeleton className="h-9 w-[calc(50%-4px)] rounded-full sm:w-[190px]" />
+          <Skeleton className="h-9 w-[calc(50%-4px)] rounded-full sm:w-32" />
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
-          {Array.from({ length: 5 }, (_, i) => (
-            <Skeleton key={i} className="h-7 w-24 rounded-full" />
-          ))}
-        </div>
-
-        <div className="rounded-lg border bg-card shadow-card">
-          <div className="border-b px-3 py-2.5">
+        <div className="rounded-2xl border bg-card">
+          <div className="border-b px-4 py-3">
             <Skeleton className="h-3 w-full" />
           </div>
           {Array.from({ length: 10 }, (_, i) => (
-            <div key={i} className="flex items-center gap-3 border-b px-3 py-3 last:border-0">
+            <div key={i} className="flex items-center gap-4 border-b px-4 py-3.5 last:border-0">
               <Skeleton className="h-3.5 w-3.5" />
               <Skeleton className="h-3.5 w-20" />
               <Skeleton className="h-5 w-20 rounded-full" />
-              <Skeleton className="h-5 w-16 rounded-full" />
-              <Skeleton className="h-3.5 w-28" />
-              <Skeleton className="h-3.5 w-32" />
-              <Skeleton className="h-3.5 flex-1" />
+              <Skeleton className="hidden h-[18px] w-[18px] rounded-md sm:block" />
+              <Skeleton className="hidden h-3.5 w-28 sm:block" />
+              <Skeleton className="hidden h-3.5 w-24 md:block" />
+              <Skeleton className="hidden h-3.5 flex-1 lg:block" />
             </div>
           ))}
         </div>

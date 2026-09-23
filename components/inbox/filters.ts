@@ -2,8 +2,9 @@ import type { InboxCounts } from "@/lib/services/inbox";
 
 export type InboxFilter = "all" | "unread" | "mine" | "unassigned" | "closed";
 
+/** "all" is every open conversation, so it reads as "Open" next to "Closed". */
 export const INBOX_FILTERS: ReadonlyArray<{ id: InboxFilter; label: string; count?: keyof InboxCounts }> = [
-  { id: "all", label: "All" },
+  { id: "all", label: "Open", count: "open" },
   { id: "unread", label: "Unread", count: "unread" },
   { id: "mine", label: "Mine", count: "mine" },
   { id: "unassigned", label: "Unassigned" },

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import type { ChannelPlatform } from "@prisma/client";
 
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
+import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AnalyticsPeriod } from "@/lib/services/analytics";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,8 @@ import { cn } from "@/lib/utils";
 const PERIODS: readonly AnalyticsPeriod[] = [7, 30, 90];
 const DEFAULT_PERIOD: AnalyticsPeriod = 7;
 const ALL_CHANNELS = "all";
+
+const PERIOD_OPTIONS: SegmentedOption<`${AnalyticsPeriod}`>[] = PERIODS.map((p) => ({ value: `${p}`, label: `${p}d` }));
 
 export type PeriodChannelOption = {
   id: string;
@@ -53,10 +56,10 @@ export function PeriodControls({ days, channelId, channels }: PeriodControlsProp
   }
 
   return (
-    <div className={cn("flex items-center gap-2 transition-opacity", pending && "opacity-60")} aria-busy={pending || undefined}>
+    <div className={cn("flex w-full items-center gap-2 transition-opacity sm:w-auto", pending && "opacity-60")} aria-busy={pending || undefined}>
       {channels.length > 1 ? (
         <Select value={channelId ?? ALL_CHANNELS} onValueChange={(v) => navigate(days, v === ALL_CHANNELS ? null : v)}>
-          <SelectTrigger className="h-9 w-[200px]" aria-label="Account">
+          <SelectTrigger className="min-w-0 flex-1 sm:w-[210px] sm:flex-none" aria-label="Account">
             <SelectValue placeholder="All accounts" />
           </SelectTrigger>
           <SelectContent align="end">
@@ -64,7 +67,7 @@ export function PeriodControls({ days, channelId, channels }: PeriodControlsProp
             {channels.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 <span className="flex items-center gap-2">
-                  <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
+                  <PlatformMark platform={c.platform} size={16} />
                   {channelLabel(c)}
                 </span>
               </SelectItem>
@@ -73,26 +76,13 @@ export function PeriodControls({ days, channelId, channels }: PeriodControlsProp
         </Select>
       ) : null}
 
-      <div role="radiogroup" aria-label="Period" className="inline-flex h-9 items-center rounded-lg bg-muted p-1">
-        {PERIODS.map((p) => {
-          const active = p === days;
-          return (
-            <button
-              key={p}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => navigate(p, channelId)}
-              className={cn(
-                "h-7 rounded-md px-3 text-[13px] font-medium tabular-nums transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {p}d
-            </button>
-          );
-        })}
-      </div>
+      <Segmented
+        aria-label="Period"
+        value={`${days}`}
+        onChange={(v) => navigate(PERIODS.find((p) => `${p}` === v) ?? DEFAULT_PERIOD, channelId)}
+        options={PERIOD_OPTIONS}
+        className="ml-auto w-auto shrink-0 tabular-nums sm:ml-0"
+      />
     </div>
   );
 }

@@ -37,10 +37,11 @@ export function UsageMeter({
         href="/usage"
         onClick={onNavigate}
         aria-label={summary}
-        className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-auto flex h-full w-full items-center justify-center rounded-[28%] bg-fog outline-none transition-colors hover:bg-[hsl(0_0%_92%)] focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden>
-          <circle cx="16" cy="16" r={r} fill="none" strokeWidth="3" className="stroke-border" />
+        {/* Sized off the dock slot (a size container), so it grows with the tile. */}
+        <svg viewBox="0 0 32 32" aria-hidden className="h-[70cqw] w-[70cqw]">
+          <circle cx="16" cy="16" r={r} fill="none" strokeWidth="3" className="stroke-white" />
           <circle
             cx="16"
             cy="16"
@@ -51,10 +52,10 @@ export function UsageMeter({
             strokeDasharray={circumference}
             strokeDashoffset={circumference * (1 - ratio)}
             transform="rotate(-90 16 16)"
-            className={cn(tone === "destructive" ? "stroke-destructive" : tone === "warning" ? "stroke-warning" : "stroke-foreground")}
+            className={cn(tone === "destructive" ? "stroke-destructive" : tone === "warning" ? "stroke-orange" : "stroke-purple")}
           />
           {/* The number keeps a nearly empty ring from reading as a loading spinner. */}
-          <text x="16" y="16.5" textAnchor="middle" dominantBaseline="middle" className="fill-foreground text-[8px] font-medium tabular-nums">
+          <text x="16" y="16.5" textAnchor="middle" dominantBaseline="middle" className="fill-ink text-[8px] font-bold tabular-nums">
             {pct}%
           </text>
         </svg>
@@ -66,14 +67,14 @@ export function UsageMeter({
     <Link
       href="/usage"
       onClick={onNavigate}
-      className="block rounded-lg border border-lavender/70 bg-lavender/20 p-3 outline-none transition-colors hover:bg-lavender/30 focus-visible:ring-2 focus-visible:ring-ring"
+      className="block rounded-2xl bg-fog p-3.5 outline-none transition-colors hover:bg-[hsl(0_0%_93%)] focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs font-medium text-foreground">DMs this month</span>
+        <span className="brand-label text-muted-foreground">DMs this month</span>
         <span className="text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
       </div>
       <div
-        className="mt-2 h-1.5 overflow-hidden rounded-full bg-background ring-1 ring-inset ring-lavender/60"
+        className="mt-2.5 h-2 overflow-hidden rounded-full bg-background"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={usage.limit}
@@ -83,7 +84,7 @@ export function UsageMeter({
         <div
           className={cn(
             "h-full rounded-full transition-[width]",
-            tone === "destructive" ? "bg-destructive" : tone === "warning" ? "bg-warning" : "bg-foreground",
+            tone === "destructive" ? "bg-destructive" : tone === "warning" ? "bg-orange" : "bg-purple",
           )}
           style={{ width: `${Math.max(pct, usage.used > 0 ? 2 : 0)}%` }}
         />

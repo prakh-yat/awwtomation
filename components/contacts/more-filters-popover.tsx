@@ -4,16 +4,15 @@ import * as React from "react";
 import type { ChannelPlatform } from "@prisma/client";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { ContactChannelSummary, ContactTagCount } from "@/lib/services/contacts";
-import { cn } from "@/lib/utils";
 
+import { filterPill, PillCount } from "./filter-pill";
 import { type ContactFilterState, LAST_INTERACTION_OPTIONS } from "./filters";
 import { TagInput } from "./tag-input";
 
@@ -31,14 +30,16 @@ export function moreFiltersCount(f: ContactFilterState): number {
 
 function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-3">
-      <Label htmlFor={htmlFor} className="text-[13px] font-normal text-muted-foreground">
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3">
+      <Label htmlFor={htmlFor} className="font-normal text-muted-foreground">
         {label}
       </Label>
       {children}
     </div>
   );
 }
+
+const trigger = "h-9 rounded-xl text-[13px]";
 
 export function MoreFiltersPopover({
   filters,
@@ -58,30 +59,26 @@ export function MoreFiltersPopover({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("gap-1.5", count > 0 && "border-foreground")}>
+        <Button variant="outline" size="sm" className={filterPill(count > 0)}>
           <SlidersHorizontal />
           Filters
-          {count > 0 ? (
-            <Badge variant="default" className="ml-0.5 h-4 min-w-4 justify-center px-1 tabular-nums">
-              {count}
-            </Badge>
-          ) : null}
-          <ChevronDown className="text-muted-foreground" />
+          {count > 0 ? <PillCount count={count} /> : null}
+          <ChevronDown className="-mr-0.5 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[22rem] space-y-3 p-4">
+      <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] space-y-3 p-4">
         {channels.length > 1 ? (
           <Field label="Account" htmlFor="filter-account">
             <Select value={filters.channelId || ALL} onValueChange={(v) => onChange({ channelId: v === ALL ? "" : v })}>
-              <SelectTrigger id="filter-account" className="h-8 text-[13px]">
+              <SelectTrigger id="filter-account" className={trigger}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>All accounts</SelectItem>
                 {channels.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <PlatformIcon platform={c.platform} size={12} />
+                    <span className="inline-flex items-center gap-2">
+                      <PlatformMark platform={c.platform} size={16} />
                       {accountLabel(c)}
                     </span>
                   </SelectItem>
@@ -94,13 +91,23 @@ export function MoreFiltersPopover({
         {platforms.size > 1 || filters.platform ? (
           <Field label="Platform" htmlFor="filter-platform">
             <Select value={filters.platform || ALL} onValueChange={(v) => onChange({ platform: v === ALL ? "" : (v as ChannelPlatform) })}>
-              <SelectTrigger id="filter-platform" className="h-8 text-[13px]">
+              <SelectTrigger id="filter-platform" className={trigger}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL}>Instagram and Facebook</SelectItem>
-                <SelectItem value="INSTAGRAM">Instagram</SelectItem>
-                <SelectItem value="FACEBOOK">Facebook</SelectItem>
+                <SelectItem value="INSTAGRAM">
+                  <span className="inline-flex items-center gap-2">
+                    <PlatformMark platform="INSTAGRAM" size={16} />
+                    Instagram
+                  </span>
+                </SelectItem>
+                <SelectItem value="FACEBOOK">
+                  <span className="inline-flex items-center gap-2">
+                    <PlatformMark platform="FACEBOOK" size={16} />
+                    Facebook
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -108,7 +115,7 @@ export function MoreFiltersPopover({
 
         <Field label="Follows you" htmlFor="filter-follower">
           <Select value={filters.follower} onValueChange={(v) => onChange({ follower: v === "yes" ? "yes" : v === "no" ? "no" : "all" })}>
-            <SelectTrigger id="filter-follower" className="h-8 text-[13px]">
+            <SelectTrigger id="filter-follower" className={trigger}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -121,7 +128,7 @@ export function MoreFiltersPopover({
 
         <Field label="Last activity" htmlFor="filter-activity">
           <Select value={filters.lastInteractionDays ? String(filters.lastInteractionDays) : ALL} onValueChange={(v) => onChange({ lastInteractionDays: v === ALL ? null : Number(v) })}>
-            <SelectTrigger id="filter-activity" className="h-8 text-[13px]">
+            <SelectTrigger id="filter-activity" className={trigger}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -138,7 +145,7 @@ export function MoreFiltersPopover({
 
         <Field label="Added from" htmlFor="filter-source">
           <Select value={filters.source || ALL} onValueChange={(v) => onChange({ source: v === "WEBHOOK" || v === "IMPORT" || v === "MANUAL" ? v : "" })}>
-            <SelectTrigger id="filter-source" className="h-8 text-[13px]">
+            <SelectTrigger id="filter-source" className={trigger}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -150,8 +157,8 @@ export function MoreFiltersPopover({
           </Select>
         </Field>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="filter-exclude-tags" className="text-[13px] font-normal text-muted-foreground">
+        <div className="space-y-2 pt-1">
+          <Label htmlFor="filter-exclude-tags" className="font-normal text-muted-foreground">
             Without these tags
           </Label>
           <TagInput
@@ -165,7 +172,7 @@ export function MoreFiltersPopover({
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t pt-3">
-          <Label htmlFor="filter-opted-out" className="text-[13px] font-normal">
+          <Label htmlFor="filter-opted-out" className="font-normal">
             Hide people who stopped messages
           </Label>
           <Switch id="filter-opted-out" checked={filters.excludeOptedOut} onCheckedChange={(excludeOptedOut) => onChange({ excludeOptedOut })} />

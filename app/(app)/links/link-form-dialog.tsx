@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/sonner";
 import type { TrackedLinkListItem } from "@/lib/services/links";
 
 import { errorMessage, linksApi } from "./api";
+import { displayDestination } from "./format";
 
 const LABEL_MAX = 80;
 
@@ -90,27 +91,29 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
     }
   }
 
+  // The new-link form has nothing worth saying under its title; tell Radix so.
+  const described = Boolean(created || editing);
+
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" {...(described ? {} : { "aria-describedby": undefined })}>
         {created ? (
           <>
             <DialogHeader>
               <DialogTitle>Your link is ready</DialogTitle>
-              <DialogDescription>Paste it into a message button or reply. Every tap is counted.</DialogDescription>
+              <DialogDescription className="truncate" title={created.destinationUrl}>
+                Opens {displayDestination(created.destinationUrl, 40)}
+              </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
-              <code className="min-w-0 flex-1 truncate font-mono text-[13px]">{created.shortUrl}</code>
-              <CopyButton value={created.shortUrl} label="Copy" successMessage="Short link copied" />
+            <div className="flex items-center gap-2 rounded-2xl bg-sky-soft py-2 pl-4 pr-2">
+              <code className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink">{created.shortUrl}</code>
+              <CopyButton value={created.shortUrl} label="Copy" variant="default" successMessage="Short link copied" />
             </div>
-            <p className="truncate text-xs text-muted-foreground" title={created.destinationUrl}>
-              → {created.destinationUrl}
-            </p>
-            <DialogFooter className="mt-2 gap-2 sm:gap-0">
+            <DialogFooter>
               <Button type="button" variant="outline" asChild>
                 <a href={created.shortUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink />
                   Test link
+                  <ArrowUpRight />
                 </a>
               </Button>
               <Button type="button" onClick={() => onOpenChange(false)} autoFocus>
@@ -119,17 +122,13 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
             </DialogFooter>
           </>
         ) : (
-          <form onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit} noValidate className="grid gap-5">
             <DialogHeader>
-              <DialogTitle>{editing ? "Edit link" : "New tracked link"}</DialogTitle>
-              <DialogDescription>
-                {editing
-                  ? "The short link stays the same, so links you've already sent will open the new address."
-                  : "A short link that counts every tap. Use it in DM buttons, broadcasts or your bio."}
-              </DialogDescription>
+              <DialogTitle>{editing ? "Edit link" : "New link"}</DialogTitle>
+              {editing ? <DialogDescription>The short link stays the same. Messages already sent open the new address.</DialogDescription> : null}
             </DialogHeader>
 
-            <div className="mt-5 space-y-4">
+            <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="link-destination">Destination URL</Label>
                 <Input
@@ -148,7 +147,9 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-baseline justify-between">
-                  <Label htmlFor="link-label">Label</Label>
+                  <Label htmlFor="link-label">
+                    Label <span className="font-normal text-muted-foreground">(optional)</span>
+                  </Label>
                   <span className="text-[11px] tabular-nums text-muted-foreground">
                     {label.length}/{LABEL_MAX}
                   </span>
@@ -159,17 +160,20 @@ export function LinkFormDialog({ open, mode, onOpenChange, onSaved }: LinkFormDi
                   value={label}
                   maxLength={LABEL_MAX}
                   onChange={(e) => setLabel(e.target.value)}
+                  aria-describedby="link-label-hint"
                 />
-                <p className="text-xs text-muted-foreground">Optional. Only your team sees it.</p>
+                <p id="link-label-hint" className="text-xs text-muted-foreground">
+                  Only your team sees it.
+                </p>
               </div>
               {error ? (
-                <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">
+                <p role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
                   {error}
                 </p>
               ) : null}
             </div>
 
-            <DialogFooter className="mt-6 gap-2 sm:gap-0">
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={close} disabled={submitting}>
                 Cancel
               </Button>

@@ -10,7 +10,15 @@
  * Nothing here logs or returns the key. Failures are classified rather than
  * thrown, because the caller has to decide between "tell them to fix the key",
  * "try again in a minute" and "send the fallback reply".
+ *
+ * Model families disagree about parameters. Newer reasoning models refuse a
+ * `temperature`, OpenAI's want `max_completion_tokens`, and thinking models
+ * spend part of the token budget before they write a word. `tuningFor` starts
+ * from what each family is known to accept, and a 400 that names a parameter
+ * gets one corrected retry, so a model released next month still works.
  */
+import { lookup } from "node:dns/promises";
+
 import { PROVIDER_INFO, type ChatFailure, type ChatRequest, type ChatResult } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -78,6 +86,38 @@ export function checkBaseUrl(raw: string): { ok: true; url: string } | { ok: fal
   return { ok: true, url: url.toString().replace(/\/$/, "") };
 }
 
+/**
+ * The second half of the SSRF guard: what the hostname actually resolves to.
+ *
+ * `checkBaseUrl` only reads the hostname as written, so `https://not-suspicious.example`
+ * with an A record of 169.254.169.254 would sail through it. Resolving first and
+ * checking every address closes that, and is the check that matters, because the
+ * name in the settings field is chosen by the same person who controls its DNS.
+ *
+ * A name that will not resolve is refused too: better a clear message here than a
+ * confusing network failure a second later.
+ */
+async function resolvesToPublicAddress(hostname: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  // An IP literal was already judged by `checkBaseUrl`; there is nothing to resolve.
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":")) return { ok: true };
+
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(host, { all: true });
+  } catch {
+    return { ok: false, message: "That hostname could not be resolved." };
+  }
+  if (addresses.length === 0) return { ok: false, message: "That hostname could not be resolved." };
+
+  const allowLoopback = process.env.NODE_ENV === "development";
+  for (const { address } of addresses) {
+    if (isBlockedHost(address)) return { ok: false, message: "That address is not allowed." };
+    if (isLoopback(address) && !allowLoopback) return { ok: false, message: "That address is not reachable from the server." };
+  }
+  return { ok: true };
+}
+
 function fail(reason: ChatFailure["reason"], message: string, retryable = false): ChatFailure {
   return { ok: false, reason, message, retryable };
 }
@@ -113,8 +153,83 @@ function baseFor(request: ChatRequest): string {
 
 type Prepared = { url: string; headers: Record<string, string>; body: unknown };
 
-function prepare(request: ChatRequest): Prepared {
+/** What a request sends besides the conversation; adjusted when a provider refuses a parameter. */
+type Tuning = {
+  temperature: boolean;
+  tokenParam: "max_tokens" | "max_completion_tokens";
+  /** Ask a reasoning model to think briefly: a DM reply needs little of it. */
+  lowEffort: boolean;
+  /** Gemini Flash can skip thinking altogether. */
+  noThinking: boolean;
+  /** Extra tokens for models that think before they answer. */
+  headroom: number;
+};
+
+const THINKING_HEADROOM = 2048;
+
+function hostOf(base: string): string {
+  try {
+    return new URL(base).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Claude models from the 4.7 generation on take no sampling parameters and do their own thinking. */
+function isNewClaude(model: string): boolean {
+  return /^claude-(fable|mythos|opus-5|sonnet-5|haiku-5|opus-4-[78])/i.test(model);
+}
+
+/** OpenAI's reasoning families: no temperature, and a budget that includes the reasoning. */
+function isOpenAiReasoning(model: string): boolean {
+  const id = model.toLowerCase().replace(/^openai\//, "");
+  return /^(o\d|gpt-[5-9])/.test(id) && !id.includes("chat");
+}
+
+function tuningFor(request: ChatRequest): Tuning {
+  const base: Tuning = { temperature: true, tokenParam: "max_tokens", lowEffort: false, noThinking: false, headroom: 0 };
+
+  if (request.kind === "ANTHROPIC") {
+    return isNewClaude(request.model) ? { ...base, temperature: false, lowEffort: true, headroom: THINKING_HEADROOM } : base;
+  }
+
+  if (request.kind === "GOOGLE") {
+    const model = request.model.toLowerCase();
+    if (/gemini-2\.5-flash/.test(model)) return { ...base, noThinking: true };
+    if (/gemini-(2\.5|[3-9])/.test(model)) return { ...base, headroom: THINKING_HEADROOM };
+    return base;
+  }
+
+  const direct = hostOf(baseFor(request)) === "api.openai.com";
+  const reasoning = direct && isOpenAiReasoning(request.model);
+  return {
+    ...base,
+    tokenParam: direct ? "max_completion_tokens" : "max_tokens",
+    temperature: !reasoning,
+    lowEffort: reasoning,
+    headroom: reasoning ? THINKING_HEADROOM : 0,
+  };
+}
+
+/**
+ * Reads a 400 for a parameter the model will not take, and returns the tuning
+ * that leaves it out. Null when the refusal is about something else.
+ */
+function retune(tuning: Tuning, message: string): Tuning | null {
+  const text = message.toLowerCase();
+  const refused = /(unsupported|not supported|does not support|only the default|not allowed|unrecognized|unknown|extra inputs|not permitted|invalid|deprecated|cannot|removed|no longer)/.test(text);
+  if (!refused) return null;
+  if (tuning.temperature && text.includes("temperature")) return { ...tuning, temperature: false };
+  if (tuning.tokenParam === "max_tokens" && text.includes("max_completion_tokens")) return { ...tuning, tokenParam: "max_completion_tokens" };
+  if (tuning.tokenParam === "max_completion_tokens" && text.includes("max_completion_tokens")) return { ...tuning, tokenParam: "max_tokens" };
+  if (tuning.lowEffort && /(effort|output_config|reasoning)/.test(text)) return { ...tuning, lowEffort: false };
+  if (tuning.noThinking && /(thinking)/.test(text)) return { ...tuning, noThinking: false, headroom: THINKING_HEADROOM };
+  return null;
+}
+
+function prepare(request: ChatRequest, tuning: Tuning): Prepared {
   const base = baseFor(request);
+  const maxTokens = request.maxTokens + tuning.headroom;
 
   if (request.kind === "ANTHROPIC") {
     // Anthropic takes the system prompt as its own field, not as a message.
@@ -131,8 +246,10 @@ function prepare(request: ChatRequest): Prepared {
       },
       body: {
         model: request.model,
-        max_tokens: request.maxTokens,
-        temperature: request.temperature,
+        max_tokens: maxTokens,
+        // Anthropic's range is 0 to 1; an agent tuned for another provider may be set higher.
+        ...(tuning.temperature ? { temperature: Math.min(Math.max(request.temperature, 0), 1) } : {}),
+        ...(tuning.lowEffort ? { output_config: { effort: "low" } } : {}),
         ...(system ? { system } : {}),
         messages: request.messages
           .filter((m) => m.role !== "system")
@@ -156,7 +273,11 @@ function prepare(request: ChatRequest): Prepared {
         contents: request.messages
           .filter((m) => m.role !== "system")
           .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-        generationConfig: { temperature: request.temperature, maxOutputTokens: request.maxTokens },
+        generationConfig: {
+          ...(tuning.temperature ? { temperature: request.temperature } : {}),
+          maxOutputTokens: maxTokens,
+          ...(tuning.noThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
       },
     };
   }
@@ -167,8 +288,9 @@ function prepare(request: ChatRequest): Prepared {
     body: {
       model: request.model,
       messages: request.messages,
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
+      ...(tuning.temperature ? { temperature: request.temperature } : {}),
+      [tuning.tokenParam]: maxTokens,
+      ...(tuning.lowEffort ? { reasoning_effort: "low" } : {}),
     },
   };
 }
@@ -219,25 +341,38 @@ function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; pr
   };
 }
 
-/** One completion. Never throws: every outcome comes back as a ChatResult. */
-export async function chat(request: ChatRequest): Promise<ChatResult> {
-  if (request.baseUrl) {
-    const check = checkBaseUrl(request.baseUrl);
-    if (!check.ok) return fail("rejected", check.message);
-  }
+/** The SSRF guard for a configured endpoint: the URL as written, then what its name resolves to. */
+async function guardEndpoint(baseUrl: string | null | undefined): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!baseUrl) return { ok: true };
+  const check = checkBaseUrl(baseUrl);
+  if (!check.ok) return check;
+  return resolvesToPublicAddress(new URL(check.url).hostname);
+}
 
-  const { url, headers, body } = prepare(request);
+type Exchange = { status: number; parsed: unknown; raw: string };
+
+/** One HTTP round trip with the timeout and redirect rules every provider call shares. */
+async function exchange(url: string, init: { method: "GET" | "POST"; headers: Record<string, string>; body?: unknown }, timeoutMs: number): Promise<Exchange | ChatFailure> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
+      method: init.method,
+      headers: init.headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
       signal: controller.signal,
       cache: "no-store",
+      // Never follow a redirect. Every address check above is made against the
+      // URL the workspace configured; a 302 would take us somewhere nobody
+      // checked, which is exactly how an https endpoint reaches the metadata
+      // service. No chat-completions API redirects, so refusing costs nothing.
+      redirect: "manual",
     });
+
+    // `redirect: "manual"` surfaces the 3xx itself (status 0 for an opaque one).
+    if (response.status === 0 || (response.status >= 300 && response.status < 400)) {
+      return fail("rejected", "The endpoint redirected the request. Point it straight at the API instead.");
+    }
 
     const raw = await response.text();
     let parsed: unknown = null;
@@ -246,17 +381,7 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
     } catch {
       parsed = null;
     }
-
-    if (!response.ok) return classify(response.status, errorMessageFrom(parsed, raw));
-
-    const reply = readReply(request.kind, parsed);
-    if (!reply.text) return fail("empty", "The model returned an empty reply.", true);
-
-    return {
-      ok: true,
-      text: reply.text,
-      usage: { promptTokens: reply.promptTokens, completionTokens: reply.completionTokens },
-    };
+    return { status: response.status, parsed, raw };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       return fail("timeout", "The provider did not answer in time.", true);
@@ -265,4 +390,98 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function isFailure(value: Exchange | ChatFailure): value is ChatFailure {
+  return "ok" in value && value.ok === false;
+}
+
+/** One completion. Never throws: every outcome comes back as a ChatResult. */
+export async function chat(request: ChatRequest): Promise<ChatResult> {
+  const guard = await guardEndpoint(request.baseUrl);
+  if (!guard.ok) return fail("rejected", guard.message);
+
+  let tuning = tuningFor(request);
+  // The first attempt plus at most two corrections: enough to drop a refused
+  // temperature and swap the token parameter, never a loop.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { url, headers, body } = prepare(request, tuning);
+    const result = await exchange(url, { method: "POST", headers, body }, request.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    if (isFailure(result)) return result;
+
+    if (result.status < 200 || result.status >= 300) {
+      const message = errorMessageFrom(result.parsed, result.raw);
+      const next = result.status === 400 ? retune(tuning, message) : null;
+      if (next) {
+        tuning = next;
+        continue;
+      }
+      return classify(result.status, message);
+    }
+
+    const reply = readReply(request.kind, result.parsed);
+    if (!reply.text) return fail("empty", "The model returned an empty reply.", true);
+
+    return {
+      ok: true,
+      text: reply.text,
+      usage: { promptTokens: reply.promptTokens, completionTokens: reply.completionTokens },
+    };
+  }
+  return fail("rejected", "The provider kept refusing the request's parameters.");
+}
+
+// ───────────────────────── Model lists ─────────────────────────
+
+export type ModelListResult = { ok: true; models: string[] } | { ok: false; message: string };
+
+/** Ids that are plainly not chat models: embeddings, speech, images, moderation and the like. */
+const NOT_CHAT = /(embed|embedding|whisper|tts|transcri|dall-e|gpt-image|imagen|image-gen|moderation|rerank|davinci|babbage|audio|realtime|search-preview|computer-use|guard|aqa|veo|lyria)/i;
+
+function idsFrom(body: unknown): string[] {
+  const list = Array.isArray(body) ? body : isRecord(body) && Array.isArray(body.data) ? body.data : isRecord(body) && Array.isArray(body.models) ? body.models : [];
+  const ids: string[] = [];
+  for (const item of list) {
+    if (typeof item === "string") ids.push(item);
+    else if (isRecord(item) && typeof item.id === "string") ids.push(item.id);
+  }
+  return ids;
+}
+
+/**
+ * The models a key can use, straight from the provider, so the picker is never
+ * out of date. Same endpoint guard and redirect rule as a completion.
+ */
+export async function listModels(input: { kind: ChatRequest["kind"]; apiKey: string; baseUrl?: string | null }): Promise<ModelListResult> {
+  const guard = await guardEndpoint(input.baseUrl);
+  if (!guard.ok) return guard;
+
+  const base = input.baseUrl?.trim() ? input.baseUrl.trim().replace(/\/$/, "") : PROVIDER_INFO[input.kind].defaultBaseUrl;
+  const request: { url: string; headers: Record<string, string> } =
+    input.kind === "ANTHROPIC"
+      ? { url: `${base}/v1/models?limit=100`, headers: { "x-api-key": input.apiKey, "anthropic-version": "2023-06-01" } }
+      : input.kind === "GOOGLE"
+        ? { url: `${base}/v1beta/models?pageSize=1000`, headers: { "x-goog-api-key": input.apiKey } }
+        : { url: `${base}/models`, headers: { authorization: `Bearer ${input.apiKey}` } };
+
+  const result = await exchange(request.url, { method: "GET", headers: request.headers }, 15_000);
+  if (isFailure(result)) return { ok: false, message: result.message };
+  if (result.status === 401 || result.status === 403) return { ok: false, message: "The provider refused this key." };
+  if (result.status === 404) return { ok: false, message: "This endpoint does not list its models. Type the model name instead." };
+  if (result.status < 200 || result.status >= 300) return { ok: false, message: errorMessageFrom(result.parsed, result.raw) || "Could not load the models." };
+
+  let ids: string[];
+  if (input.kind === "GOOGLE") {
+    const models = isRecord(result.parsed) && Array.isArray(result.parsed.models) ? result.parsed.models : [];
+    ids = models
+      .filter((m) => isRecord(m) && Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+      .map((m) => (isRecord(m) && typeof m.name === "string" ? m.name.replace(/^models\//, "") : ""))
+      .filter(Boolean);
+  } else {
+    ids = idsFrom(result.parsed);
+  }
+
+  const models = Array.from(new Set(ids.filter((id) => !NOT_CHAT.test(id)))).sort((a, b) => a.localeCompare(b));
+  if (models.length === 0) return { ok: false, message: "No chat models came back for this key." };
+  return { ok: true, models: models.slice(0, 600) };
 }

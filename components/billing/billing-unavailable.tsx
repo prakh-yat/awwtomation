@@ -10,13 +10,15 @@ import { cn } from "@/lib/utils";
  */
 export function BillingUnavailable({ className }: { className?: string }) {
   return (
-    <div className={cn("flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3.5", className)}>
-      <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+    <div role="status" className={cn("flex items-start gap-3 rounded-2xl bg-fog p-4", className)}>
+      <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-background text-ink">
+        <CreditCard className="h-4 w-4" strokeWidth={2} />
+      </span>
       <div className="min-w-0 text-[13px]">
-        <p className="font-medium text-foreground">Plan changes are unavailable right now</p>
+        <p className="font-semibold text-ink">Plan changes are unavailable right now</p>
         <p className="mt-0.5 text-muted-foreground">
           Your current plan keeps working. To upgrade in the meantime, email{" "}
-          <a href={`mailto:${brand.supportEmail}`} className="font-medium text-foreground underline underline-offset-4 hover:no-underline">
+          <a href={`mailto:${brand.supportEmail}`} className="font-semibold text-ink underline underline-offset-4 hover:no-underline">
             {brand.supportEmail}
           </a>
           .

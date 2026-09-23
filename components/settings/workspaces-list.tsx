@@ -43,7 +43,7 @@ export function WorkspacesList({
 }: {
   workspaces: WorkspaceListItem[];
   activeWorkspaceId: string;
-  /** Admins and owners may add and rename workspaces. */
+  /** Admins and owners may rename workspaces (and add them, from `NewWorkspaceButton`). */
   canManage: boolean;
   organizationName: string;
   planLabel: string;
@@ -53,9 +53,6 @@ export function WorkspacesList({
   const [draft, setDraft] = React.useState("");
   const [savingId, setSavingId] = React.useState<string | null>(null);
   const [switchingId, setSwitchingId] = React.useState<string | null>(null);
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [newName, setNewName] = React.useState("");
-  const [creating, setCreating] = React.useState(false);
 
   function startEdit(w: WorkspaceListItem) {
     setEditingId(w.id);
@@ -93,65 +90,43 @@ export function WorkspacesList({
     }
   }
 
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    const name = newName.trim();
-    if (name.length < 2) {
-      toast.error("Use at least 2 characters for the name.");
-      return;
-    }
-    setCreating(true);
-    try {
-      await send("/api/workspaces", "POST", { name });
-      toast.success(`Created ${name}`);
-      setCreateOpen(false);
-      router.push("/welcome");
-      router.refresh();
-    } catch (err) {
-      toast.error(clientErrorMessage(err, "Couldn't create the workspace."));
-    } finally {
-      setCreating(false);
-    }
-  }
-
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          {plural(workspaces.length, "workspace")}
-        </p>
-        {canManage ? (
-          <Button
-            size="sm"
-            onClick={() => {
-              setNewName("");
-              setCreateOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            New workspace
-          </Button>
-        ) : null}
-      </div>
+    <section className="space-y-3">
+      {/* Every workspace shares the organization's plan, so the plan is named once, here. */}
+      <p className="brand-label text-muted-foreground">
+        {organizationName} · {plural(workspaces.length, "workspace")} · {planLabel} plan
+      </p>
 
-      <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        {workspaces.map((w) => {
+      <ul className="space-y-3">
+        {workspaces.map((w, index) => {
           const isActive = w.id === activeWorkspaceId;
           const isEditing = editingId === w.id;
-          const canRename = canManage;
+          const saving = savingId === w.id;
+          const stats = [
+            { label: "Accounts", value: w.channels },
+            { label: "Automations", value: w.automations },
+            { label: "Contacts", value: w.contacts },
+          ];
           return (
             <li
               key={w.id}
               className={cn(
-                "flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-card sm:flex-row sm:items-center sm:justify-between",
-                isActive && "ring-1 ring-foreground/10",
+                "rise flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:p-5 lg:flex-row lg:items-center lg:gap-6",
+                isActive && "border-ink/25",
               )}
+              style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+              <div className="flex min-w-0 flex-1 items-center gap-4">
+                <span
+                  aria-hidden
+                  className={cn(
+                    "font-display flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[20px]",
+                    isActive ? "bg-ink text-white" : "bg-fog text-ink",
+                  )}
+                >
                   {w.name.trim().charAt(0).toUpperCase()}
                 </span>
-                <div className="min-w-0 space-y-1">
+                <div className="min-w-0 flex-1">
                   {isEditing ? (
                     <form
                       className="flex items-center gap-1.5"
@@ -167,70 +142,122 @@ export function WorkspacesList({
                         aria-label="Workspace name"
                         maxLength={64}
                         autoFocus
-                        disabled={savingId === w.id}
-                        className="h-8 w-56"
+                        disabled={saving}
+                        className="h-9 w-full max-w-64"
                       />
-                      <Button type="submit" size="icon" className="h-8 w-8" loading={savingId === w.id} aria-label="Save name">
-                        <Check className="h-4 w-4" />
+                      <Button type="submit" size="icon-sm" loading={saving} aria-label="Save name">
+                        {saving ? null : <Check />}
                       </Button>
-                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingId(null)} aria-label="Cancel">
-                        <X className="h-4 w-4" />
+                      <Button type="button" size="icon-sm" variant="ghost" onClick={() => setEditingId(null)} aria-label="Cancel">
+                        <X />
                       </Button>
                     </form>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold">{w.name}</p>
-                      {canRename ? (
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-[15px] font-semibold">{w.name}</p>
+                      {canManage ? (
                         <button
                           type="button"
                           onClick={() => startEdit(w)}
                           aria-label={`Rename ${w.name}`}
-                          className="rounded p-0.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                          className="shrink-0 rounded-full p-1 text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                       ) : null}
-                      {isActive ? <Badge variant="secondary">Current</Badge> : null}
+                      {isActive ? <Badge variant="yellow">Current</Badge> : null}
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    {plural(w.channels, "account")} · {plural(w.automations, "automation")} · {plural(w.contacts, "contact")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Created {format(new Date(w.createdAt), "MMM d, yyyy")}</p>
+                  <p className="mt-1 text-[12px] text-muted-foreground">Created {format(new Date(w.createdAt), "MMM d, yyyy")}</p>
                 </div>
               </div>
 
-              {isActive ? null : (
-                <Button variant="outline" size="sm" className="self-start sm:self-center" loading={switchingId === w.id} onClick={() => open(w.id)}>
-                  Open
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
+              {/* Cells size to their content, so "Automations" never clips on a phone. */}
+              <dl className="flex shrink-0 divide-x rounded-2xl bg-fog lg:w-[380px]">
+                {stats.map((s) => (
+                  <div key={s.label} className="min-w-0 flex-auto px-3 py-2.5 sm:px-4">
+                    <dt className="brand-label truncate text-muted-foreground">{s.label}</dt>
+                    <dd className="font-display mt-1 text-[20px] leading-none tabular-nums">{formatNumber(s.value)}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              {isActive ? (
+                // Keeps the stats lined up with the rows that have an Open button.
+                <div aria-hidden className="hidden shrink-0 lg:block lg:w-24" />
+              ) : (
+                <div className="flex shrink-0 lg:w-24 lg:justify-end">
+                  <Button variant="outline" size="sm" loading={switchingId === w.id} onClick={() => open(w.id)}>
+                    Open
+                    <ArrowRight />
+                  </Button>
+                </div>
               )}
             </li>
           );
         })}
       </ul>
+    </section>
+  );
+}
 
-      <p className="text-xs text-muted-foreground">
-        Everyone on the {organizationName} team can open every workspace, and all of them share the {planLabel} plan&apos;s limits.
-      </p>
+/** The header action that creates a workspace and takes you through its setup. */
+export function NewWorkspaceButton({ organizationName, planLabel }: { organizationName: string; planLabel: string }) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [creating, setCreating] = React.useState(false);
 
-      <Dialog open={createOpen} onOpenChange={(o) => !creating && setCreateOpen(o)}>
-        <DialogContent className="max-w-md">
-          <form onSubmit={create} className="space-y-4">
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    const clean = name.trim();
+    if (clean.length < 2) {
+      toast.error("Use at least 2 characters for the name.");
+      return;
+    }
+    setCreating(true);
+    try {
+      await send("/api/workspaces", "POST", { name: clean });
+      toast.success(`Created ${clean}`);
+      setOpen(false);
+      router.push("/welcome");
+      router.refresh();
+    } catch (err) {
+      toast.error(clientErrorMessage(err, "Couldn't create the workspace."));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <>
+      <Button
+        size="sm"
+        onClick={() => {
+          setName("");
+          setOpen(true);
+        }}
+      >
+        <Plus />
+        New workspace
+      </Button>
+
+      <Dialog open={open} onOpenChange={(o) => !creating && setOpen(o)}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={create} className="space-y-5">
             <DialogHeader>
               <DialogTitle>New workspace</DialogTitle>
               <DialogDescription>
-                Starts with no accounts connected. It shares {organizationName}&apos;s {planLabel} plan and team.
+                It starts with no accounts connected and shares {organizationName}&apos;s {planLabel} plan and team.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
               <Label htmlFor="new-workspace-name">Name</Label>
               <Input
                 id="new-workspace-name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Himalayan Coffee Co."
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Himalayan Coffee Co."
                 maxLength={64}
                 autoComplete="off"
                 autoFocus
@@ -238,7 +265,7 @@ export function WorkspacesList({
               />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={creating}>
                 Cancel
               </Button>
               <Button type="submit" loading={creating}>
@@ -248,6 +275,6 @@ export function WorkspacesList({
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

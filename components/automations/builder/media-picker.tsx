@@ -28,7 +28,7 @@ export type MediaPickerProps = {
 export function MediaThumb({ item, className }: { item: MediaSummary | undefined; className?: string }) {
   const src = item?.thumbnailUrl ?? item?.mediaUrl ?? null;
   return (
-    <div className={cn("relative flex items-center justify-center overflow-hidden bg-neutral-100 text-neutral-400", className)}>
+    <div className={cn("relative flex items-center justify-center overflow-hidden bg-fog text-mute", className)}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element -- CDN host varies per platform/post
         <img src={src} alt={item?.caption ?? ""} loading="lazy" className="h-full w-full object-cover" />
@@ -59,7 +59,7 @@ export function MediaPicker({ channelId, open, onOpenChange, selected, onChange,
         setItems(result.items);
         onLoaded(result.items);
         if (opts.refresh) {
-          toast.success(result.refreshQueued ? "Refreshing posts. Check back in a few seconds." : "Posts are up to date");
+          toast.success(result.refreshQueued ? "Fetching your latest posts" : "Posts are up to date");
         }
       } catch (err) {
         toast.error(errorMessage(err, "Couldn't load posts"));
@@ -87,13 +87,13 @@ export function MediaPicker({ channelId, open, onOpenChange, selected, onChange,
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Choose posts</DialogTitle>
-          <DialogDescription>Only comments on the selected posts will trigger this automation.</DialogDescription>
+          <DialogDescription>It only runs on comments under these posts.</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search captions" className="pl-8" aria-label="Search posts" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search captions" className="pl-9" aria-label="Search posts" />
           </div>
           <Button variant="outline" size="sm" onClick={() => load({ q: query.trim() || undefined, refresh: true })} loading={refreshing}>
             <RefreshCw /> Refresh
@@ -109,10 +109,11 @@ export function MediaPicker({ channelId, open, onOpenChange, selected, onChange,
             </div>
           ) : items.length === 0 ? (
             <EmptyState
+              compact
+              tone="purple"
               icon={ImageOff}
-              title={query ? "No posts match" : "No posts cached yet"}
-              description={query ? "Try another word from the caption." : "Hit Refresh to pull the latest posts from this account."}
-              className="py-10"
+              title={query ? "No posts match" : "No posts yet"}
+              description={query ? "Try another word from the caption." : "Refresh to load this account's posts."}
             />
           ) : (
             <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
@@ -126,18 +127,18 @@ export function MediaPicker({ channelId, open, onOpenChange, selected, onChange,
                     aria-pressed={on}
                     title={item.caption ?? undefined}
                     className={cn(
-                      "group relative aspect-square overflow-hidden rounded-md border transition-[box-shadow,border-color] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      on ? "border-foreground ring-2 ring-foreground/20" : "border-border hover:border-foreground/50",
+                      "group relative aspect-square overflow-hidden rounded-xl border-2 transition-[box-shadow,border-color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      on ? "scale-[0.97] border-purple ring-4 ring-purple/15" : "border-transparent hover:border-ink/30",
                     )}
                   >
                     <MediaThumb item={item} className="h-full w-full" />
                     {on ? (
-                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-white shadow-card">
+                      <span className="absolute right-1.5 top-1.5 flex h-5 w-5 animate-pop items-center justify-center rounded-full bg-purple text-white shadow-card">
                         <Check className="h-3 w-3" strokeWidth={3} />
                       </span>
                     ) : null}
                     {item.caption ? (
-                      <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-4 text-left text-[10px] leading-tight text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="absolute inset-x-0 bottom-0 line-clamp-2 bg-ink/75 px-1.5 py-1 text-left text-[10px] leading-tight text-white opacity-0 transition-opacity group-hover:opacity-100">
                         {item.caption}
                       </span>
                     ) : null}

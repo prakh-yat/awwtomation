@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { InviteDialog } from "@/components/settings/invite-dialog";
 import { InvitationsTable, MembersTable, type PendingInvitation, type TeamMember } from "@/components/settings/team-table";
+import { Meter } from "@/components/settings/usage-bars";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,18 +14,6 @@ import { requireWorkspaceContext } from "@/lib/workspace/context";
 import { canManageTeam } from "@/lib/workspace/permissions";
 
 export const metadata: Metadata = { title: "Team" };
-
-function SectionHeader({ title, description, actions }: { title: string; description: React.ReactNode; actions?: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-        <div className="mt-0.5 text-[13px] text-muted-foreground">{description}</div>
-      </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
-    </div>
-  );
-}
 
 export default async function TeamSettingsPage() {
   const ctx = await requireWorkspaceContext();
@@ -62,49 +51,45 @@ export default async function TeamSettingsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Settings"
-        actions={invite}
-      />
-      <div className="space-y-8">
-      <section>
-        <SectionHeader
-          title="Members"
-          description={
-            <span className="inline-flex flex-wrap items-center gap-2">
-              <span>
-                {seats.used} of {seats.limit} seats used
-              </span>
+      <PageHeader title="Settings" actions={invite} />
+      <div className="space-y-10">
+        <section>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <h2 className="brand-label text-muted-foreground">Members</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]">
               {seatsFull ? (
-                <Badge variant="warning">
-                  All seats in use.{" "}
-                  <Link href="/settings/billing" className="underline underline-offset-2">
+                <span className="inline-flex items-center gap-2">
+                  <Badge variant="warning">All seats in use</Badge>
+                  <Link href="/settings/billing" className="font-semibold text-ink underline underline-offset-4 hover:no-underline">
                     Upgrade
                   </Link>
-                </Badge>
+                </span>
               ) : null}
-              <span className="text-muted-foreground/70">· pending invitations use a seat</span>
-            </span>
-          }
-        />
-        <Card className="overflow-hidden">
-          <MembersTable organizationId={organizationId} members={members} currentUserId={ctx.user.id} actorRole={ctx.role} />
-        </Card>
-      </section>
-
-      <section>
-        <SectionHeader
-          title="Pending invitations"
-          description="Links are valid for 7 days and tied to the invited email address."
-        />
-        {invitations.length > 0 ? (
+              <span className="tabular-nums text-muted-foreground">
+                <span className="font-semibold text-ink">{seats.used}</span> of {seats.limit} seats
+              </span>
+              <Meter used={seats.used} limit={seats.limit} label="Team seats used" className="w-20 sm:w-28" />
+            </div>
+          </div>
           <Card className="overflow-hidden">
-            <InvitationsTable invitations={invitations} />
+            <MembersTable organizationId={organizationId} members={members} currentUserId={ctx.user.id} actorRole={ctx.role} />
           </Card>
-        ) : (
-          <InvitationsTable invitations={invitations} inviteAction={invite} />
-        )}
-      </section>
+        </section>
+
+        <section>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <h2 className="brand-label text-muted-foreground">Pending invitations</h2>
+            {invitations.length > 0 ? <Badge variant="secondary">{invitations.length}</Badge> : null}
+            {invitations.length > 0 ? <p className="ml-auto text-xs text-muted-foreground">Open invites hold a seat.</p> : null}
+          </div>
+          {invitations.length > 0 ? (
+            <Card className="overflow-hidden">
+              <InvitationsTable invitations={invitations} />
+            </Card>
+          ) : (
+            <InvitationsTable invitations={invitations} inviteAction={invite} />
+          )}
+        </section>
       </div>
     </div>
   );

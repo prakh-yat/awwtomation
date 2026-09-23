@@ -1,5 +1,7 @@
 "use client";
 
+import { clientErrorMessage } from "@/lib/errors/customer-messages";
+
 /**
  * Minimal fetch wrapper for the channels client components. Turns the
  * `{ error, code }` JSON contract from ARCHITECTURE §3 into a thrown Error
@@ -36,6 +38,7 @@ export async function apiFetch<T>(input: string, init?: RequestInit): Promise<T>
   return body as T;
 }
 
+/** API messages are already customer copy; status codes, transport failures and anything technical get translated. */
 export function errorMessage(err: unknown, fallback = "Something went wrong"): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return clientErrorMessage(err, fallback) || fallback;
 }

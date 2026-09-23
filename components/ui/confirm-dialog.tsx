@@ -73,7 +73,7 @@ function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        <DialogFooter className="mt-2 gap-2 sm:gap-0">
+        <DialogFooter className="mt-1">
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
             {cancelLabel}
           </Button>

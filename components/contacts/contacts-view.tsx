@@ -3,63 +3,32 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Columns3,
-  Download,
-  ExternalLink,
-  Inbox,
-  Layers,
-  List,
-  MoreHorizontal,
-  Plug,
-  Plus,
-  Search,
-  Settings2,
-  SquareKanban,
-  Tags,
-  Trash2,
-  Upload,
-  UserRound,
-  Workflow,
-  X,
-} from "lucide-react";
+import { Columns3, Download, List, MoreHorizontal, Plus, Settings2, Tags, Upload, X } from "lucide-react";
 
-import { StageDot } from "@/components/pipelines/stage-badge";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ContactChannelSummary, ContactListItem, ContactListResult, ContactStats, ContactTagCount } from "@/lib/services/contacts";
 import type { ContactPipelineRef, PipelineStageSummary, PipelineSummary } from "@/lib/services/pipelines";
 import type { SegmentSummary } from "@/lib/services/segments";
-import { cn } from "@/lib/utils";
 
 import { AddContactDialog } from "./add-contact-dialog";
 import { contactsApi, errorMessage, pipelinesApi, segmentsApi } from "./api";
+import { BulkBar } from "./bulk-bar";
 import { BulkTagDialog } from "./bulk-tag-dialog";
-import { ContactAvatar } from "./contact-avatar";
-import { OwnerAvatar, type OwnerOption, ownerLabel } from "./contact-details-card";
+import { type OwnerOption, ownerLabel } from "./contact-details-card";
 import { ContactsBoard } from "./contacts-board";
+import { BoardMissing, ContactsListEmpty, ContactsWorkspaceEmpty } from "./contacts-empty";
+import { ContactsTable } from "./contacts-table";
+import { OwnerFilter, SearchField } from "./contacts-toolbar";
 import {
   type ContactFilterState,
   DEFAULT_PAGE_SIZE,
-  describeSegmentFilters,
   EMPTY_FILTERS,
   filtersEqual,
   filtersToSearchParams,
@@ -68,15 +37,14 @@ import {
   PAGE_SIZES,
   segmentFiltersToState,
 } from "./filters";
-import { contactDisplayName, contactProfileUrl, formatAbsolute, formatRelative, platformLabel } from "./format";
+import { contactDisplayName } from "./format";
 import { ImportContactsDialog } from "./import-contacts-dialog";
 import { ManageTagsDialog } from "./manage-tags-dialog";
 import { MoreFiltersPopover } from "./more-filters-popover";
-import { PipelineStageMenuItems, PipelineSwitcher, PipelinesCell, StageSelectCell, StageStrip } from "./pipeline-controls";
+import { PipelineSwitcher, StageFilter } from "./pipeline-controls";
+import { SegmentsBar } from "./segments-bar";
 import { SegmentFormDialog } from "./segments-dialog";
-import { SegmentsRail, SegmentsSelect } from "./segments-rail";
 import { SegmentSaveActions } from "./segments-save";
-import { TagChips } from "./tag-chips";
 import { TagFilterPopover } from "./tag-filter-popover";
 
 export type ContactsViewMode = "list" | "board";
@@ -102,8 +70,10 @@ export interface ContactsViewProps {
   timezone: string;
 }
 
-const ALL = "all";
-const UNASSIGNED = "unassigned";
+const VIEW_OPTIONS: SegmentedOption<ContactsViewMode>[] = [
+  { value: "list", label: "List", icon: List },
+  { value: "board", label: "Board", icon: Columns3 },
+];
 
 function uniq(tags: string[]): string[] {
   return Array.from(new Set(tags));
@@ -135,42 +105,6 @@ function withStage(entries: ContactPipelineRef[], pipeline: PipelineSummary, sta
   };
   const found = entries.some((e) => e.pipelineId === pipeline.id);
   return found ? entries.map((e) => (e.pipelineId === pipeline.id ? next : e)) : [...entries, next];
-}
-
-/** Compact in-row owner picker. */
-function OwnerCell({ item, owners, onChange }: { item: ContactListItem; owners: OwnerOption[]; onChange: (ownerId: string | null) => void }) {
-  const owner = owners.find((o) => o.id === item.ownerId) ?? item.owner;
-  return (
-    <Select value={item.ownerId ?? UNASSIGNED} onValueChange={(v) => onChange(v === UNASSIGNED ? null : v)}>
-      <SelectTrigger
-        className="h-7 w-auto max-w-[11rem] gap-1.5 border-transparent bg-transparent px-1.5 text-[13px] shadow-none hover:border-input [&>svg]:h-3 [&>svg]:w-3"
-        aria-label={`Owner for ${contactDisplayName(item)}`}
-      >
-        {/* A div, not a span: the trigger line-clamps direct span children, which would stack the avatar over the name. */}
-        {owner ? (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <OwnerAvatar owner={owner} />
-            <div className="truncate">{ownerLabel(owner)}</div>
-          </div>
-        ) : (
-          <div className="text-muted-foreground">Unassigned</div>
-        )}
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={UNASSIGNED}>
-          <span className="text-muted-foreground">Unassigned</span>
-        </SelectItem>
-        {owners.map((o) => (
-          <SelectItem key={o.id} value={o.id}>
-            <span className="flex items-center gap-2">
-              <OwnerAvatar owner={o} />
-              {ownerLabel(o)}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
 }
 
 /**
@@ -263,7 +197,7 @@ function ContactsView({
     try {
       setSegments(await segmentsApi.list());
     } catch {
-      // Non-critical: counts in the rail go stale until the next load.
+      // Non-critical: counts on the segment chips go stale until the next load.
     }
   }, []);
 
@@ -439,8 +373,6 @@ function ContactsView({
   }
 
   // ── Selection ──
-  const allSelected = items.length > 0 && items.every((i) => selected.has(i.id));
-  const someSelected = selected.size > 0 && !allSelected;
   const selectedIds = React.useMemo(() => Array.from(selected), [selected]);
   const selectedTagUnion = React.useMemo(
     () => uniq(items.filter((i) => selected.has(i.id)).flatMap((i) => i.tags)).sort((a, b) => a.localeCompare(b)),
@@ -590,7 +522,7 @@ function ContactsView({
     const me = owners.find((o) => o.id === viewerId);
     return me ? [me, ...owners.filter((o) => o.id !== viewerId)] : owners;
   }, [owners, viewerId]);
-  const bulkButton = "h-7 bg-background/10 text-background hover:bg-background/20";
+  const showBulkBar = !workspaceEmpty && view === "list" && selected.size > 0;
 
   const headerActions = (
     <>
@@ -600,7 +532,7 @@ function ContactsView({
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More contact actions">
+          <Button variant="outline" size="icon-sm" aria-label="More contact actions">
             <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
@@ -633,476 +565,139 @@ function ContactsView({
   );
 
   const stageOnly = pipeline && filters.stageId ? pipeline.stages.find((s) => s.id === filters.stageId) : undefined;
-  const emptyList = stageOnly && !hasRefiningFilters({ ...filters, stageId: "" }) ? (
-    <div className="rounded-lg border border-dashed px-6 py-12 text-center">
-      <p className="text-sm font-medium">No one is at {stageOnly.name} yet</p>
-      <p className="mt-1 text-[13px] text-muted-foreground">Move contacts here from another stage, the board or a contact&apos;s page.</p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={() => patch({ stageId: "" })}>
-        Show every stage
-      </Button>
-    </div>
-  ) : pipeline && !refining ? (
-    <div className="rounded-lg border border-dashed px-6 py-12 text-center">
-      <SquareKanban className="mx-auto h-5 w-5 text-muted-foreground" strokeWidth={1.75} aria-hidden />
-      <p className="mt-3 text-sm font-medium">No one is in {pipeline.name} yet</p>
-      <p className="mx-auto mt-1 max-w-sm text-[13px] text-muted-foreground">
-        Add contacts from the list, a contact&apos;s page or an import. Automations can add people with the Add to pipeline step.
-      </p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={() => selectPipeline("")}>
-        Show all contacts
-      </Button>
-    </div>
-  ) : (
-    <div className="rounded-lg border border-dashed px-6 py-12 text-center">
-      <p className="text-sm font-medium">{activeSegment && !dirty ? "No one is in this segment yet" : "No contacts match"}</p>
-      <p className="mt-1 text-[13px] text-muted-foreground">
-        {activeSegment && !dirty ? "People join as soon as they match its filters." : "Try another search or remove a filter."}
-      </p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={clearFilters}>
-        {activeSegment && !dirty ? "Show all contacts" : "Clear filters"}
-      </Button>
-    </div>
-  );
+  const emptyStage = stageOnly && !hasRefiningFilters({ ...filters, stageId: "" }) ? stageOnly : null;
 
   return (
     <>
       <PageHeader title="Contacts" actions={headerActions} />
 
       {workspaceEmpty ? (
-        <EmptyState
-          icon={UserRound}
-          title="No contacts yet"
-          description={
-            channels.length === 0
-              ? "Connect an Instagram or Facebook account. People who comment or message it show up here."
-              : "People appear here the first time they comment on, message or reply to a story on your account. You can also add or import them."
-          }
-          action={
-            channels.length === 0 ? (
-              <Button asChild>
-                <Link href="/channels">
-                  <Plug />
-                  Connect an account
-                </Link>
-              </Button>
-            ) : (
-              <Button asChild variant="outline">
-                <Link href="/automations/templates">
-                  <Workflow />
-                  Create an automation
-                </Link>
-              </Button>
-            )
-          }
-        />
+        <ContactsWorkspaceEmpty connected={channels.length > 0} />
       ) : (
-        <div className="flex items-start gap-6">
-          <SegmentsRail
-            className={cn("sticky top-6 hidden", view === "list" && "2xl:block")}
-            segments={segments}
-            activeId={activeId}
-            totalCount={stats.total}
-            onSelect={selectSegment}
-            onRename={setRenameTarget}
-            onDelete={setDeleteSegmentTarget}
-            pipelines={pipelines}
-          />
-
-          <div className="min-w-0 flex-1 space-y-3">
-            {activeSegment ? (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-3 py-2 shadow-card">
-                <Layers className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-medium">{activeSegment.name}</span>
-                    {dirty ? <Badge variant="outline">Edited</Badge> : null}
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground" title={describeSegmentFilters(activeSegment.filters, pipelines)}>
-                    {activeSegment.description || describeSegmentFilters(activeSegment.filters, pipelines)}
-                  </p>
-                </div>
-                <SegmentSaveActions
-                  filters={filters}
-                  active={activeSegment}
-                  dirty={dirty}
-                  onCreated={onSegmentCreated}
-                  onUpdated={onSegmentUpdated}
-                  onReset={resetToSegment}
-                  pipelines={pipelines}
-                />
-              </div>
-            ) : null}
-
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2">
-              <PipelineSwitcher pipelines={pipelines} value={filters.pipelineId} totalCount={stats.total} canManage={canManagePipelines} onChange={selectPipeline} />
-              <SegmentsSelect
-                className={cn(view === "list" && "2xl:hidden")}
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <SearchField ref={searchRef} value={filters.q} onChange={(q) => patch({ q })} />
+            {segments.length > 0 ? (
+              <SegmentsBar
                 segments={segments}
                 activeId={activeId}
+                edited={dirty}
                 totalCount={stats.total}
                 onSelect={selectSegment}
                 onRename={setRenameTarget}
                 onDelete={setDeleteSegmentTarget}
+                pipelines={pipelines}
               />
+            ) : null}
+            <PipelineSwitcher pipelines={pipelines} value={filters.pipelineId} totalCount={stats.total} canManage={canManagePipelines} onChange={selectPipeline} />
+            {pipeline && view === "list" ? <StageFilter pipeline={pipeline} counts={stageCounts} value={filters.stageId} onChange={(stageId) => patch({ stageId })} /> : null}
+            <OwnerFilter value={filters.ownerId} owners={ownerFilterOptions} viewerId={viewerId} onChange={(ownerId) => patch({ ownerId })} />
+            <TagFilterPopover options={tagOptions} selected={filters.tags} mode={filters.tagMode} onChange={({ tags: t, mode }) => patch({ tags: t, tagMode: mode })} />
+            <MoreFiltersPopover filters={filters} onChange={patch} channels={channels} tags={tagOptions} />
 
-              <div className="relative w-full sm:w-56">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                <Input
-                  ref={searchRef}
-                  value={filters.q}
-                  onChange={(e) => patch({ q: e.target.value })}
-                  placeholder="Search contacts"
-                  className="h-8 pl-8 pr-8 text-[13px]"
-                  aria-label="Search contacts"
-                />
-                {filters.q ? (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => patch({ q: "" })}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
-
-              <Select value={filters.ownerId || ALL} onValueChange={(v) => patch({ ownerId: v === ALL ? "" : v })}>
-                <SelectTrigger className={cn("h-8 w-auto min-w-[8.5rem] text-[13px]", filters.ownerId && "border-foreground")} aria-label="Owner">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL}>Any owner</SelectItem>
-                  <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                  {ownerFilterOptions.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.id === viewerId ? "Assigned to me" : ownerLabel(o)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <TagFilterPopover options={tagOptions} selected={filters.tags} mode={filters.tagMode} onChange={({ tags: t, mode }) => patch({ tags: t, tagMode: mode })} />
-              <MoreFiltersPopover filters={filters} onChange={patch} channels={channels} tags={tagOptions} />
-
-              {refining ? (
-                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={clearFilters}>
-                  <X />
-                  Clear
-                </Button>
-              ) : null}
-
-              {/* A pipeline on its own is one click away in the switcher, so only offer to save once something narrows it. */}
-              {!activeSegment && refining ? (
-                <SegmentSaveActions
-                  filters={filters}
-                  active={null}
-                  dirty={false}
-                  onCreated={onSegmentCreated}
-                  onUpdated={onSegmentUpdated}
-                  onReset={resetToSegment}
-                  pipelines={pipelines}
-                />
-              ) : null}
-
-              <div className="ml-auto flex items-center gap-3">
-                {view === "list" && loading ? <Spinner size="sm" /> : null}
-                {pipelines.length > 0 ? (
-                  <div role="radiogroup" aria-label="View" className="inline-flex h-8 items-center rounded-md bg-muted p-0.5">
-                    {(
-                      [
-                        { value: "list", label: "List", icon: List },
-                        { value: "board", label: "Board", icon: Columns3 },
-                      ] as const
-                    ).map((option) => {
-                      const Icon = option.icon;
-                      const checked = view === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={checked}
-                          onClick={() => switchView(option.value)}
-                          title={option.value === "board" && !pipeline ? "Opens the board for your first pipeline" : undefined}
-                          className={cn(
-                            "inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                            checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="h-3.5 w-3.5" aria-hidden />
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {pipeline && view === "list" ? (
-              <StageStrip pipeline={pipeline} counts={stageCounts} value={filters.stageId} onChange={(stageId) => patch({ stageId })} />
+            {refining ? (
+              <Button variant="ghost" size="sm" className="px-3 text-muted-foreground hover:text-ink" onClick={clearFilters}>
+                <X />
+                Clear
+              </Button>
             ) : null}
 
-            {view === "board" && pipeline ? (
-              <ContactsBoard key={pipeline.id} filters={filters} pipeline={pipeline} version={boardVersion} onMoved={() => void refreshPipelineCounts()} />
-            ) : view === "board" ? (
-              <div className="rounded-lg border border-dashed px-6 py-12 text-center">
-                <p className="text-sm font-medium">That pipeline no longer exists</p>
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => selectPipeline(pipelines[0]?.id ?? "")}>
-                  {pipelines[0] ? `Open ${pipelines[0].name}` : "Show all contacts"}
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div ref={tableTopRef} className="scroll-mt-4" />
-                {selected.size > 0 ? (
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-foreground px-3 py-2 text-background shadow-card">
-                    <span className="text-[13px] font-medium tabular-nums">{selected.size} selected</span>
-                    <span className="mx-1 h-4 w-px bg-background/25" aria-hidden />
-                    {pipelines.length > 0 ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="sm" variant="secondary" className={bulkButton}>
-                            {pipeline ? "Move to stage" : "Add to pipeline"}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-56">
-                          {pipeline ? (
-                            <>
-                              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{pipeline.name}</DropdownMenuLabel>
-                              {pipeline.stages.map((s) => (
-                                <DropdownMenuItem key={s.id} onSelect={() => void bulkStage(pipeline, s)}>
-                                  <StageDot color={s.color} />
-                                  {s.name}
-                                </DropdownMenuItem>
-                              ))}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem destructive onSelect={() => void bulkRemoveFromPipeline(pipeline)}>
-                                <X />
-                                Remove from {pipeline.name}
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <PipelineStageMenuItems
-                              pipelines={pipelines}
-                              onSetStage={(p, s) => void bulkStage(p, s)}
-                              onRemove={(p) => void bulkRemoveFromPipeline(p)}
-                              alwaysShowRemove
-                            />
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="sm" variant="secondary" className={bulkButton}>
-                          Assign
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-52">
-                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Owner</DropdownMenuLabel>
-                        {owners.map((o) => (
-                          <DropdownMenuItem key={o.id} onSelect={() => void bulkOwner(o.id)}>
-                            <OwnerAvatar owner={o} />
-                            {ownerLabel(o)}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => void bulkOwner(null)}>Remove owner</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button size="sm" variant="secondary" className={bulkButton} onClick={() => setBulkDialog("add")}>
-                      Add tags
-                    </Button>
-                    <Button size="sm" variant="secondary" className={bulkButton} onClick={() => setBulkDialog("remove")}>
-                      Remove tags
-                    </Button>
-                    <ConfirmDialog
-                      trigger={
-                        <Button size="sm" variant="secondary" className="h-7 bg-background/10 text-background hover:bg-destructive hover:text-destructive-foreground">
-                          <Trash2 />
-                          Delete
-                        </Button>
-                      }
-                      title={`Delete ${plural(selected.size, "contact")}?`}
-                      description="Their conversations, notes and automation progress are removed too. If they message you again, they come back as new contacts."
-                      confirmLabel="Delete contacts"
-                      destructive
-                      onConfirm={deleteSelected}
-                    />
-                    <Button size="sm" variant="ghost" className="ml-auto h-7 text-background/80 hover:bg-background/10 hover:text-background" onClick={() => setSelected(new Set())}>
-                      Clear selection
-                    </Button>
-                  </div>
-                ) : null}
+            {/* A loaded segment can be saved back once edited; otherwise a pipeline on its own is one click away in the switcher, so only offer to save once something narrows it. */}
+            {activeSegment || refining ? (
+              <SegmentSaveActions
+                key={activeSegment ? "segment" : "filters"}
+                filters={filters}
+                active={activeSegment}
+                dirty={dirty}
+                onCreated={onSegmentCreated}
+                onUpdated={onSegmentUpdated}
+                onReset={resetToSegment}
+                pipelines={pipelines}
+              />
+            ) : null}
 
-                {items.length === 0 && !loading && loadedKey !== null ? (
-                  emptyList
-                ) : (
-                  <div className={cn("overflow-hidden rounded-lg border bg-card shadow-card transition-opacity", loading && "opacity-60")} aria-busy={loading}>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-10 pl-4">
-                              <Checkbox checked={allSelected ? true : someSelected ? "indeterminate" : false} onCheckedChange={(v) => toggleAll(v === true)} aria-label="Select all on this page" />
-                            </TableHead>
-                            <TableHead className="min-w-[220px]">Contact</TableHead>
-                            <TableHead className="w-[190px]">{pipeline ? "Stage" : "Pipeline"}</TableHead>
-                            <TableHead className="w-[170px]">Owner</TableHead>
-                            <TableHead className="w-[170px]">Tags</TableHead>
-                            <TableHead className="w-[120px]">Last activity</TableHead>
-                            <TableHead className="w-10">
-                              <span className="sr-only">Actions</span>
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {items.map((item) => {
-                            const isSelected = selected.has(item.id);
-                            const name = contactDisplayName(item);
-                            const profileUrl = contactProfileUrl(item);
-                            const secondary = [item.username && item.name ? `@${item.username.replace(/^@/, "")}` : null, item.email].filter(Boolean).join(" · ");
-                            return (
-                              <TableRow key={item.id} data-state={isSelected ? "selected" : undefined}>
-                                <TableCell className="pl-4">
-                                  <Checkbox checked={isSelected} onCheckedChange={(v) => toggleOne(item.id, v === true)} aria-label={`Select ${name}`} />
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <ContactAvatar name={item.name} username={item.username} avatarUrl={item.avatarUrl} platform={item.platform} size="sm" />
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <Link href={`/contacts/${item.id}`} className="truncate font-medium underline-offset-4 hover:underline">
-                                          {name}
-                                        </Link>
-                                        {item.optedOut ? <Badge variant="warning">Stopped</Badge> : null}
-                                      </div>
-                                      {secondary ? <div className="truncate text-xs text-muted-foreground">{secondary}</div> : null}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {pipeline ? (
-                                    <StageSelectCell
-                                      pipeline={pipeline}
-                                      entry={item.pipelines.find((e) => e.pipelineId === pipeline.id)}
-                                      contactName={name}
-                                      onChange={(stageId) => {
-                                        const stage = pipeline.stages.find((s) => s.id === stageId);
-                                        if (stage) void setStage(item, pipeline, stage);
-                                      }}
-                                    />
-                                  ) : (
-                                    <PipelinesCell
-                                      pipelines={pipelines}
-                                      entries={item.pipelines}
-                                      contactName={name}
-                                      onSetStage={(p, s) => void setStage(item, p, s)}
-                                      onRemove={(p) => void removeFromPipeline(item, p)}
-                                    />
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <OwnerCell item={item} owners={owners} onChange={(ownerId) => void changeOwner(item, ownerId)} />
-                                </TableCell>
-                                <TableCell>
-                                  <TagChips tags={item.tags} max={1} className="flex-nowrap" />
-                                </TableCell>
-                                <TableCell className="whitespace-nowrap text-muted-foreground">
-                                  {item.lastInteractionAt ? (
-                                    <time dateTime={item.lastInteractionAt} title={formatAbsolute(item.lastInteractionAt, timezone)} suppressHydrationWarning>
-                                      {formatRelative(item.lastInteractionAt)}
-                                    </time>
-                                  ) : (
-                                    "–"
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" aria-label={`Actions for ${name}`}>
-                                        <MoreHorizontal />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-52">
-                                      <DropdownMenuItem asChild>
-                                        <Link href={`/contacts/${item.id}`}>
-                                          <UserRound />
-                                          Open contact
-                                        </Link>
-                                      </DropdownMenuItem>
-                                      {item.conversationId ? (
-                                        <DropdownMenuItem asChild>
-                                          <Link href={`/inbox?c=${encodeURIComponent(item.conversationId)}`}>
-                                            <Inbox />
-                                            Open conversation
-                                          </Link>
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      {profileUrl ? (
-                                        <DropdownMenuItem asChild>
-                                          <a href={profileUrl} target="_blank" rel="noopener noreferrer">
-                                            <ExternalLink />
-                                            View on {platformLabel(item.platform)}
-                                          </a>
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      {pipeline && item.pipelines.some((e) => e.pipelineId === pipeline.id) ? (
-                                        <DropdownMenuItem onSelect={() => void removeFromPipeline(item, pipeline)}>
-                                          <X />
-                                          Remove from {pipeline.name}
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem destructive onSelect={() => setDeleteTarget(item)}>
-                                        <Trash2 />
-                                        Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                          {items.length === 0 ? (
-                            <TableRow className="hover:bg-transparent">
-                              <TableCell colSpan={7} className="py-10 text-center">
-                                <Spinner size="sm" />
-                              </TableCell>
-                            </TableRow>
-                          ) : null}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {total > 0 ? (
-                      <div className="border-t px-4 py-2.5">
-                        <Pagination
-                          page={page}
-                          pageCount={pageCount}
-                          pageSize={pageSize}
-                          total={total}
-                          pageSizes={PAGE_SIZES}
-                          onPageChange={changePage}
-                          onPageSizeChange={(size) => {
-                            setPageSize(size);
-                            setPage(1);
-                          }}
-                          noun={total === 1 ? "contact" : "contacts"}
-                          disabled={loading}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </>
-            )}
+            <div className="ml-auto flex items-center gap-3">
+              {view === "list" && loading ? <Spinner size="sm" /> : null}
+              {pipelines.length > 0 ? (
+                <div className="w-44">
+                  <Segmented size="sm" value={view} onChange={switchView} options={VIEW_OPTIONS} aria-label="View" />
+                </div>
+              ) : null}
+            </div>
           </div>
+
+          {view === "board" && pipeline ? (
+            <ContactsBoard key={pipeline.id} filters={filters} pipeline={pipeline} version={boardVersion} onMoved={() => void refreshPipelineCounts()} />
+          ) : view === "board" ? (
+            <BoardMissing next={pipelines[0] ?? null} onOpen={() => selectPipeline(pipelines[0]?.id ?? "")} />
+          ) : (
+            <div>
+              <div ref={tableTopRef} className="scroll-mt-4" />
+              {items.length === 0 && !loading && loadedKey !== null ? (
+                <ContactsListEmpty
+                  stageName={emptyStage?.name ?? null}
+                  pipelineName={!emptyStage && pipeline && !refining ? pipeline.name : null}
+                  segment={Boolean(activeSegment && !dirty)}
+                  onShowEveryStage={() => patch({ stageId: "" })}
+                  onShowAll={() => selectPipeline("")}
+                  onClear={clearFilters}
+                />
+              ) : (
+                <ContactsTable
+                  items={items}
+                  loading={loading}
+                  selected={selected}
+                  onToggleAll={toggleAll}
+                  onToggleOne={toggleOne}
+                  pipeline={pipeline}
+                  pipelines={pipelines}
+                  owners={owners}
+                  timezone={timezone}
+                  onSetStage={(item, p, s) => void setStage(item, p, s)}
+                  onRemoveFromPipeline={(item, p) => void removeFromPipeline(item, p)}
+                  onChangeOwner={(item, ownerId) => void changeOwner(item, ownerId)}
+                  onDelete={setDeleteTarget}
+                  footer={
+                    total > 0 ? (
+                      <Pagination
+                        page={page}
+                        pageCount={pageCount}
+                        pageSize={pageSize}
+                        total={total}
+                        pageSizes={PAGE_SIZES}
+                        onPageChange={changePage}
+                        onPageSizeChange={(size) => {
+                          setPageSize(size);
+                          setPage(1);
+                        }}
+                        noun={total === 1 ? "contact" : "contacts"}
+                        disabled={loading}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+              {/* Room under the last row so the floating selection bar never covers the pages. */}
+              {showBulkBar ? <div aria-hidden className="h-20" /> : null}
+            </div>
+          )}
         </div>
       )}
+
+      {showBulkBar ? (
+        <BulkBar
+          count={selected.size}
+          pipeline={pipeline}
+          pipelines={pipelines}
+          owners={owners}
+          onStage={(p, s) => void bulkStage(p, s)}
+          onRemoveFromPipeline={(p) => void bulkRemoveFromPipeline(p)}
+          onOwner={(ownerId) => void bulkOwner(ownerId)}
+          onTags={setBulkDialog}
+          onDelete={deleteSelected}
+          onClear={() => setSelected(new Set())}
+        />
+      ) : null}
 
       <AddContactDialog
         open={addOpen}
@@ -1130,7 +725,7 @@ function ContactsView({
         open={deleteTarget !== null}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title={deleteTarget ? `Delete ${contactDisplayName(deleteTarget)}?` : "Delete contact?"}
-        description="Their conversation, notes and automation progress are removed. If they message you again, they come back as a new contact."
+        description="Their conversation and notes go too. If they message you again, they come back as a new contact."
         confirmLabel="Delete contact"
         destructive
         onConfirm={async () => {
@@ -1152,7 +747,7 @@ function ContactsView({
         open={deleteSegmentTarget !== null}
         onOpenChange={(open) => !open && setDeleteSegmentTarget(null)}
         title={deleteSegmentTarget ? `Delete “${deleteSegmentTarget.name}”?` : "Delete segment?"}
-        description="Only the saved filters are removed. The contacts in it stay as they are."
+        description="The contacts in it stay as they are."
         confirmLabel="Delete segment"
         destructive
         onConfirm={deleteSegment}

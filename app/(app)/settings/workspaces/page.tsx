@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { WorkspacesList, type WorkspaceListItem } from "@/components/settings/workspaces-list";
+import { NewWorkspaceButton, WorkspacesList, type WorkspaceListItem } from "@/components/settings/workspaces-list";
 import { PageHeader } from "@/components/ui/page-header";
 import { effectivePlan } from "@/lib/billing/entitlements";
 import { limitsFor } from "@/lib/billing/plans";
@@ -41,16 +41,18 @@ export default async function WorkspacesSettingsPage() {
     contacts: w._count.contacts,
   }));
   const plan = limitsFor(effectivePlan(ctx.organization));
+  const canManage = canManageSettings(ctx.role);
 
   return (
     <div>
       <PageHeader
         title="Settings"
+        actions={canManage ? <NewWorkspaceButton organizationName={ctx.organization.name} planLabel={plan.label} /> : null}
       />
       <WorkspacesList
         workspaces={workspaces}
         activeWorkspaceId={ctx.workspace.id}
-        canManage={canManageSettings(ctx.role)}
+        canManage={canManage}
         organizationName={ctx.organization.name}
         planLabel={plan.label}
       />

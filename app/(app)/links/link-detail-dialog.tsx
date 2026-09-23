@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import * as React from "react";
-import { ExternalLink, MousePointerClick, Pencil, Trash2 } from "lucide-react";
+import { ArrowUpRight, MousePointerClick, Pencil, Trash2 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +15,7 @@ import { formatNumber } from "@/lib/utils";
 import { errorMessage, linksApi } from "./api";
 import { ClickSparkline } from "./click-sparkline";
 import { describeUserAgent, displayDestination, formatDateTime } from "./format";
+import { SourceBadge } from "./source-badge";
 
 const STATS_DAYS = 30;
 
@@ -27,35 +27,13 @@ export interface LinkDetailDialogProps {
   onDelete: (link: TrackedLinkListItem) => void;
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function MiniStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight">{formatNumber(value)}</p>
+    <div className="min-w-0 rounded-xl bg-fog px-3 py-2.5">
+      <p className="brand-label truncate text-muted-foreground">{label}</p>
+      <p className="font-display mt-1.5 text-[22px] leading-none tabular-nums">{formatNumber(value)}</p>
     </div>
   );
-}
-
-function SourceBadge({ link }: { link: TrackedLinkListItem }) {
-  if (link.automation) {
-    return (
-      <Badge variant="outline" className="max-w-full">
-        <Link href={`/automations/${link.automation.id}`} className="truncate hover:underline">
-          Automation · {link.automation.name}
-        </Link>
-      </Badge>
-    );
-  }
-  if (link.broadcast) {
-    return (
-      <Badge variant="outline" className="max-w-full">
-        <Link href={`/broadcasts/${link.broadcast.id}`} className="truncate hover:underline">
-          Broadcast · {link.broadcast.name}
-        </Link>
-      </Badge>
-    );
-  }
-  return <Badge variant="secondary">Manual</Badge>;
 }
 
 /** Opened from a table row: 30-day sparkline plus the last 20 taps. Stats load on open; the row data renders immediately. */
@@ -89,15 +67,17 @@ export function LinkDetailDialog({ link, timezone, onOpenChange, onEdit, onDelet
 
   return (
     <Dialog open={link !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-h-[92dvh] max-w-xl overflow-y-auto scrollbar-thin">
         {link && current ? (
           <>
             <DialogHeader>
-              <DialogTitle className="truncate pr-6">{current.label || `/l/${current.slug}`}</DialogTitle>
+              <DialogTitle className="truncate">{current.label || `/l/${current.slug}`}</DialogTitle>
               <DialogDescription asChild>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <code className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-xs">{current.shortUrl}</code>
-                  <CopyButton value={current.shortUrl} variant="ghost" className="h-7 w-7" successMessage="Short link copied" />
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-sky-soft py-0.5 pl-3 pr-0.5">
+                    <code className="min-w-0 truncate font-mono text-[12px] text-ink">{current.shortUrl}</code>
+                    <CopyButton value={current.shortUrl} variant="ghost" className="h-7 w-7 hover:bg-background/60" successMessage="Short link copied" />
+                  </span>
                   <SourceBadge link={current} />
                 </div>
               </DialogDescription>
@@ -107,39 +87,47 @@ export function LinkDetailDialog({ link, timezone, onOpenChange, onEdit, onDelet
               href={current.destinationUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex max-w-full items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
+              className="-mt-2 inline-flex max-w-full items-center gap-1 justify-self-start text-[13px] text-muted-foreground outline-none hover:text-ink focus-visible:underline"
               title={current.destinationUrl}
             >
-              <span className="truncate">{displayDestination(current.destinationUrl, 60)}</span>
-              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Opens {displayDestination(current.destinationUrl, 60)}</span>
+              <ArrowUpRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
             </a>
 
             <div className="grid grid-cols-3 gap-2">
-              {stats ? <Stat label={`Last ${stats.days} days`} value={stats.clicksInRange} /> : <Skeleton className="h-[58px]" />}
-              <Stat label="Last 7 days" value={current.clicks7d} />
-              <Stat label="All time" value={current.clickCount} />
+              {stats ? <MiniStat label={`${stats.days} days`} value={stats.clicksInRange} /> : <Skeleton className="h-[66px] rounded-xl" />}
+              <MiniStat label="7 days" value={current.clicks7d} />
+              <MiniStat label="All time" value={current.clickCount} />
             </div>
 
-            <div>
-              <p className="mb-2 text-[13px] font-medium">Clicks per day</p>
-              {stats ? <ClickSparkline data={stats.series} /> : <Skeleton className="h-[136px] w-full" />}
-            </div>
+            <section aria-labelledby="link-clicks-per-day">
+              <h3 id="link-clicks-per-day" className="brand-label mb-2 text-muted-foreground">
+                Clicks per day
+              </h3>
+              {stats ? <ClickSparkline data={stats.series} /> : <Skeleton className="h-[138px] w-full rounded-xl" />}
+            </section>
 
-            <div>
-              <p className="mb-2 text-[13px] font-medium">Recent clicks</p>
+            <section aria-labelledby="link-recent-clicks">
+              <h3 id="link-recent-clicks" className="brand-label mb-2 text-muted-foreground">
+                Recent clicks
+              </h3>
               {loading && !stats ? (
                 <div className="space-y-2">
                   {Array.from({ length: 4 }, (_, i) => (
-                    <Skeleton key={i} className="h-8 w-full" />
+                    <Skeleton key={i} className="h-9 w-full rounded-xl" />
                   ))}
                 </div>
               ) : stats && stats.recentClicks.length > 0 ? (
-                <ul className="max-h-56 divide-y overflow-y-auto rounded-md border scrollbar-thin">
-                  {stats.recentClicks.map((click) => (
-                    <li key={click.id} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px]">
+                <ul className="max-h-56 divide-y overflow-y-auto rounded-xl border scrollbar-thin">
+                  {stats.recentClicks.map((click, i) => (
+                    <li
+                      key={click.id}
+                      className="rise flex items-center justify-between gap-3 px-3 py-2.5 text-[13px]"
+                      style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+                    >
                       <span className="min-w-0 truncate">
                         {click.contact ? (
-                          <Link href={`/contacts/${click.contact.id}`} className="font-medium hover:underline">
+                          <Link href={`/contacts/${click.contact.id}`} className="font-semibold hover:underline">
                             {click.contact.username ? `@${click.contact.username}` : (click.contact.name ?? "Contact")}
                           </Link>
                         ) : (
@@ -147,24 +135,24 @@ export function LinkDetailDialog({ link, timezone, onOpenChange, onEdit, onDelet
                         )}
                         <span className="text-muted-foreground"> · {describeUserAgent(click.userAgent)}</span>
                       </span>
-                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{formatDateTime(click.createdAt, timezone)}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDateTime(click.createdAt, timezone)}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-4 text-[13px] text-muted-foreground">
-                  <MousePointerClick className="h-4 w-4" strokeWidth={1.75} />
+                <div className="flex items-center gap-2.5 rounded-xl bg-fog px-3 py-3.5 text-[13px] text-muted-foreground">
+                  <MousePointerClick className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
                   No one has tapped this link yet.
                 </div>
               )}
-            </div>
+            </section>
 
-            <DialogFooter className="mt-1 gap-2 sm:justify-between sm:gap-0">
-              <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => onDelete(link)}>
+            <DialogFooter className="sm:justify-between">
+              <Button type="button" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => onDelete(link)}>
                 <Trash2 />
                 Delete
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => onEdit(link)}>
+              <Button type="button" variant="outline" onClick={() => onEdit(link)}>
                 <Pencil />
                 Edit
               </Button>

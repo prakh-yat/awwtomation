@@ -121,15 +121,28 @@ export function validateAnswer(text: string, validation: AnswerValidation = "non
 
 // ───────────────────────── Zod ─────────────────────────
 
+/**
+ * Zod's `.url()` accepts any parseable URL, `javascript:` and `data:` included,
+ * so every link we may hand to a person or to Meta states the scheme it wants.
+ * `validateFlow` checks button links again before an automation can go live;
+ * this is the layer that keeps one out of the database in the first place.
+ */
+const httpUrl = z
+  .string()
+  .trim()
+  .url()
+  .max(2048)
+  .refine((u) => /^https?:\/\//i.test(u), "Links must start with http:// or https://");
+
 export const outboundButtonSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("web_url"), title: z.string().min(1).max(80), url: z.string().url().max(2048) }),
+  z.object({ type: z.literal("web_url"), title: z.string().min(1).max(80), url: httpUrl }),
   z.object({ type: z.literal("postback"), title: z.string().min(1).max(80), payload: z.string().max(1000) }),
 ]);
 
 export const outboundMessageSchema: z.ZodType<OutboundMessage> = z.object({
   text: z.string().max(4000).optional(),
   buttons: z.array(outboundButtonSchema).max(10).optional(),
-  imageUrl: z.string().url().max(2048).optional(),
+  imageUrl: httpUrl.optional(),
   quickReplies: z.array(z.object({ title: z.string().min(1).max(80), payload: z.string().max(1000) })).max(20).optional(),
 });
 
@@ -337,6 +350,7 @@ export function validateFlow(flow: FlowGraph): { ok: true } | { ok: false; error
         if (Array.from(b.title).length > MAX_BUTTON_TITLE_CHARS) errors.push(`Button ${i + 1} in "${node.id}" can be up to ${MAX_BUTTON_TITLE_CHARS} characters.`);
         if (b.type === "web_url" && !/^https?:\/\//i.test(b.url)) errors.push(`Button ${i + 1} in "${node.id}" needs a link that starts with https://`);
       });
+      if (m.imageUrl && !/^https?:\/\//i.test(m.imageUrl)) errors.push(`The image in "${node.id}" needs a link that starts with https://`);
       if ((m.quickReplies ?? []).length > MAX_QUICK_REPLIES) errors.push(`"${node.id}" can have up to ${MAX_QUICK_REPLIES} quick replies.`);
     } else if (data.type === "ask_question") {
       const text = data.prompt.text ?? "";

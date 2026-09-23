@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Awwtomation · Product revamp review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./revamp.css" />
+  </head>
+  <body>
+    <header class="review-header">
+      <a class="brand" href="#top"><span class="brand-mark">A</span>Awwtomation <em>Revamp</em></a>
+      <div class="review-actions">
+        <span class="status-dot"></span><span>54 reviewed screens</span>
+        <button id="presentation">Presentation mode</button>
+      </div>
+    </header>
+    <main id="top" class="review-layout">
+      <aside class="review-nav">
+        <p class="eyebrow">Product design review</p>
+        <h1>Run the business.<br/><i>Not the interface.</i></h1>
+        <p class="review-intro">A full visual rethink of Awwtomation’s social-commerce operating system. Every supplied state has a redesigned counterpart.</p>
+        <nav id="screen-nav" aria-label="Revamp screens"></nav>
+      </aside>
+      <section class="stage">
+        <div class="stage-toolbar">
+          <div><span id="screen-count" class="eyebrow"></span><h2 id="screen-title"></h2></div>
+          <div class="pager"><button id="previous" aria-label="Previous screen">←</button><button id="next" aria-label="Next screen">→</button></div>
+        </div>
+        <div id="screen-caption" class="screen-caption"></div>
+        <div class="app-frame" id="app-frame"></div>
+      </section>
+    </main>
+    <script src="./revamp.js"></script>
+  </body>
+</html>

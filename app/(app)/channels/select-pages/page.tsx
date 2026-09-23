@@ -7,6 +7,7 @@ import { SelectPagesForm } from "@/components/channels/select-pages-form";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { PlatformIcon } from "@/components/ui/platform-icon";
 import { checkLimit } from "@/lib/billing/usage";
 import { categorise } from "@/lib/errors/customer-messages";
 import { logger } from "@/lib/logger";
@@ -27,17 +28,17 @@ export const metadata: Metadata = { title: "Choose Facebook Pages" };
 /**
  * Step 2 of the Facebook connect flow. The OAuth callback parked the user
  * token in a 10-minute signed cookie; this page lists the Pages behind it.
- * Anything stale or belonging to another user/workspace bounces back to
- * /channels with an explanatory toast.
+ * Anything stale or belonging to another user/workspace bounces back to the
+ * dashboard with an explanatory toast.
  */
 export default async function SelectPagesPage() {
   const ctx = await requireWorkspaceContext();
-  if (!canManageChannels(ctx.role)) redirect("/channels?error=forbidden");
+  if (!canManageChannels(ctx.role)) redirect("/dashboard?error=forbidden");
 
   const store = await cookies();
   const session = parseFacebookConnectSession(store.get(FACEBOOK_CONNECT_COOKIE)?.value);
   if (!session || session.workspaceId !== ctx.workspace.id || session.userId !== ctx.user.id) {
-    redirect("/channels?error=fb_session_expired");
+    redirect("/dashboard?error=fb_session_expired");
   }
 
   let pages: SelectablePage[] = [];
@@ -54,29 +55,38 @@ export default async function SelectPagesPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader
-        backHref="/channels"
-        backLabel="Channels"
+        backHref="/dashboard?accounts=1"
+        backLabel="Accounts"
         title="Choose Facebook Pages"
       />
 
       {loadError ? (
         <EmptyState
           icon={AlertCircle}
+          tone="indigo"
           title="Facebook didn't return your Pages"
           description={loadError}
           action={
             <Button asChild>
-              <a href="/api/meta/facebook/start">Try again</a>
+              <a href="/api/meta/facebook/start">
+                <PlatformIcon platform="FACEBOOK" />
+                Try again
+              </a>
             </Button>
           }
         />
       ) : pages.length === 0 ? (
         <EmptyState
+          icon={<PlatformIcon platform="FACEBOOK" size={24} />}
+          tone="blue"
           title="No Pages found"
-          description="Your Facebook account doesn't manage any Pages, or none were granted during sign-in. Create a Page or re-run the connection and grant access to at least one."
+          description="Sign in again and choose at least one Page when Facebook asks."
           action={
             <Button asChild>
-              <a href="/api/meta/facebook/start">Sign in again</a>
+              <a href="/api/meta/facebook/start">
+                <PlatformIcon platform="FACEBOOK" />
+                Sign in again
+              </a>
             </Button>
           }
         />

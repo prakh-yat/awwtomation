@@ -11,7 +11,7 @@ export function StagePill({ name, color, title, className }: { name: string; col
   return (
     <span
       title={title}
-      className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", stageColorClasses(color).pill, className)}
+      className={cn("inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset", stageColorClasses(color).pill, className)}
     >
       <StageDot color={color} />
       <span className="truncate">{name}</span>

@@ -869,6 +869,8 @@ model AiAgent {
   id           String  @id @default(cuid())
   workspaceId  String
   providerId   String?
+  /// Model id for this agent, as the provider spells it. Null uses the provider's default model.
+  model        String?
   name         String
   /// The whole persona, in the workspace's own words.
   systemPrompt String

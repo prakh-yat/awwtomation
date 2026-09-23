@@ -6,6 +6,7 @@ import type { PlanTier } from "@prisma/client";
 import { CheckoutClient } from "@/components/billing/checkout-client";
 import { BillingUnavailable } from "@/components/billing/billing-unavailable";
 import { Button } from "@/components/ui/button";
+import { LogoMark, Wordmark } from "@/components/ui/logo";
 import { getDodoMode, isBillingConfigured, resolveProductId } from "@/lib/billing/dodo/config";
 import { type BillingIntervalId, isBillingInterval, isPlanTier, isPurchasablePlan, PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
@@ -44,9 +45,18 @@ export default async function CheckoutPage({ searchParams }: { searchParams: Sea
     return (
       <main className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
         <div className="w-full max-w-lg animate-fade-in">
-          <p className="mb-4 text-center text-lg font-semibold tracking-tight">{brand.name}</p>
+          <div className="mb-6 flex justify-center">
+            <Link
+              href="/dashboard"
+              aria-label={brand.name}
+              className="inline-flex items-center gap-0.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <LogoMark size={26} />
+              <Wordmark height={12} />
+            </Link>
+          </div>
           <BillingUnavailable />
-          <div className="mt-4 text-center">
+          <div className="mt-5 text-center">
             <Button asChild variant="outline" size="sm">
               <Link href="/settings/billing">Back to billing</Link>
             </Button>

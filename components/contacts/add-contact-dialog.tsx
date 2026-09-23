@@ -4,10 +4,10 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import type { ContactChannelSummary } from "@/lib/services/contacts";
@@ -95,13 +95,10 @@ export function AddContactDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-sm:max-h-[calc(100dvh-2rem)] max-sm:overflow-y-auto" aria-describedby={undefined}>
         <form onSubmit={submit} className="space-y-5">
           <DialogHeader>
             <DialogTitle>Add a contact</DialogTitle>
-            <DialogDescription>
-              For someone you know from outside Instagram or Facebook. Add their username and they join this record the first time they comment or message you.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -121,7 +118,7 @@ export function AddContactDialog({
                     {channels.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         <span className="flex items-center gap-2">
-                          <PlatformIcon platform={c.platform} size={13} className="text-muted-foreground" />
+                          <PlatformMark platform={c.platform} size={16} />
                           {accountLabel(c)}
                         </span>
                       </SelectItem>
@@ -134,9 +131,19 @@ export function AddContactDialog({
             <div className="space-y-1.5">
               <Label htmlFor="add-contact-username">{handleLabel}</Label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
-                <Input id="add-contact-username" value={username} onChange={(e) => setUsername(e.target.value.replace(/^@+/, ""))} maxLength={64} className="pl-7" />
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+                <Input
+                  id="add-contact-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value.replace(/^@+/, ""))}
+                  maxLength={64}
+                  className="pl-8"
+                  aria-describedby="add-contact-username-hint"
+                />
               </div>
+              <p id="add-contact-username-hint" className="text-[12px] text-muted-foreground">
+                Add it so their comments and messages land on this contact.
+              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

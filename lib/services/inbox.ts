@@ -400,6 +400,10 @@ export async function listMessages(
   opts: { before?: string; limit?: number } = {},
 ): Promise<MessagePage> {
   const limit = clamp(opts.limit ?? DEFAULT_MESSAGE_LIMIT, 1, MAX_MESSAGE_LIMIT);
+  // A conversation from another workspace would otherwise read as an empty
+  // thread; the rest of the API answers 404 for an id that isn't ours.
+  const conversation = await prisma.conversation.findFirst({ where: { id: conversationId, workspaceId }, select: { id: true } });
+  if (!conversation) throw notFound();
   const rows = await prisma.message.findMany({
     where: { conversationId, conversation: { workspaceId } },
     select: messageSelect,
@@ -541,10 +545,10 @@ export async function sendReply(
 
   if (!hasContent(message)) throw new ApiError(422, "Write a message before sending", "EMPTY_MESSAGE");
   if (message.text && utf8Bytes(message.text) > MAX_TEXT_BYTES) {
-    throw new ApiError(422, `Messages are limited to ${MAX_TEXT_BYTES} bytes by Meta`, "TEXT_TOO_LONG");
+    throw new ApiError(422, "That message is too long. Shorten it a little.", "TEXT_TOO_LONG");
   }
   if ((message.buttons?.length ?? 0) > MAX_BUTTONS) {
-    throw new ApiError(422, `Meta allows at most ${MAX_BUTTONS} buttons per message`, "TOO_MANY_BUTTONS");
+    throw new ApiError(422, `A message can have up to ${MAX_BUTTONS} buttons.`, "TOO_MANY_BUTTONS");
   }
 
   const window = windowState(conversation);
@@ -552,12 +556,12 @@ export async function sendReply(
   if (window.kind === "human_agent" && !opts.humanAgent) {
     throw new ApiError(
       409,
-      "The 24-hour window has closed. Send as a human agent to reply within 7 days of their last message.",
+      "You can reply once they message you again.",
       "WINDOW_CLOSED",
     );
   }
   if (conversation.channel.status !== ChannelStatus.ACTIVE) {
-    throw new ApiError(409, "This account is disconnected. Reconnect it on the Channels page.", "CHANNEL_INACTIVE");
+    throw new ApiError(409, "This account is disconnected. Reconnect it from the dashboard.", "CHANNEL_INACTIVE");
   }
 
   let result: SendToContactResult;
@@ -662,7 +666,7 @@ export async function syncConversationFromMeta(workspaceId: string, conversation
   if (!conversation) throw notFound();
   const { channel, contact } = conversation;
   if (channel.status !== ChannelStatus.ACTIVE) {
-    throw new ApiError(409, "This account is disconnected. Reconnect it on the Channels page.", "CHANNEL_INACTIVE");
+    throw new ApiError(409, "This account is disconnected. Reconnect it from the dashboard.", "CHANNEL_INACTIVE");
   }
 
   const token = getChannelToken(channel);
@@ -712,7 +716,7 @@ export async function syncConversationFromMeta(workspaceId: string, conversation
   } catch (err) {
     if (err instanceof MetaTokenError) {
       await markChannelTokenExpired(channel.id, err.message);
-      throw new ApiError(409, "Instagram signed this account out. Reconnect it on the Channels page.", "TOKEN_EXPIRED");
+      throw new ApiError(409, "Instagram signed this account out. Reconnect it from the dashboard.", "TOKEN_EXPIRED");
     }
     if (err instanceof MetaApiError) throw new ApiError(502, `Meta error: ${err.message}`, "META_ERROR");
     throw err;

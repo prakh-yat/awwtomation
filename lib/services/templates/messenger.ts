@@ -126,7 +126,7 @@ const collectEmails: AutomationTemplate = {
 const answerFaqs: AutomationTemplate = {
   id: "fb-answer-faqs",
   name: "Answer FAQs in Messenger",
-  description: "Handle the questions that come in every day without anyone typing a reply.",
+  description: "Answer the questions that come in every day.",
   platform: "MESSENGER",
   goal: "Engage your audience",
   triggerType: "DM",
@@ -297,7 +297,7 @@ const productLineup: AutomationTemplate = {
 const eventRsvp: AutomationTemplate = {
   id: "fb-event-rsvp",
   name: "Turn comments into RSVPs",
-  description: "Comment to join becomes you are registered, without a form.",
+  description: "Register people for an event when they comment. No form needed.",
   platform: "MESSENGER",
   goal: "Capture leads",
   triggerType: "COMMENT",

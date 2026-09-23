@@ -25,16 +25,18 @@ export function relativeAgo(iso: string | null, now = Date.now()): string {
   return /^\d+[mhd]$/.test(short) ? `${short} ago` : short;
 }
 
-/** "23h left", "45m left", "6d left": what remains of a messaging window. */
-export function timeLeft(expiresAtIso: string | null, now = Date.now()): string {
-  if (!expiresAtIso) return "";
-  const ms = new Date(expiresAtIso).getTime() - now;
-  if (ms <= 0) return "expired";
-  const minutes = Math.ceil(ms / 60_000);
-  if (minutes < 60) return `${minutes}m left`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h left`;
-  return `${Math.floor(hours / 24)}d left`;
+/**
+ * When something later today, tomorrow or this week happens: "4:12 pm",
+ * "tomorrow 4:12 pm", "Fri 4:12 pm", then "Mar 11". Used for the reply window.
+ */
+export function untilLabel(iso: string, now = Date.now()): string {
+  const date = new Date(iso);
+  const days = differenceInCalendarDays(date, new Date(now));
+  const time = format(date, "h:mm aaa");
+  if (days <= 0) return time;
+  if (days === 1) return `tomorrow ${time}`;
+  if (days < 7) return `${format(date, "EEE")} ${time}`;
+  return format(date, "MMM d");
 }
 
 export function dayLabel(iso: string): string {
@@ -49,12 +51,27 @@ export function sameDay(aIso: string, bIso: string): boolean {
   return isSameDay(new Date(aIso), new Date(bIso));
 }
 
+/** "4:12 pm" */
 export function formatTime(iso: string): string {
-  return format(new Date(iso), "HH:mm");
+  return format(new Date(iso), "h:mm aaa");
 }
 
+/** "Mar 4, 2025, 4:12 pm" */
 export function formatDateTime(iso: string): string {
-  return format(new Date(iso), "MMM d, yyyy, HH:mm");
+  return format(new Date(iso), "MMM d, yyyy, h:mm aaa");
+}
+
+/** Stored previews use a bracketed placeholder when a message has no text. */
+const PREVIEW_PLACEHOLDERS = new Map<string, string>([
+  ["[image]", "Photo"],
+  ["[buttons]", "Link buttons"],
+  ["[story reply]", "Replied to your story"],
+  ["[attachment]", "Attachment"],
+]);
+
+/** A stored conversation preview as it should read in a list. */
+export function previewText(preview: string): string {
+  return PREVIEW_PLACEHOLDERS.get(preview) ?? preview;
 }
 
 /** Real name, else @username. Page-scoped ids mean nothing to a person, so they are never shown. */

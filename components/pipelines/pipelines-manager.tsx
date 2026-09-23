@@ -3,20 +3,23 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, GripVertical, Plus, SquareKanban, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, GripVertical, Plus, SquareKanban, Trash2 } from "lucide-react";
 
 import { errorMessage, pipelinesApi } from "@/components/contacts/api";
-import { StageDot } from "@/components/pipelines/stage-badge";
+import { riseStyle } from "@/components/contacts/rise";
+import { StageDot, StagePill } from "@/components/pipelines/stage-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
-import { colorForIndex, isStageColor, STAGE_COLOR_LABELS, STAGE_COLORS, type StageColor, stageColorClasses } from "@/lib/pipelines/colors";
+import { colorForIndex, DEFAULT_STAGES, isStageColor, STAGE_COLOR_LABELS, STAGE_COLORS, type StageColor, stageColorClasses } from "@/lib/pipelines/colors";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -53,6 +56,21 @@ function draftProblem(d: Draft): string | null {
   return null;
 }
 
+/** Each stage's share of the pipeline, in its colour. */
+function StageMix({ pipeline, className }: { pipeline: PipelineSummary; className?: string }) {
+  return (
+    <span aria-hidden className={cn("flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full", className)}>
+      {pipeline.stages.map((s) => (
+        <span
+          key={s.id}
+          className={cn("h-full rounded-full", stageColorClasses(s.color).dot, pipeline.total === 0 && "opacity-30")}
+          style={{ flexGrow: pipeline.total > 0 ? Math.max(s.count, pipeline.total * 0.02) : 1 }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function ColorPicker({ value, onChange, label, disabled }: { value: StageColor; onChange: (c: StageColor) => void; label: string; disabled?: boolean }) {
   const [open, setOpen] = React.useState(false);
   return (
@@ -62,13 +80,14 @@ function ColorPicker({ value, onChange, label, disabled }: { value: StageColor; 
           type="button"
           disabled={disabled}
           aria-label={`Colour for ${label}: ${STAGE_COLOR_LABELS[value]}`}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-background outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+          className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-lg outline-none transition-colors hover:bg-fog focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none data-[state=open]:bg-fog"
         >
-          <span className={cn("h-3.5 w-3.5 rounded-full", stageColorClasses(value).dot)} />
+          <span className={cn("h-5 w-5 rounded-md transition-transform duration-200 ease-soft group-hover:scale-110 group-data-[state=open]:scale-110", stageColorClasses(value).dot)} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-2">
-        <div role="radiogroup" aria-label="Stage colour" className="grid grid-cols-5 gap-1">
+      <PopoverContent align="start" className="w-auto p-3">
+        <p className="brand-label mb-2.5 text-muted-foreground">Colour</p>
+        <div role="radiogroup" aria-label="Stage colour" className="grid grid-cols-5 gap-2">
           {STAGE_COLORS.map((c) => (
             <button
               key={c}
@@ -82,11 +101,12 @@ function ColorPicker({ value, onChange, label, disabled }: { value: StageColor; 
                 setOpen(false);
               }}
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-md outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-                c === value && "bg-accent ring-1 ring-foreground/20",
+                "flex h-8 w-8 items-center justify-center rounded-full text-white outline-none transition-transform duration-150 ease-soft hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                stageColorClasses(c).dot,
+                c === value && "ring-2 ring-ink ring-offset-2 ring-offset-popover",
               )}
             >
-              <span className={cn("h-4 w-4 rounded-full", stageColorClasses(c).dot)} />
+              {c === value ? <Check className="h-4 w-4" strokeWidth={3} aria-hidden /> : null}
             </button>
           ))}
         </div>
@@ -190,19 +210,22 @@ function PipelineEditor({
   }
 
   return (
-    <Card className="overflow-hidden">
+    <section aria-label={pipeline.name} className="overflow-hidden rounded-2xl border bg-card">
       <div className="flex flex-wrap items-end gap-3 border-b p-5">
-        <div className="min-w-[14rem] flex-1 space-y-1.5">
-          <Label htmlFor={`pipeline-name-${pipeline.id}`}>Pipeline name</Label>
+        <div className="min-w-[12rem] flex-1 space-y-2">
+          <label htmlFor={`pipeline-name-${pipeline.id}`} className="brand-label block text-muted-foreground">
+            Pipeline name
+          </label>
           <Input
             id={`pipeline-name-${pipeline.id}`}
             value={draft.name}
             maxLength={NAME_MAX}
             onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             disabled={!canManage}
+            className="text-[15px] font-semibold"
           />
         </div>
-        <Button asChild variant="outline" size="sm" className="h-9">
+        <Button asChild variant="outline" className="h-10">
           <Link href={`/contacts?pipelineId=${encodeURIComponent(pipeline.id)}&view=board`}>
             <SquareKanban />
             Open board
@@ -212,11 +235,8 @@ function PipelineEditor({
 
       <div className="p-5">
         <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium">Stages</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">In the order contacts move through them. Drag to reorder.</p>
-          </div>
-          <span className="text-xs tabular-nums text-muted-foreground">
+          <h3 className="brand-label text-muted-foreground">Stages</h3>
+          <span className="brand-label tabular-nums text-muted-foreground">
             {draft.stages.length} of {MAX_STAGES}
           </span>
         </div>
@@ -247,13 +267,14 @@ function PipelineEditor({
                 setOverIndex(null);
               }}
               className={cn(
-                "group flex items-center gap-2 rounded-lg border bg-background p-1.5 pr-2 transition-colors",
-                dragIndex === index && "opacity-50",
-                overIndex === index && dragIndex !== index && "border-foreground/40 bg-muted/40",
+                "group relative flex items-center gap-1.5 rounded-xl border bg-background p-1.5 pr-2 transition-[border-color,background-color,opacity] duration-150",
+                canManage && "hover:border-ink/20",
+                dragIndex === index && "opacity-40",
+                overIndex === index && dragIndex !== index && "border-dashed border-ink/50 bg-fog",
               )}
             >
               {canManage ? (
-                <span className="flex h-8 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground active:cursor-grabbing" aria-hidden>
+                <span className="hidden h-9 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/60 transition-colors group-hover:text-ink active:cursor-grabbing sm:flex" aria-hidden>
                   <GripVertical className="h-4 w-4" />
                 </span>
               ) : null}
@@ -266,21 +287,29 @@ function PipelineEditor({
                 aria-label={`Stage ${index + 1} name`}
                 onChange={(e) => updateStage(stage.key, { name: e.target.value })}
                 disabled={!canManage}
-                className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-[13px] shadow-none hover:border-input focus-visible:border-foreground"
+                className="h-9 min-w-0 flex-1 rounded-lg border-transparent bg-transparent px-2 text-[13px] font-semibold hover:border-input focus-visible:border-ink"
               />
-              <span className="hidden w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
-                {stage.id ? `${formatNumber(stage.count)} ${stage.count === 1 ? "contact" : "contacts"}` : "New"}
+              <span className="hidden w-24 shrink-0 justify-end text-[12px] tabular-nums text-muted-foreground sm:flex">
+                {stage.id ? `${formatNumber(stage.count)} ${stage.count === 1 ? "contact" : "contacts"}` : <Badge variant="green">New</Badge>}
               </span>
               {canManage ? (
                 <div className="flex shrink-0 items-center">
-                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => moveStage(index, index - 1)} disabled={index === 0} aria-label={`Move ${stage.name || "stage"} up`}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7 text-muted-foreground hover:text-ink"
+                    onClick={() => moveStage(index, index - 1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${stage.name || "stage"} up`}
+                  >
                     <ArrowUp />
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground"
+                    size="icon-sm"
+                    className="h-7 w-7 text-muted-foreground hover:text-ink"
                     onClick={() => moveStage(index, index + 1)}
                     disabled={index === draft.stages.length - 1}
                     aria-label={`Move ${stage.name || "stage"} down`}
@@ -290,8 +319,8 @@ function PipelineEditor({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    size="icon-sm"
+                    className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => setDraft((d) => ({ ...d, stages: d.stages.filter((s) => s.key !== stage.key) }))}
                     disabled={draft.stages.length <= MIN_STAGES}
                     aria-label={`Delete ${stage.name || "stage"}`}
@@ -305,7 +334,7 @@ function PipelineEditor({
         </ol>
 
         {canManage ? (
-          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={addStage} disabled={draft.stages.length >= MAX_STAGES}>
+          <Button type="button" variant="outline" size="sm" className="mt-3 border-dashed" onClick={addStage} disabled={draft.stages.length >= MAX_STAGES}>
             <Plus />
             Add stage
           </Button>
@@ -313,10 +342,10 @@ function PipelineEditor({
       </div>
 
       {canManage ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/30 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-fog/50 px-5 py-3">
           <ConfirmDialog
             trigger={
-              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+              <Button type="button" variant="ghost" size="sm" className="-ml-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                 <Trash2 />
                 Delete pipeline
               </Button>
@@ -324,15 +353,15 @@ function PipelineEditor({
             title={`Delete ${pipeline.name}?`}
             description={
               pipeline.total > 0
-                ? `The ${formatNumber(pipeline.total)} ${pipeline.total === 1 ? "contact" : "contacts"} in it stay in your contacts. Only their place in this pipeline is removed. Automation steps that use it stop working until you pick another pipeline.`
+                ? `The ${formatNumber(pipeline.total)} ${pipeline.total === 1 ? "contact" : "contacts"} in it stay in your contacts. Automation steps that use it stop working until you pick another pipeline.`
                 : "Automation steps that use it stop working until you pick another pipeline."
             }
             confirmLabel="Delete pipeline"
             destructive
             onConfirm={remove}
           />
-          <div className="flex items-center gap-2">
-            {problem && dirty ? <span className="text-xs text-destructive">{problem}</span> : null}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {problem && dirty ? <span className="text-[12px] font-medium text-destructive">{problem}</span> : null}
             {dirty ? (
               <Button type="button" variant="outline" size="sm" onClick={() => setDraft(saved)} disabled={saving}>
                 Discard
@@ -348,9 +377,11 @@ function PipelineEditor({
       <Dialog open={moveOpen} onOpenChange={(open) => !saving && setMoveOpen(open)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Move {formatNumber(removedCount)} {removedCount === 1 ? "contact" : "contacts"}</DialogTitle>
+            <DialogTitle>
+              Move {formatNumber(removedCount)} {removedCount === 1 ? "contact" : "contacts"}
+            </DialogTitle>
             <DialogDescription>
-              {removedWithContacts.map((s) => s.name).join(", ")} {removedWithContacts.length === 1 ? "still has" : "still have"} contacts. Pick the stage they move to.
+              {removedWithContacts.map((s) => s.name).join(", ")} {removedWithContacts.length === 1 ? "still has" : "still have"} contacts.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
@@ -381,13 +412,13 @@ function PipelineEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </section>
   );
 }
 
 /**
- * Pipelines for the workspace: pick one on the left, edit its name and stages
- * on the right. Members can look; admins and owners can change them.
+ * Pipelines for the workspace: pick one, then edit its name and stages
+ * beside it. Members can look; admins and owners can change them.
  */
 export function PipelinesManager({ initialPipelines, canManage }: { initialPipelines: PipelineSummary[]; canManage: boolean }) {
   const router = useRouter();
@@ -421,24 +452,37 @@ export function PipelinesManager({ initialPipelines, canManage }: { initialPipel
 
   return (
     <>
-      {pipelines.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed px-6 py-14 text-center">
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border bg-background shadow-card">
-            <SquareKanban className="h-5 w-5" strokeWidth={1.75} />
-          </div>
-          <p className="text-sm font-medium">No pipelines yet</p>
-          <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">A pipeline is the set of stages a contact moves through, like New, Lead and Customer.</p>
-          {canManage ? (
-            <Button className="mt-5" onClick={() => setCreateOpen(true)}>
+      <PageHeader
+        title="Contacts"
+        actions={
+          canManage && pipelines.length > 0 ? (
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={pipelines.length >= MAX_PIPELINES}>
               <Plus />
               New pipeline
             </Button>
-          ) : null}
-        </div>
+          ) : null
+        }
+      />
+
+      {pipelines.length === 0 ? (
+        <EmptyState
+          tone="green"
+          icon={SquareKanban}
+          title="No pipelines yet"
+          description={canManage ? undefined : "An admin can create one."}
+          action={
+            canManage ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus />
+                New pipeline
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <nav aria-label="Pipelines" className="space-y-1">
-            {pipelines.map((p) => {
+        <div className="grid items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+          <nav aria-label="Pipelines" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-none lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+            {pipelines.map((p, i) => {
               const active = selected?.id === p.id;
               return (
                 <button
@@ -446,30 +490,23 @@ export function PipelinesManager({ initialPipelines, canManage }: { initialPipel
                   type="button"
                   onClick={() => setSelectedId(p.id)}
                   aria-current={active ? "true" : undefined}
+                  style={riseStyle(i)}
                   className={cn(
-                    "flex w-full flex-col gap-2 rounded-lg border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                    active ? "border-foreground bg-card shadow-card" : "border-transparent hover:bg-accent/60",
+                    "rise flex min-w-[13rem] shrink-0 flex-col gap-3 rounded-2xl border p-4 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:min-w-0",
+                    active ? "border-ink bg-ink text-white" : "bg-card hover:border-ink/30",
                   )}
                 >
                   <span className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[13px] font-medium">{p.name}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatNumber(p.total)}</span>
+                    <span className="truncate text-[14px] font-semibold">{p.name}</span>
+                    <span className={cn("shrink-0 text-[12px] font-medium tabular-nums", active ? "text-white/60" : "text-muted-foreground")}>{formatNumber(p.total)}</span>
                   </span>
-                  {/* Stage mix: each stage's share of the pipeline, in its colour. */}
-                  <span aria-hidden className="flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full">
-                    {p.stages.map((s) => (
-                      <span key={s.id} className={cn("h-full rounded-full", stageColorClasses(s.color).dot, p.total === 0 && "opacity-30")} style={{ flexGrow: p.total > 0 ? Math.max(s.count, p.total * 0.02) : 1 }} />
-                    ))}
+                  <StageMix pipeline={p} />
+                  <span className={cn("brand-label", active ? "text-white/60" : "text-muted-foreground")}>
+                    {p.stages.length} {p.stages.length === 1 ? "stage" : "stages"}
                   </span>
                 </button>
               );
             })}
-            {canManage ? (
-              <Button variant="ghost" size="sm" className="mt-1 w-full justify-start text-muted-foreground" onClick={() => setCreateOpen(true)} disabled={pipelines.length >= MAX_PIPELINES}>
-                <Plus />
-                New pipeline
-              </Button>
-            ) : null}
           </nav>
 
           {selected ? (
@@ -492,15 +529,22 @@ export function PipelinesManager({ initialPipelines, canManage }: { initialPipel
       )}
 
       <Dialog open={createOpen} onOpenChange={(open) => !creating && setCreateOpen(open)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" aria-describedby={undefined}>
           <form onSubmit={create} className="space-y-5">
             <DialogHeader>
               <DialogTitle>New pipeline</DialogTitle>
-              <DialogDescription>It starts with New, Engaged, Lead, Customer and Lost. Rename, recolour or reorder them after.</DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
               <Label htmlFor="new-pipeline-name">Name</Label>
               <Input id="new-pipeline-name" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={NAME_MAX} placeholder="For example Wholesale" autoFocus required />
+            </div>
+            <div className="space-y-2">
+              <p className="brand-label text-muted-foreground">Starts with</p>
+              <div className="flex flex-wrap gap-1.5">
+                {DEFAULT_STAGES.map((s) => (
+                  <StagePill key={s.name} name={s.name} color={s.color} />
+                ))}
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>

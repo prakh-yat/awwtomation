@@ -6,13 +6,14 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/sonner";
 import type { ContactPipelineRef, PipelineStageSummary, PipelineSummary } from "@/lib/services/pipelines";
+import { cn } from "@/lib/utils";
 
 import { contactsApi, errorMessage } from "./api";
-import { PipelineStageMenuItems, StageSelectCell } from "./pipeline-controls";
+import { Panel } from "./panel";
+import { PipelineStageMenuItems, StageSelectCell, StageTrack } from "./pipeline-controls";
 
 /** Where the contact sits in each pipeline, with moves, removal and adding to another pipeline. */
 export function ContactPipelinesCard({
@@ -69,13 +70,13 @@ export function ContactPipelinesCard({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle>Pipelines</CardTitle>
-        {available.length > 0 ? (
+    <Panel
+      label="Pipelines"
+      action={
+        available.length > 0 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="-mr-2 h-7 text-xs">
+              <Button variant="ghost" size="sm" className="-mr-2">
                 <Plus />
                 Add to pipeline
               </Button>
@@ -84,52 +85,57 @@ export function ContactPipelinesCard({
               <PipelineStageMenuItems pipelines={available} onSetStage={(p, s) => void setStage(p, s)} />
             </DropdownMenuContent>
           </DropdownMenu>
-        ) : null}
-      </CardHeader>
-      <CardContent>
-        {pipelines.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">
-            No pipelines yet.{" "}
-            {canManagePipelines ? (
-              <Link href="/contacts/pipelines" className="text-foreground underline underline-offset-4">
-                Create one
-              </Link>
-            ) : (
-              "An admin can create one."
-            )}
-          </p>
-        ) : inPipelines.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">Not in a pipeline yet.</p>
-        ) : (
-          <ul className="divide-y">
-            {inPipelines.map((p) => (
-              <li key={p.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
-                <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
-                <StageSelectCell
-                  pipeline={p}
-                  entry={entries.find((e) => e.pipelineId === p.id)}
-                  contactName={contactName}
-                  onChange={(stageId) => {
-                    const stage = p.stages.find((s) => s.id === stageId);
-                    if (stage) void setStage(p, stage);
-                  }}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground"
-                  onClick={() => void remove(p)}
-                  disabled={busy === p.id}
-                  aria-label={`Remove from ${p.name}`}
-                  title={`Remove from ${p.name}`}
-                >
-                  <X />
-                </Button>
+        ) : null
+      }
+    >
+      {pipelines.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">
+          No pipelines yet.{" "}
+          {canManagePipelines ? (
+            <Link href="/contacts/pipelines" className="font-semibold text-ink underline underline-offset-4">
+              Create one
+            </Link>
+          ) : (
+            "An admin can create one."
+          )}
+        </p>
+      ) : inPipelines.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">Not in a pipeline yet</p>
+      ) : (
+        <ul className="space-y-2">
+          {inPipelines.map((p) => {
+            const entry = entries.find((e) => e.pipelineId === p.id);
+            return (
+              <li key={p.id} className={cn("rounded-xl border p-3 transition-opacity duration-200", busy === p.id && "opacity-60")}>
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{p.name}</span>
+                  <StageSelectCell
+                    pipeline={p}
+                    entry={entry}
+                    contactName={contactName}
+                    onChange={(stageId) => {
+                      const stage = p.stages.find((s) => s.id === stageId);
+                      if (stage) void setStage(p, stage);
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="-mr-1 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => void remove(p)}
+                    disabled={busy === p.id}
+                    aria-label={`Remove from ${p.name}`}
+                    title={`Remove from ${p.name}`}
+                  >
+                    <X />
+                  </Button>
+                </div>
+                <StageTrack stages={p.stages} current={entry?.stageId} className="mt-3" />
               </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
   );
 }

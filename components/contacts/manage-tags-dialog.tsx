@@ -1,17 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { Check, Pencil, Tags, Trash2, X } from "lucide-react";
+import { Check, Pencil, Search, Tags, Trash2, X } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/sonner";
-import { Spinner } from "@/components/ui/spinner";
 import type { ContactTagCount } from "@/lib/services/contacts";
 
 import { contactsApi, errorMessage } from "./api";
+import { riseStyle } from "./rise";
 
 export interface ManageTagsDialogProps {
   /** Initial list (server-rendered); refetched every time the dialog opens. */
@@ -23,7 +25,7 @@ export interface ManageTagsDialogProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed: (to: string) => Promise<void>; onDeleted: () => Promise<void> }) {
+function TagRow({ row, index, onRenamed, onDeleted }: { row: ContactTagCount; index: number; onRenamed: (to: string) => Promise<void>; onDeleted: () => Promise<void> }) {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(row.tag);
   const [saving, setSaving] = React.useState(false);
@@ -45,7 +47,7 @@ function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed
   }
 
   return (
-    <li className="flex items-center gap-2 px-3 py-2">
+    <li className="rise flex min-h-[52px] items-center gap-2 px-3 py-2" style={riseStyle(index)}>
       {editing ? (
         <>
           <Input
@@ -60,17 +62,16 @@ function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed
             }}
             maxLength={64}
             autoFocus
-            className="h-8 flex-1 text-[13px]"
+            className="h-9 flex-1 text-[13px]"
             aria-label={`Rename ${row.tag}`}
           />
-          <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={save} loading={saving} aria-label="Save">
+          <Button type="button" size="icon-sm" onClick={save} loading={saving} aria-label="Save">
             {saving ? null : <Check />}
           </Button>
           <Button
             type="button"
-            size="icon"
+            size="icon-sm"
             variant="ghost"
-            className="h-8 w-8"
             disabled={saving}
             onClick={() => {
               setEditing(false);
@@ -83,21 +84,25 @@ function TagRow({ row, onRenamed, onDeleted }: { row: ContactTagCount; onRenamed
         </>
       ) : (
         <>
-          <span className="flex-1 truncate text-[13px] font-medium">{row.tag}</span>
-          <span className="w-16 text-right text-[12px] tabular-nums text-muted-foreground">
+          <span className="min-w-0 flex-1">
+            <Badge variant="green" className="max-w-full text-[12px]">
+              <span className="min-w-0 truncate">{row.tag}</span>
+            </Badge>
+          </span>
+          <span className="shrink-0 text-right text-[12px] tabular-nums text-muted-foreground">
             {row.count} {row.count === 1 ? "contact" : "contacts"}
           </span>
-          <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(true)} aria-label={`Rename ${row.tag}`}>
+          <Button type="button" size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-ink" onClick={() => setEditing(true)} aria-label={`Rename ${row.tag}`}>
             <Pencil />
           </Button>
           <ConfirmDialog
             trigger={
-              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label={`Delete ${row.tag}`}>
+              <Button type="button" size="icon-sm" variant="ghost" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Delete ${row.tag}`}>
                 <Trash2 />
               </Button>
             }
             title={`Delete “${row.tag}”?`}
-            description={`The tag is removed from ${row.count} contact${row.count === 1 ? "" : "s"}. Automations that add it will recreate it the next time they run.`}
+            description={`It comes off ${row.count} contact${row.count === 1 ? "" : "s"}. Automations that add it will add it again.`}
             confirmLabel="Delete tag"
             destructive
             onConfirm={onDeleted}
@@ -180,22 +185,28 @@ function ManageTagsDialog({ tags: initialTags, onChanged, open: controlledOpen, 
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Manage tags</DialogTitle>
-          <DialogDescription>Rename or delete tags across every contact in this workspace.</DialogDescription>
+          <DialogDescription>Changes apply to every contact.</DialogDescription>
         </DialogHeader>
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a tag…" className="h-8 text-[13px]" />
-        <div className="relative max-h-80 overflow-auto rounded-md border">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a tag…" aria-label="Find a tag" className="h-9 rounded-full pl-9 text-[13px]" />
+        </div>
+        <div className="relative max-h-80 overflow-auto rounded-2xl border">
           {loading && tags.length === 0 ? (
-            <div className="flex items-center justify-center py-10">
-              <Spinner size="sm" />
-            </div>
+            <ul className="divide-y" aria-busy="true">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <li key={i} className="flex items-center gap-3 px-3 py-3.5">
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                  <Skeleton className="ml-auto h-3 w-16" />
+                </li>
+              ))}
+            </ul>
           ) : visible.length === 0 ? (
-            <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">
-              {tags.length === 0 ? "No tags yet. Add them on a contact, or let an automation add them." : "No matching tags."}
-            </p>
+            <p className="px-3 py-10 text-center text-[13px] text-muted-foreground">{tags.length === 0 ? "No tags yet" : "No matching tags"}</p>
           ) : (
             <ul className="divide-y">
-              {visible.map((row) => (
-                <TagRow key={row.tag} row={row} onRenamed={(to) => rename(row.tag, to)} onDeleted={() => remove(row.tag)} />
+              {visible.map((row, i) => (
+                <TagRow key={row.tag} row={row} index={i} onRenamed={(to) => rename(row.tag, to)} onDeleted={() => remove(row.tag)} />
               ))}
             </ul>
           )}

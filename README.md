@@ -13,14 +13,14 @@ Someone comments `LINK` on a reel → they get a DM with your link a second late
 | **Inbox** | Unified Instagram + Messenger live chat. 24-hour window indicator, human-agent 7-day mode, assignment, automated-message badges, link buttons. |
 | **Contacts (CRM)** | Everyone who interacted, plus people added by hand or CSV import. Paginated list. **Pipelines**: as many as you need per workspace, each with its own coloured stages; view all contacts or one pipeline (stage tabs, list or drag-and-drop board). Owners, notes, tags, custom fields, follower status, opt-out, activity timeline, bulk stage/owner/tag changes, CSV import (into a pipeline) and export. **Segments**: saved filters (account, tags all/any, pipeline and stage, owner, source, followers, last activity, opt-out) that broadcasts can target. |
 | **Broadcasts** | Send to a tagged audience: only contacts inside Meta's 24h window are eligible, and the UI shows the live count. Scheduling. |
-| **Channels** | Connect Instagram professional accounts (Instagram Login) and Facebook Pages (Facebook Login). Token health, webhook status, post cache. *Disconnect* keeps history; **Delete channel & data** (owner only) purges the channel and everything under it: the same cascade Meta's data-deletion callback runs. |
+| **Accounts** | Connect Instagram professional accounts (Instagram Login) and Facebook Pages (Facebook Login) from the dashboard. Token health, webhook status, post cache. *Disconnect* keeps history; **Delete account and data** (owner only) purges the account and everything under it: the same cascade Meta's data-deletion callback runs. |
 | **Tracked links** | `/l/{slug}` redirects with click attribution to contact + automation. |
 | **Logs** | Every send, skip and failure with a plain-English reason (the raw Meta response stays in the database and server logs). |
 | **Organizations, workspaces & team** | An organization is the billable account: it holds the plan, the team (Owner / Admin / Member) and any number of workspaces (brands or clients). Switch or create organizations from the account menu, switch workspaces from the sidebar. Invite links. |
 | **Plans & usage** | FREE / STARTER / PRO / AGENCY with DM, channel, automation and seat caps enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation): see [docs/BILLING.md](docs/BILLING.md). |
 | **Marketing site** | Landing, pricing, privacy, terms, data-deletion (required for Meta App Review). |
 
-Branding is pure black & white; the product name lives in `lib/brand.ts`.
+Branding follows the marketing site: ink on paper with flat colour blocks (`docs/DESIGN.md`); the product name lives in `lib/brand.ts`.
 
 ## Stack
 

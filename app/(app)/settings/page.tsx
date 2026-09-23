@@ -31,8 +31,8 @@ export default async function GeneralSettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" />
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div className="space-y-10">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <GeneralForm
             key={`${workspace.name}:${workspace.timezone}`}
             workspace={{ name: workspace.name, timezone: workspace.timezone }}

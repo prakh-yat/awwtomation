@@ -1,9 +1,9 @@
-import { Spinner } from "@/components/ui/spinner";
+import { BrandLoader } from "@/components/layout/brand-loader";
 
 export default function Loading() {
   return (
-    <div className="flex min-h-[60vh] w-full items-center justify-center">
-      <Spinner />
+    <div className="flex min-h-dvh w-full items-center justify-center">
+      <BrandLoader />
     </div>
   );
 }

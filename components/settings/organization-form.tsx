@@ -3,16 +3,16 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { PlanTier } from "@prisma/client";
-import { Lock } from "lucide-react";
 
 import { planLabel } from "@/components/app-shell/types";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlanSwatch } from "@/components/billing/plan-badge";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
 
 import { apiFetch, errorMessage } from "./client-api";
+import { SettingsCardBody, SettingsCardFooter, SettingsCardHeader } from "./settings-card";
 
 export interface OrganizationFormProps {
   organization: { id: string; name: string; plan: PlanTier };
@@ -47,14 +47,16 @@ export function OrganizationForm({ organization, workspaceCount, memberCount, ca
     }
   }
 
+  const facts = [
+    { label: "Workspaces", value: workspaceCount },
+    { label: "Team", value: memberCount },
+  ];
+
   return (
-    <Card>
-      <form onSubmit={handleSubmit} noValidate className="flex h-full flex-col">
-        <CardHeader>
-          <CardTitle>Organization</CardTitle>
-          <CardDescription>The account that holds the plan, the team and every workspace. Invoices use this name.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 space-y-5">
+    <Card className="rise flex flex-col rounded-3xl" style={{ "--i": 1 } as React.CSSProperties}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-1 flex-col">
+        <SettingsCardHeader label="Organization" />
+        <SettingsCardBody className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="organization-name">Name</Label>
             <Input
@@ -73,36 +75,24 @@ export function OrganizationForm({ organization, workspaceCount, memberCount, ca
               </p>
             ) : null}
           </div>
-          <dl className="grid grid-cols-3 gap-4 rounded-lg border bg-muted/30 px-4 py-3 text-[13px]">
-            <div>
-              <dt className="text-muted-foreground">Plan</dt>
-              <dd className="mt-0.5 font-medium">{planLabel(organization.plan)}</dd>
+          {/* Cells size to their content, so "Workspaces" never clips on a phone. */}
+          <dl className="flex divide-x rounded-2xl bg-fog">
+            <div className="min-w-0 flex-auto px-3 py-3 sm:px-4">
+              <dt className="brand-label text-muted-foreground">Plan</dt>
+              <dd className="font-display mt-1.5 flex items-center gap-2 text-[20px] leading-none">
+                <PlanSwatch plan={organization.plan} className="h-2.5 w-2.5 rounded-[3px]" />
+                <span className="truncate">{planLabel(organization.plan)}</span>
+              </dd>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Workspaces</dt>
-              <dd className="mt-0.5 font-medium tabular-nums">{workspaceCount}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Team</dt>
-              <dd className="mt-0.5 font-medium tabular-nums">{memberCount}</dd>
-            </div>
+            {facts.map((fact) => (
+              <div key={fact.label} className="min-w-0 flex-auto px-3 py-3 sm:px-4">
+                <dt className="brand-label truncate text-muted-foreground">{fact.label}</dt>
+                <dd className="font-display mt-1.5 text-[20px] leading-none tabular-nums">{fact.value}</dd>
+              </div>
+            ))}
           </dl>
-        </CardContent>
-        <CardFooter className="justify-between gap-3 border-t pt-4">
-          {canEdit ? (
-            <p className="text-xs text-muted-foreground">{dirty ? "You have unsaved changes." : "Shown in the account menu and on invitations."}</p>
-          ) : (
-            <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" aria-hidden />
-              Only admins and owners can rename the organization.
-            </p>
-          )}
-          {canEdit ? (
-            <Button type="submit" size="sm" loading={pending} disabled={!dirty}>
-              Save changes
-            </Button>
-          ) : null}
-        </CardFooter>
+        </SettingsCardBody>
+        <SettingsCardFooter canEdit={canEdit} dirty={dirty} pending={pending} lockedLabel="Only admins and owners can rename it." />
       </form>
     </Card>
   );

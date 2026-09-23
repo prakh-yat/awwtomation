@@ -70,11 +70,6 @@ export type Question = {
   kind: QuestionKind;
   /** The question itself, above the options. */
   title: string;
-  /** One line under the title. Most questions do not need one. */
-  subtitle?: string;
-  /** Heading on the left panel. Consecutive questions often share it. */
-  heroTitle: string;
-  heroBody?: string;
   options: QuestionOption[];
 };
 
@@ -86,10 +81,7 @@ const accountFor: Question = {
   id: "account_for",
   stage: "profile",
   kind: "single",
-  title: "First things first, who is this account for?",
-  subtitle: "Just so you land on the starting point that suits you best",
-  heroTitle: "Let's make Awwtomation all yours",
-  heroBody: "Three quick questions before you connect an account.",
+  title: "Who is this account for?",
   options: [
     { value: "employer", label: "For my employer", icon: Briefcase },
     { value: "myself", label: "For myself", icon: Lightbulb },
@@ -102,8 +94,6 @@ const accountAbout: Question = {
   stage: "profile",
   kind: "single",
   title: "Who or what is this account about?",
-  heroTitle: "Let's find the right strategy for you",
-  heroBody: "Tell us a little about the brand, so we can match the right approach.",
   options: [
     { value: "person", label: "A person", icon: User },
     { value: "business", label: "A business", icon: CircleDollarSign },
@@ -115,9 +105,7 @@ const describesYou: Question = {
   id: "describes_you",
   stage: "profile",
   kind: "single",
-  title: "What best describes you or the person you are setting this account up for?",
-  heroTitle: "Let's find the right strategy for you",
-  heroBody: "Tell us a little about the brand, so we can match the right approach.",
+  title: "What best describes the account owner?",
   options: [
     { value: "coach", label: "Coach, trainer or educator", icon: BookOpen },
     { value: "public_figure", label: "Public figure or celebrity", icon: Star },
@@ -134,10 +122,7 @@ const monetization: Question = {
   id: "monetization",
   stage: "usage",
   kind: "multi",
-  title: "How do you typically make money from this account?",
-  subtitle: "So we can suggest templates that feel made for you",
-  heroTitle: "Let's make Awwtomation all yours",
-  heroBody: "Your answers decide which templates we put in front of you first.",
+  title: "How does this account make money?",
   options: [
     { value: "physical", label: "Physical products or services", icon: Package },
     { value: "affiliate", label: "Affiliate marketing", icon: Link2 },
@@ -153,9 +138,7 @@ const platforms: Question = {
   id: "platforms",
   stage: "usage",
   kind: "multi",
-  title: "Which platforms do you use for audience building?",
-  heroTitle: "Final questions to unlock the best setup",
-  heroBody: "We use these to suggest the most relevant automations and skip the rest.",
+  title: "Where do you build your audience?",
   options: [
     { value: "linkedin", label: "LinkedIn", icon: Linkedin },
     { value: "website", label: "Blog or website", icon: Globe },
@@ -173,9 +156,7 @@ const channelUse: Question = {
   id: "channel_use",
   stage: "usage",
   kind: "multi",
-  title: "What do you use the channel you connected for?",
-  heroTitle: "Final questions to unlock the best setup",
-  heroBody: "We use these to suggest the most relevant automations and skip the rest.",
+  title: "What do you use this account for?",
   options: [
     { value: "support", label: "Customer support and FAQs", icon: Headphones },
     { value: "inquiries", label: "Handling customer inquiries and orders", icon: MessagesSquare },
@@ -194,9 +175,7 @@ const planToUse: Question = {
   id: "plan_to_use",
   stage: "usage",
   kind: "multi",
-  title: "How do you plan to use Awwtomation?",
-  heroTitle: "Final questions to unlock the best setup",
-  heroBody: "We use these to suggest the most relevant automations and skip the rest.",
+  title: "What do you want to automate?",
   options: [
     { value: "faqs", label: "Automate responses to FAQs and inquiries", icon: MessageCircleQuestion },
     { value: "feedback", label: "Collect feedback and engage customers", icon: Heart },
@@ -212,8 +191,6 @@ const tools: Question = {
   stage: "usage",
   kind: "multi",
   title: "What tools do you use to manage this account?",
-  heroTitle: "Final questions to unlock the best setup",
-  heroBody: "We use these to suggest the most relevant automations and skip the rest.",
   options: [
     { value: "scheduling", label: "Call scheduling and appointment booking", icon: CalendarCheck },
     { value: "crm", label: "CRM and email marketing", icon: Settings2 },
@@ -231,9 +208,6 @@ const heardAbout: Question = {
   stage: "usage",
   kind: "multi",
   title: "How did you hear about us?",
-  subtitle: "Help us show up in the right places",
-  heroTitle: "Last one and you are all set",
-  heroBody: "Then we will take you to your dashboard.",
   options: [
     { value: "ai_search", label: "AI search (ChatGPT, Gemini, Claude, Perplexity)", icon: Sparkles },
     { value: "our_channels", label: "Our Instagram or YouTube channels", icon: MonitorPlay },

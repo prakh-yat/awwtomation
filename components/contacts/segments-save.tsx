@@ -80,21 +80,21 @@ function SegmentSaveActions({ filters, active, dirty, onCreated, onUpdated, onRe
       <div className="flex flex-wrap items-center gap-1.5">
         {active ? (
           <>
-            <Button size="sm" className="h-8" onClick={saveChanges} loading={saving}>
+            <Button size="sm" onClick={saveChanges} loading={saving}>
               <Bookmark />
               Save changes
             </Button>
-            <Button size="sm" variant="outline" className="h-8" onClick={() => setCreateOpen(true)} disabled={saving}>
+            <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)} disabled={saving}>
               <BookmarkPlus />
               Save as new
             </Button>
-            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={onReset} disabled={saving} aria-label="Discard changes to the segment filters">
+            <Button size="sm" variant="ghost" className="px-3 text-muted-foreground hover:text-ink" onClick={onReset} disabled={saving} aria-label="Discard changes to the segment filters">
               <RotateCcw />
               Reset
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="outline" className="h-8" onClick={() => setCreateOpen(true)}>
+          <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
             <BookmarkPlus />
             Save as segment
           </Button>

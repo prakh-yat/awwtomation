@@ -2,8 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import type { PlanTier } from "@prisma/client";
-import { Check, Minus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,29 +16,7 @@ import {
 } from "@/lib/billing/plans";
 import { cn } from "@/lib/utils";
 
-/** Service extras on top of the limits, matching the plan copy in lib/billing/plans.ts. */
-const EXTRAS: Partial<Record<PlanTier, string[]>> = {
-  PRO: ["Priority support"],
-  AGENCY: ["Priority support", "Dedicated onboarding"],
-};
-
-const count = (n: number) => n.toLocaleString("en-US");
-const plural = (n: number, one: string, many: string) => `${count(n)} ${n === 1 ? one : many}`;
-
-type Line = { text: string; included: boolean };
-
-/** Each limit appears exactly once per plan. */
-function planLines(tier: PlanTier): Line[] {
-  const plan = PLANS[tier];
-  return [
-    { text: plural(plan.channels, "connected account", "connected accounts"), included: true },
-    { text: plural(plan.automations, "automation", "automations"), included: true },
-    { text: `${count(plan.dmsPerMonth)} DMs a month`, included: true },
-    { text: plural(plan.members, "team member", "team members"), included: true },
-    { text: plan.broadcasts ? "Broadcasts" : "No broadcasts", included: plan.broadcasts },
-    ...(EXTRAS[tier] ?? []).map((text) => ({ text, included: true })),
-  ];
-}
+import { planLines, RECOMMENDED_PLAN, Tick } from "./plans";
 
 const INTERVALS: Array<{ id: BillingIntervalId; label: string }> = [
   { id: "MONTHLY", label: "Monthly" },
@@ -48,9 +24,10 @@ const INTERVALS: Array<{ id: BillingIntervalId; label: string }> = [
 ];
 
 /**
- * Plan columns with a monthly/yearly switch. Free goes to sign-in; paid plans
+ * Plan cards with a monthly/yearly switch. Free goes to sign-in; paid plans
  * go to /checkout with the chosen tier and interval (signed-out visitors are
  * sent through /login first by the middleware, then land back on checkout).
+ * The recommended plan is the yellow block.
  */
 function PricingPlans({ className }: { className?: string }) {
   const [interval, setInterval] = React.useState<BillingIntervalId>("MONTHLY");
@@ -58,8 +35,8 @@ function PricingPlans({ className }: { className?: string }) {
 
   return (
     <div className={className}>
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <fieldset className="inline-flex rounded-lg border bg-muted/60 p-1">
+      <div className="flex flex-col items-center gap-3">
+        <fieldset className="inline-flex rounded-full bg-fog p-1">
           <legend className="sr-only">Billing period</legend>
           {INTERVALS.map((option) => {
             const active = option.id === interval;
@@ -67,8 +44,8 @@ function PricingPlans({ className }: { className?: string }) {
               <label
                 key={option.id}
                 className={cn(
-                  "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3.5 text-[13px] font-medium transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
-                  active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  "inline-flex h-10 cursor-pointer items-center gap-2 rounded-full px-5 text-[13px] font-semibold transition-colors duration-150 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                  active ? "bg-ink text-white" : "text-ink/70 hover:text-ink",
                 )}
               >
                 <input
@@ -80,6 +57,9 @@ function PricingPlans({ className }: { className?: string }) {
                   className="sr-only"
                 />
                 {option.label}
+                {option.id === "ANNUAL" ? (
+                  <span className="rounded-full bg-yellow px-1.5 text-[11px] leading-[18px] text-ink">Save {savings}%</span>
+                ) : null}
               </label>
             );
           })}
@@ -91,10 +71,11 @@ function PricingPlans({ className }: { className?: string }) {
         </p>
       </div>
 
-      <div className="mt-6 grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 xl:grid-cols-4">
-        {PLAN_ORDER.map((tier) => {
+      <div className="mt-10 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {PLAN_ORDER.map((tier, index) => {
           const plan = PLANS[tier];
           const paid = tier !== "FREE";
+          const featured = tier === RECOMMENDED_PLAN;
           const price = paid ? formatUsd(planPriceCents(tier, interval)) : "$0";
           const suffix = paid && interval === "ANNUAL" ? "/year" : "/month";
           const note = !paid
@@ -105,32 +86,41 @@ function PricingPlans({ className }: { className?: string }) {
           const href = paid ? `/checkout?tier=${tier}&interval=${interval}` : "/login";
 
           return (
-            <div key={tier} className="flex flex-col bg-background p-6">
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{plan.label}</h2>
-              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{PLANS[tier].description}</p>
+            <div
+              key={tier}
+              className={cn("rise flex flex-col rounded-[28px] p-6 sm:p-7", featured ? "bg-yellow" : "bg-fog")}
+              style={{ "--i": index } as React.CSSProperties}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <h2 className="font-display text-[30px] leading-none tracking-[-0.03em] xl:text-[26px]">{plan.label}</h2>
+                {featured ? (
+                  <span className="brand-label rounded-full bg-ink px-2.5 py-1 text-[10px] text-white">Recommended</span>
+                ) : null}
+              </div>
+              {/* Two lines reserved so prices line up across the cards. */}
+              <p className="mt-2.5 text-[14px] leading-5 text-ink/70 sm:min-h-10">{plan.description}</p>
 
-              <p className="mt-7 flex items-baseline gap-1">
-                <span className="text-[36px] font-semibold leading-none tracking-[-0.025em] tabular-nums">{price}</span>
-                <span className="text-[13px] text-muted-foreground">{suffix}</span>
+              <p className="mt-8 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+                <span className="font-display text-[48px] leading-none tracking-[-0.04em] tabular-nums">{price}</span>
+                <span className="brand-label text-ink/60">{suffix}</span>
               </p>
               {/* Reserved in the multi-column layouts so prices and buttons line up across plans. */}
-              <p className={cn("mt-2 text-[12px] leading-4 text-muted-foreground sm:min-h-4", !note && "hidden sm:block")}>
-                {note}
-              </p>
+              <p className={cn("mt-2.5 text-[13px] leading-5 text-ink/65 sm:min-h-5", !note && "hidden sm:block")}>{note}</p>
 
-              <Button asChild variant={paid ? "default" : "outline"} className="mt-6 w-full">
+              <Button
+                asChild
+                size="lg"
+                variant={featured ? "default" : "outline"}
+                className={cn("mt-7 w-full", !featured && "border-ink/25 bg-transparent hover:border-ink hover:bg-ink hover:text-white")}
+              >
                 <Link href={href}>{paid ? `Choose ${plan.label}` : "Start free"}</Link>
               </Button>
 
-              <ul className="mt-6 space-y-2.5 border-t pt-5 text-[13px] leading-5">
+              <ul className="mt-7 space-y-3 border-t border-ink/10 pt-6 text-[14px] leading-5">
                 {planLines(tier).map((line) => (
                   <li key={line.text} className="flex items-start gap-2.5">
-                    {line.included ? (
-                      <Check aria-hidden className="mt-0.5 size-3.5 shrink-0 text-foreground" strokeWidth={2.5} />
-                    ) : (
-                      <Minus aria-hidden className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" strokeWidth={2.5} />
-                    )}
-                    <span className={line.included ? "text-foreground/85" : "text-muted-foreground"}>{line.text}</span>
+                    <Tick included={line.included} />
+                    <span className={line.included ? "text-ink/85" : "text-ink/60"}>{line.text}</span>
                   </li>
                 ))}
               </ul>

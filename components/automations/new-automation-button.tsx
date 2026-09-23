@@ -28,8 +28,7 @@ export function NewAutomationButton({
   async function create() {
     if (!channelId) {
       toast.error("Connect an account first", {
-        description: "Automations reply from a connected Instagram or Facebook account.",
-        action: { label: "Go to Channels", onClick: () => router.push("/channels") },
+        action: { label: "Connect", onClick: () => router.push("/dashboard?accounts=1") },
       });
       return;
     }

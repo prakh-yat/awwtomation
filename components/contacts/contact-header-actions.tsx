@@ -60,7 +60,7 @@ export function ContactHeaderActions({
       ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" className="h-8 w-8" aria-label="More actions">
+          <Button variant="outline" size="icon-sm" aria-label="More actions">
             <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>
@@ -76,7 +76,7 @@ export function ContactHeaderActions({
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`Delete ${displayName}?`}
-        description="Their conversation, notes and automation progress are removed. If they message you again, they come back as a new contact."
+        description="Their conversation and notes go too. If they message you again, they come back as a new contact."
         confirmLabel="Delete contact"
         destructive
         onConfirm={remove}

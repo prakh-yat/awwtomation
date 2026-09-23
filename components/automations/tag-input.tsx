@@ -52,16 +52,16 @@ export function TagInput({ value, onChange, placeholder, disabled, maxItems = 10
   return (
     <div
       className={cn(
-        "flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm transition-colors",
-        "focus-within:border-foreground focus-within:ring-2 focus-within:ring-ring",
+        "flex min-h-10 w-full cursor-text flex-wrap items-center gap-1 rounded-xl border border-input bg-background px-2 py-1.5 text-sm transition-[border-color,box-shadow]",
+        "hover:border-ink/30 focus-within:border-ink focus-within:ring-4 focus-within:ring-ring/15",
         disabled && "cursor-not-allowed opacity-50",
         className,
       )}
       onClick={() => inputRef.current?.focus()}
     >
       {value.map((tag, i) => (
-        <span key={`${tag}-${i}`} className="inline-flex h-6 items-center gap-1 rounded-md bg-secondary pl-2 pr-1 text-[12px] font-medium">
-          {tag}
+        <span key={`${tag}-${i}`} className="inline-flex h-6 max-w-full items-center gap-0.5 rounded-full bg-fog pl-2.5 pr-1 text-[12px] font-semibold text-ink">
+          <span className="truncate">{tag}</span>
           <button
             type="button"
             aria-label={`Remove ${tag}`}
@@ -70,7 +70,7 @@ export function TagInput({ value, onChange, placeholder, disabled, maxItems = 10
               e.stopPropagation();
               remove(i);
             }}
-            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-ink hover:text-white focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X className="h-3 w-3" />
           </button>
@@ -100,7 +100,7 @@ export function TagInput({ value, onChange, placeholder, disabled, maxItems = 10
             commit(text);
           }
         }}
-        className="h-6 min-w-[96px] flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+        className="h-6 min-w-[96px] flex-1 bg-transparent px-1 text-[13px] outline-none placeholder:text-muted-foreground"
       />
     </div>
   );

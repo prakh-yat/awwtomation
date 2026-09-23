@@ -83,7 +83,7 @@ async function channelItems(workspaceId: string): Promise<AttentionItem[]> {
         tone: "critical",
         title: `Reconnect ${who}`,
         detail: `${platform} signed this account out. Automations on it can't send until you reconnect.`,
-        href: "/channels",
+        href: "/dashboard?accounts=1",
         action: "Reconnect",
       });
       continue;
@@ -93,8 +93,8 @@ async function channelItems(workspaceId: string): Promise<AttentionItem[]> {
         key: `channel-error-${c.id}`,
         tone: "critical",
         title: `${who} isn't sending`,
-        detail: "Messages from this account aren't going out. Reconnecting it usually fixes this.",
-        href: "/channels",
+        detail: "Messages from this account aren't going out. Reconnect it.",
+        href: "/dashboard?accounts=1",
         action: "Reconnect",
       });
       continue;
@@ -105,7 +105,7 @@ async function channelItems(workspaceId: string): Promise<AttentionItem[]> {
         tone: "warning",
         title: `${who} isn't receiving comments`,
         detail: "New comments and messages won't reach your automations until you reconnect.",
-        href: "/channels",
+        href: "/dashboard?accounts=1",
         action: "Reconnect",
       });
       continue;
@@ -115,8 +115,8 @@ async function channelItems(workspaceId: string): Promise<AttentionItem[]> {
         key: `channel-expiring-${c.id}`,
         tone: "warning",
         title: daysLeft === 1 ? `${who} disconnects tomorrow` : `${who} disconnects in ${daysLeft} days`,
-        detail: `Reconnect it to keep automations running. ${platform} asks for this every 60 days.`,
-        href: "/channels",
+        detail: "Reconnect it to keep automations running.",
+        href: "/dashboard?accounts=1",
         action: "Reconnect",
       });
     }

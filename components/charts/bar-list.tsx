@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { cn, formatNumber } from "@/lib/utils";
 
+import { stagger } from "./stagger";
 import { VIZ } from "./tokens";
 
 export type BarListItem = {
@@ -37,7 +38,7 @@ export function BarList({
 
   return (
     <ul className={cn("space-y-3.5", className)}>
-      {items.map((item) => {
+      {items.map((item, i) => {
         const width = `${Math.max((item.value / max) * 100, item.value > 0 ? 2 : 0)}%`;
         const label = item.href ? (
           <Link href={item.href} className="truncate underline-offset-4 hover:underline">
@@ -47,17 +48,18 @@ export function BarList({
           <span className="truncate">{item.label}</span>
         );
         return (
-          <li key={item.key}>
+          <li key={item.key} className="rise" style={stagger(i)}>
             <div className="flex items-baseline justify-between gap-3 text-[13px]">
               <span className="flex min-w-0 items-center">{label}</span>
               <span className="shrink-0 tabular-nums">
-                <span className="font-medium">{formatNumber(item.value)}</span>
+                <span className="font-semibold">{formatNumber(item.value)}</span>
                 {valueLabel ? <span className="sr-only"> {valueLabel}</span> : null}
                 {item.meta ? <span className="ml-2 text-muted-foreground">{item.meta}</span> : null}
               </span>
             </div>
-            <div className="mt-1.5 h-1.5 rounded-full bg-muted" aria-hidden>
-              <div className="h-full rounded-full" style={{ width, backgroundColor: VIZ.accent }} />
+            {/* Square where it starts, rounded where the value ends. */}
+            <div className="mt-1.5 h-2 rounded-r-[4px] bg-fog" aria-hidden>
+              <div className="h-full rounded-r-[4px]" style={{ width, backgroundColor: VIZ.accent }} />
             </div>
           </li>
         );

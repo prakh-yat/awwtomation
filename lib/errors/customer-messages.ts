@@ -41,7 +41,7 @@ export type CustomerMessage = {
 };
 
 export type DeliveryReason = CustomerMessage & {
-  /** Badge / table label ("Outside 24h window"). */
+  /** Badge / table label ("Over 24 hours"). */
   label: string;
 };
 
@@ -54,43 +54,39 @@ export const META_PASSTHROUGH_CODES: ReadonlySet<string> = new Set(["META_ERROR"
 const COPY: Record<ErrorCategory, { title: string; description: string }> = {
   meta_permission: {
     title: "Permission missing",
-    description:
-      "Instagram or Facebook didn't grant a permission this action needs. Reconnect the account from Channels and approve every permission when asked.",
+    description: "Reconnect the account from the dashboard and allow every permission it asks for.",
   },
   meta_rate_limit: {
-    title: "Sending limit reached",
-    description:
-      "Meta is limiting how fast this account can send right now. Sending resumes automatically once the limit clears, usually within the hour.",
+    title: "Sending paused",
+    description: "Too many messages went out at once. Sending picks up again on its own.",
   },
   meta_token: {
     title: "Reconnect needed",
-    description: "The account's connection to Instagram or Facebook has expired. Reconnect it from Channels to resume sending.",
+    description: "Reconnect the account from the dashboard to keep sending.",
   },
   meta_window: {
-    title: "Outside messaging window",
-    description:
-      "Meta only allows a DM within 24 hours of the person's last message. They'll need to message you again before you can reach them.",
+    title: "Over 24 hours",
+    description: "They haven't messaged you in the last 24 hours, so they need to message you first.",
   },
   meta_recipient: {
     title: "Can't reach this person",
-    description:
-      "Instagram or Facebook wouldn't deliver to this person. They may have blocked the account, restricted who can message them, or deactivated their profile.",
+    description: "They may have blocked the account or turned off messages.",
   },
   network: {
     title: "Connection problem",
-    description: "We couldn't reach Meta's servers. This is usually temporary; please try again in a moment.",
+    description: "Couldn't reach Instagram or Facebook. Try again in a moment.",
   },
   plan_limit: {
-    title: "Plan limit reached",
-    description: "This workspace has used its monthly DM allowance. Upgrade the plan under Settings → Billing to keep sending.",
+    title: "Monthly limit reached",
+    description: "This month's DMs are used up. Upgrade your plan to keep sending.",
   },
   validation: {
     title: "Message not accepted",
-    description: "Meta rejected part of the message, usually a link, button or attachment it doesn't allow. Check the content and try again.",
+    description: "Part of the message wasn't accepted, often a link or a button. Check it and try again.",
   },
   unknown: {
     title: "Something went wrong",
-    description: "Meta didn't accept the request. Try again, and if it keeps happening reconnect the account from Channels.",
+    description: "Try again. If it keeps happening, reconnect the account from the dashboard.",
   },
 };
 
@@ -250,49 +246,49 @@ const STATUS_COPY: Record<Exclude<DeliveryStatus, "FAILED">, StatusCopy> = {
   SENT: {
     label: "Sent",
     title: "Sent",
-    description: "Meta accepted the message. Instagram or Messenger delivers it to the person's inbox from there.",
+    description: "It went out.",
     category: "unknown",
   },
   SKIPPED_DUPLICATE: {
-    label: "Already replied",
-    title: "Already replied",
-    description: "Meta allows one private reply per comment. Either this comment already had one, or this automation only messages each person once.",
+    label: "Already sent",
+    title: "Already sent",
+    description: "This person already got it from this automation.",
     category: "unknown",
   },
   SKIPPED_RATE_LIMIT: {
-    label: "Hourly limit",
+    label: "Too many at once",
     title: "Sending limit reached",
-    description: "Instagram caps private replies per hour. This one was retried for several hours and then set aside so newer comments could go out.",
+    description: "Too many messages went out in the same hour, so this one was skipped.",
     category: "meta_rate_limit",
   },
   SKIPPED_SELF: {
     label: "Own account",
     title: "Own account",
-    description: "The comment came from the connected account itself, and Meta doesn't allow an account to message itself.",
+    description: "The comment came from your own account.",
     category: "unknown",
   },
   SKIPPED_NOT_FOLLOWING: {
     label: "Not following",
     title: "Not following",
-    description: "The flow's follow gate checked the profile and this person isn't following the account yet. They received the follow prompt instead.",
+    description: "They don't follow the account yet, so they got the follow prompt instead.",
     category: "unknown",
   },
   SKIPPED_WINDOW: {
-    label: "Outside 24 hours",
-    title: "Outside messaging window",
+    label: "Over 24 hours",
+    title: "Over 24 hours",
     description: COPY.meta_window.description,
     category: "meta_window",
   },
   SKIPPED_PLAN_LIMIT: {
     label: "Monthly limit",
-    title: "Plan limit reached",
+    title: "Monthly limit reached",
     description: COPY.plan_limit.description,
     category: "plan_limit",
   },
   SKIPPED_OPTED_OUT: {
     label: "Opted out",
     title: "Opted out",
-    description: "This person asked not to receive messages, so nothing automated is sent to them.",
+    description: "They asked not to get automated messages.",
     category: "meta_recipient",
   },
 };

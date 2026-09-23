@@ -9,7 +9,7 @@ import {
   FACEBOOK_CONNECT_MAX_AGE_SECONDS,
 } from "@/lib/services/channels";
 
-import { channelsRedirect, runOAuthCallback } from "../../_shared/oauth";
+import { accountsRedirect, runOAuthCallback } from "../../_shared/oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ function facebookConnectCookieOptions() {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   return runOAuthCallback(req, "FACEBOOK", async ({ state, user, code, redirectUri }) => {
     const { userToken, pages } = await beginFacebookConnect({ code, redirectUri });
-    if (pages.length === 0) return channelsRedirect({ error: "no_pages" });
+    if (pages.length === 0) return accountsRedirect({ error: "no_pages" });
 
     const res = NextResponse.redirect(appUrl("/channels/select-pages"));
     res.cookies.set(

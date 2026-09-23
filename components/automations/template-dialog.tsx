@@ -1,33 +1,32 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowRight, PenLine, Search, X } from "lucide-react";
+import type { TriggerType } from "@prisma/client";
+import { Check, LayoutTemplate, PenLine, Plug, Search, SearchX, X } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
-import { STEP_INFO } from "@/components/automations/builder/step-catalog";
-import { Badge } from "@/components/ui/badge";
+import { TRIGGER_STYLE } from "@/components/automations/badges";
+import { channelHandle } from "@/components/automations/channel-label";
+import { GOAL_ORDER, GOAL_STYLE, TemplateGallery, type TemplateSection } from "@/components/automations/template-gallery";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { PlatformMark } from "@/components/ui/platform-badge";
 import { PlatformIcon } from "@/components/ui/platform-icon";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/sonner";
+import { TONES } from "@/components/ui/tone";
 import type { AutomationDetail, ChannelOption } from "@/lib/services/automations";
-import type { TemplatePlatform, TemplateSummary } from "@/lib/services/templates";
+import type { TemplateGoal, TemplatePlatform, TemplateSummary } from "@/lib/services/templates";
 import { cn } from "@/lib/utils";
 
 const SCRATCH = "__scratch__";
 
-type Filter = { kind: "all" } | { kind: "goal"; value: string } | { kind: "trigger"; value: string };
-
-const ALL: Filter = { kind: "all" };
-
-function sameFilter(a: Filter, b: Filter): boolean {
-  if (a.kind !== b.kind) return false;
-  return a.kind === "all" || b.kind === "all" || a.value === b.value;
-}
+const TRIGGER_ORDER: readonly TriggerType[] = ["COMMENT", "DM", "STORY_REPLY"];
 
 function platformLabel(platform: TemplatePlatform): string {
   return platform === "INSTAGRAM" ? "Instagram" : "Messenger";
@@ -37,75 +36,112 @@ function channelPlatform(channel: ChannelOption): TemplatePlatform {
   return channel.platform === "INSTAGRAM" ? "INSTAGRAM" : "MESSENGER";
 }
 
-function StepChain({ template }: { template: TemplateSummary }) {
-  return (
-    <ol className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-      {template.steps.map((step, i) => {
-        const Icon = STEP_INFO[step.type].icon;
-        return (
-          <li key={i} className="flex items-center gap-1">
-            <span className="inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-foreground">
-              <Icon className="h-3 w-3" strokeWidth={1.75} />
-              {step.label}
-            </span>
-            {i < template.steps.length - 1 ? <ArrowRight className="h-3 w-3" /> : null}
-          </li>
-        );
-      })}
-    </ol>
-  );
+function InstagramGlyph({ className }: { className?: string }) {
+  return <PlatformIcon platform="INSTAGRAM" size={14} className={className} />;
 }
 
-function TemplateCard({
-  template,
-  pending,
-  disabled,
-  onChoose,
-}: {
-  template: TemplateSummary;
-  pending: boolean;
-  disabled: boolean;
-  onChoose: () => void;
-}) {
+function MessengerGlyph({ className }: { className?: string }) {
+  return <PlatformIcon platform="FACEBOOK" size={14} className={className} />;
+}
+
+const PLATFORM_OPTIONS: SegmentedOption<TemplatePlatform>[] = [
+  { value: "INSTAGRAM", label: "Instagram", icon: InstagramGlyph },
+  { value: "MESSENGER", label: "Messenger", icon: MessengerGlyph },
+];
+
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
-      disabled={disabled}
-      onClick={onChoose}
+      aria-pressed={active}
+      onClick={onClick}
       className={cn(
-        "group flex h-full flex-col rounded-xl border bg-card p-4 text-left transition-all",
-        "hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-card",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        "disabled:pointer-events-none disabled:opacity-60",
+        "inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring",
+        active ? "border-ink bg-ink text-white" : "border-border bg-background text-muted-foreground hover:border-ink/30 hover:text-ink",
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 brand-label text-muted-foreground">
-          <PlatformIcon platform={template.platform === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={12} />
-          {platformLabel(template.platform)}
-        </span>
-        {template.popular ? (
-          <Badge variant="warning" className="shrink-0">
-            Popular
-          </Badge>
-        ) : null}
-      </div>
-      <p className="mt-2 text-[15px] font-semibold leading-snug">{template.name}</p>
-      <p className="mt-1.5 line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">{template.description}</p>
-
-      <div className="mt-4 flex-1" />
-
-      <div className="border-t pt-3">
-        <StepChain template={template} />
-      </div>
-      <div className="mt-3 flex items-center justify-between gap-3 text-[12px]">
-        <span className="min-w-0 truncate text-muted-foreground">{template.triggerLabel}</span>
-        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium">
-          {pending ? "Creating" : "Use template"}
-          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-        </span>
-      </div>
+      {children}
     </button>
+  );
+}
+
+/** A row of chips that scrolls sideways on a phone and wraps on a wider screen. */
+function ChipRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="scrollbar-none -mx-5 flex items-center gap-1.5 overflow-x-auto px-5 md:mx-0 md:min-w-0 md:flex-1 md:flex-wrap md:overflow-visible md:px-0"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The connected accounts as a radio list: the platform tile, the handle, and the Page name when there is one. */
+function AccountChoice({
+  channels,
+  value,
+  onChange,
+  disabled,
+}: {
+  channels: ChannelOption[];
+  value: string;
+  onChange: (channelId: string) => void;
+  disabled?: boolean;
+}) {
+  const refs = React.useRef<Array<HTMLButtonElement | null>>([]);
+  const hasValue = channels.some((c) => c.id === value);
+
+  function onKeyDown(event: React.KeyboardEvent, index: number) {
+    const step = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (index + step + channels.length) % channels.length;
+    onChange(channels[next].id);
+    refs.current[next]?.focus();
+  }
+
+  return (
+    <div role="radiogroup" aria-label="Account" className="space-y-2">
+      {channels.map((channel, i) => {
+        const selected = channel.id === value;
+        return (
+          <button
+            key={channel.id}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            tabIndex={selected || (!hasValue && i === 0) ? 0 : -1}
+            disabled={disabled}
+            onClick={() => onChange(channel.id)}
+            onKeyDown={(e) => onKeyDown(e, i)}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
+              selected ? "border-ink bg-fog/60" : "border-border hover:border-ink/30",
+            )}
+          >
+            <PlatformMark platform={channel.platform} size={32} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-semibold text-ink">{channelHandle(channel)}</span>
+              {channel.username && channel.name ? <span className="block truncate text-[12px] text-muted-foreground">{channel.name}</span> : null}
+            </span>
+            <span
+              aria-hidden
+              className={cn(
+                "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
+                selected ? "border-ink bg-ink text-white" : "border-input bg-background",
+              )}
+            >
+              {selected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -123,9 +159,9 @@ export interface TemplateDialogProps {
  * The template picker.
  *
  * Templates are written for one platform at a time (a Facebook Page has no
- * story replies and no follow gate), so the first thing the dialog does is pick
- * a side: Instagram or Messenger. The rail below it narrows by goal or by what
- * sets the automation off, and the grid is filtered by all three plus the search box.
+ * story replies and no follow gate), so the first choice is a side: Instagram
+ * or Messenger. Goal and trigger chips narrow it from there, together with the
+ * search box.
  */
 export function TemplateDialog({ templates, channels, open, onOpenChange, autoTemplateId }: TemplateDialogProps) {
   const router = useRouter();
@@ -139,7 +175,8 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
   const [platform, setPlatform] = React.useState<TemplatePlatform>(() =>
     channels[0] ? channelPlatform(channels[0]) : "INSTAGRAM",
   );
-  const [filter, setFilter] = React.useState<Filter>(ALL);
+  const [goal, setGoal] = React.useState<TemplateGoal | null>(null);
+  const [trigger, setTrigger] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
   // With one matching account we just go; with several we ask which.
@@ -149,7 +186,8 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
   // Reopening should not resume someone else's half-finished search.
   React.useEffect(() => {
     if (!open) return;
-    setFilter(ALL);
+    setGoal(null);
+    setTrigger(null);
     setQuery("");
     setPending(null);
     setPickFor(null);
@@ -157,14 +195,20 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
 
   const forPlatform = React.useMemo(() => templates.filter((t) => t.platform === platform), [templates, platform]);
 
-  const goals = React.useMemo(() => [...new Set(forPlatform.map((t) => t.goal))], [forPlatform]);
-  const triggers = React.useMemo(() => [...new Set(forPlatform.map((t) => t.triggerLabel))], [forPlatform]);
+  const goals = React.useMemo(() => GOAL_ORDER.filter((g) => forPlatform.some((t) => t.goal === g)), [forPlatform]);
+  const triggers = React.useMemo(() => {
+    const byLabel = new Map<string, TriggerType>();
+    for (const t of forPlatform) if (!byLabel.has(t.triggerLabel)) byLabel.set(t.triggerLabel, t.triggerType);
+    return [...byLabel]
+      .map(([label, type]) => ({ label, type }))
+      .sort((a, b) => TRIGGER_ORDER.indexOf(a.type) - TRIGGER_ORDER.indexOf(b.type));
+  }, [forPlatform]);
 
   const visible = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
     return forPlatform.filter((t) => {
-      if (filter.kind === "goal" && t.goal !== filter.value) return false;
-      if (filter.kind === "trigger" && t.triggerLabel !== filter.value) return false;
+      if (goal && t.goal !== goal) return false;
+      if (trigger && t.triggerLabel !== trigger) return false;
       if (!needle) return true;
       return (
         t.name.toLowerCase().includes(needle) ||
@@ -172,13 +216,19 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
         t.keywords.some((k) => k.toLowerCase().includes(needle))
       );
     });
-  }, [forPlatform, filter, query]);
+  }, [forPlatform, goal, trigger, query]);
 
-  // "Recommended" only earns its own row when nothing is being filtered down.
-  const browsing = filter.kind === "all" && query.trim() === "";
-  const recommended = browsing ? visible.filter((t) => t.popular).concat(visible.filter((t) => !t.popular).slice(0, 2)) : [];
-  const recommendedIds = new Set(recommended.map((t) => t.id));
-  const rest = browsing ? visible.filter((t) => !recommendedIds.has(t.id)) : visible;
+  // "Recommended" only earns its own section when nothing is being filtered down.
+  const browsing = goal === null && trigger === null && query.trim() === "";
+  const sections: TemplateSection[] = React.useMemo(() => {
+    if (!browsing) return [{ templates: visible }];
+    const recommended = visible.filter((t) => t.popular).concat(visible.filter((t) => !t.popular).slice(0, 2));
+    const recommendedIds = new Set(recommended.map((t) => t.id));
+    return [
+      { title: "Recommended", templates: recommended },
+      { title: "More templates", templates: visible.filter((t) => !recommendedIds.has(t.id)) },
+    ];
+  }, [browsing, visible]);
 
   const matchingChannels = React.useMemo(
     () => channels.filter((c) => channelPlatform(c) === platform),
@@ -193,10 +243,10 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
           method: "POST",
           json: { channelId: chosenChannelId, ...(templateId === SCRATCH ? {} : { templateId }) },
         });
-        toast.success(`Created "${automation.name}"`);
+        toast.success(`Created “${automation.name}”`);
         router.push(`/automations/${automation.id}`);
       } catch (err) {
-        toast.error(errorMessage(err, "Could not create the automation"));
+        toast.error(errorMessage(err, "Couldn't create the automation"));
         setPending(null);
       }
     },
@@ -205,9 +255,8 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
 
   function choose(templateId: string) {
     if (matchingChannels.length === 0) {
-      toast.error(`Connect a ${platformLabel(platform)} account first`, {
-        description: "Templates run on a connected account.",
-        action: { label: "Go to Channels", onClick: () => router.push("/channels") },
+      toast.error(platform === "INSTAGRAM" ? "Connect an Instagram account first" : "Connect a Facebook Page first", {
+        action: { label: "Connect", onClick: () => router.push("/dashboard?accounts=1") },
       });
       return;
     }
@@ -217,6 +266,18 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
     }
     setChannelId(matchingChannels[0].id);
     setPickFor(templateId);
+  }
+
+  function changePlatform(next: TemplatePlatform) {
+    setPlatform(next);
+    setGoal(null);
+    setTrigger(null);
+  }
+
+  function clearFilters() {
+    setGoal(null);
+    setTrigger(null);
+    setQuery("");
   }
 
   // A deep link names the template it wants; run it once and let the dialog
@@ -239,154 +300,132 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
   const picked = pickFor && pickFor !== SCRATCH ? templates.find((t) => t.id === pickFor) : null;
   const busy = pending !== null;
 
-  const railButton = (label: string, target: Filter) => (
-    <button
-      key={label}
-      type="button"
-      onClick={() => setFilter(target)}
-      className={cn(
-        "w-full rounded-md px-3 py-1.5 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-        sameFilter(filter, target) && filter.kind === target.kind
-          ? "bg-secondary font-medium text-foreground"
-          : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
-  );
-
   return (
     <>
       <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
         <DialogContent
           hideClose
-          className="flex h-[88vh] max-h-[880px] w-[calc(100vw-2rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
+          className="flex h-[92dvh] w-full max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:h-[88vh] sm:max-h-[880px] sm:w-[calc(100vw-2rem)]"
         >
-          <DialogHeader className="flex-row items-center justify-between gap-3 space-y-0 border-b px-5 py-4">
-            <div className="min-w-0">
-              <DialogTitle className="text-lg">Templates</DialogTitle>
-              <DialogDescription className="sr-only">
-                Pick a ready-made automation, or start from an empty canvas.
-              </DialogDescription>
+          <DialogHeader className="flex-row flex-wrap items-center gap-x-5 gap-y-3 space-y-0 border-b px-5 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span aria-hidden className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", TONES.purple.solid)}>
+                <LayoutTemplate className="h-[18px] w-[18px]" strokeWidth={2} />
+              </span>
+              <DialogTitle className="truncate pr-0">Templates</DialogTitle>
+              <DialogDescription className="sr-only">Pick a ready-made automation, or start from an empty canvas.</DialogDescription>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => choose(SCRATCH)} disabled={busy}>
+            <Segmented
+              value={platform}
+              onChange={changePlatform}
+              options={PLATFORM_OPTIONS}
+              aria-label="Platform"
+              className="order-last w-full sm:order-none sm:w-auto"
+            />
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              <Button variant="outline" size="sm" onClick={() => choose(SCRATCH)} disabled={busy} className="hidden md:inline-flex">
                 <PenLine /> Start from scratch
               </Button>
               <DialogPrimitive.Close
                 aria-label="Close"
                 disabled={busy}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               >
                 <X className="h-4 w-4" />
               </DialogPrimitive.Close>
             </div>
           </DialogHeader>
 
-          <div className="border-b px-5 py-3">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Search ${platformLabel(platform)} templates`}
-                aria-label={`Search ${platformLabel(platform)} templates`}
-                className="h-10 w-full rounded-lg border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-foreground/30 focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          </div>
-
-          <div className="grid min-h-0 flex-1 md:grid-cols-[216px_1fr]">
-            <aside className="hidden min-h-0 flex-col overflow-y-auto border-r px-3 py-4 md:flex">
-              <p className="mb-1 px-3 brand-label text-muted-foreground">Channel</p>
-              <div className="mb-5 space-y-0.5">
-                {(["INSTAGRAM", "MESSENGER"] as const).map((p) => {
-                  const active = platform === p;
-                  const count = templates.filter((t) => t.platform === p).length;
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {/* Stays in view on a wide screen; on a phone it scrolls away so the cards get the room. */}
+            <div className="space-y-3 border-b px-5 py-4 md:sticky md:top-0 md:z-10 md:bg-background">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                <div className="relative w-full md:w-72 md:shrink-0">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                  <Input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={`Search ${platformLabel(platform)} templates`}
+                    aria-label={`Search ${platformLabel(platform)} templates`}
+                    className="pl-10"
+                  />
+                </div>
+                <ChipRow label="Trigger">
+                  <FilterChip active={trigger === null} onClick={() => setTrigger(null)}>
+                    Any trigger
+                  </FilterChip>
+                  {triggers.map(({ label, type }) => {
+                    const active = trigger === label;
+                    const Icon = TRIGGER_STYLE[type].icon;
+                    return (
+                      <FilterChip key={label} active={active} onClick={() => setTrigger(active ? null : label)}>
+                        <Icon className={cn("h-3.5 w-3.5", active ? null : TONES[TRIGGER_STYLE[type].tone].text)} strokeWidth={2.25} aria-hidden />
+                        {label}
+                      </FilterChip>
+                    );
+                  })}
+                </ChipRow>
+              </div>
+              <ChipRow label="Goal">
+                <FilterChip active={goal === null} onClick={() => setGoal(null)}>
+                  All goals
+                </FilterChip>
+                {goals.map((g) => {
+                  const active = goal === g;
                   return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        setPlatform(p);
-                        setFilter(ALL);
-                      }}
-                      aria-pressed={active}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-                        active ? "bg-foreground font-semibold text-background" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                      )}
-                    >
-                      <PlatformIcon platform={p === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={15} />
-                      <span className="flex-1 truncate">{platformLabel(p)}</span>
-                      <span className={cn("tabular-nums", active ? "text-background/70" : "text-muted-foreground")}>{count}</span>
-                      {available.size > 0 && !available.has(p) ? (
-                        <span className="sr-only">No {platformLabel(p)} account connected</span>
-                      ) : null}
-                    </button>
+                    <FilterChip key={g} active={active} onClick={() => setGoal(active ? null : g)}>
+                      <span aria-hidden className={cn("h-2 w-2 rounded-full", TONES[GOAL_STYLE[g].tone].dot)} />
+                      {g}
+                    </FilterChip>
                   );
                 })}
-              </div>
+              </ChipRow>
+              <Button variant="outline" onClick={() => choose(SCRATCH)} disabled={busy} className="w-full sm:w-auto md:hidden">
+                <PenLine /> Start from scratch
+              </Button>
+            </div>
 
-              {railButton("All templates", ALL)}
-
-              <p className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">By goal</p>
-              <div className="space-y-0.5">{goals.map((goal) => railButton(goal, { kind: "goal", value: goal }))}</div>
-
-              <p className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">By trigger</p>
-              <div className="space-y-0.5">{triggers.map((t) => railButton(t, { kind: "trigger", value: t }))}</div>
-            </aside>
-
-            <div className="min-h-0 overflow-y-auto px-5 py-5">
-              <div className="mb-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h2 className="font-display text-[19px] leading-none">{platformLabel(platform)} templates</h2>
-                <p className="text-[13px] text-muted-foreground">
-                  {visible.length} {visible.length === 1 ? "flow" : "flows"} for a connected{" "}
-                  {platform === "INSTAGRAM" ? "Instagram account" : "Facebook Page"}
-                </p>
-              </div>
+            <div className="px-5 pb-8 pt-5">
+              {available.has(platform) ? null : (
+                <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl bg-yellow-soft px-4 py-3">
+                  <PlatformMark platform={platform === "INSTAGRAM" ? "INSTAGRAM" : "FACEBOOK"} size={28} />
+                  <p className="min-w-0 flex-1 text-[13px] font-semibold text-ink">
+                    {platform === "INSTAGRAM" ? "Connect an Instagram account to use these templates." : "Connect a Facebook Page to use these templates."}
+                  </p>
+                  <Button size="sm" asChild>
+                    <Link href="/dashboard?accounts=1">
+                      <Plug /> Connect account
+                    </Link>
+                  </Button>
+                </div>
+              )}
 
               {visible.length === 0 ? (
-                <div className="flex h-full flex-col items-center justify-center gap-1 py-16 text-center">
-                  <p className="text-sm font-medium">No templates match that</p>
-                  <p className="text-[13px] text-muted-foreground">Try a different word, or clear the filter.</p>
-                </div>
+                <EmptyState
+                  compact
+                  tone="purple"
+                  icon={SearchX}
+                  title="No templates match"
+                  action={
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  }
+                />
               ) : (
                 <>
-                  {recommended.length > 0 ? (
-                    <section className="mb-8">
-                      <h3 className="mb-3 text-[15px] font-semibold">Recommended</h3>
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {recommended.map((t) => (
-                          <TemplateCard
-                            key={t.id}
-                            template={t}
-                            pending={pending === t.id}
-                            disabled={busy}
-                            onChoose={() => choose(t.id)}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
-
-                  {rest.length > 0 ? (
-                    <section>
-                      {recommended.length > 0 ? <h3 className="mb-3 text-[15px] font-semibold">Discover more templates</h3> : null}
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {rest.map((t) => (
-                          <TemplateCard
-                            key={t.id}
-                            template={t}
-                            pending={pending === t.id}
-                            disabled={busy}
-                            onChoose={() => choose(t.id)}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
+                  {browsing ? null : (
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-[13px] text-muted-foreground">
+                        <span className="font-semibold tabular-nums text-ink">{visible.length}</span> {visible.length === 1 ? "template" : "templates"}
+                      </p>
+                      <Button variant="link" size="sm" onClick={clearFilters} className="px-0">
+                        Clear filters
+                      </Button>
+                    </div>
+                  )}
+                  <TemplateGallery sections={sections} pendingId={pending} onChoose={choose} />
                 </>
               )}
             </div>
@@ -398,26 +437,10 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Which account?</DialogTitle>
-            <DialogDescription>
-              {picked ? `"${picked.name}" will reply from this account.` : "The new automation will reply from this account."}
-            </DialogDescription>
+            <DialogDescription className="truncate">{picked ? picked.name : "Blank automation"}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="template-channel">Account</Label>
-            <Select value={channelId} onValueChange={setChannelId}>
-              <SelectTrigger id="template-channel">
-                <SelectValue placeholder="Pick an account" />
-              </SelectTrigger>
-              <SelectContent>
-                {matchingChannels.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.username ? `@${c.username}` : (c.name ?? "Unnamed")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter className="mt-2 gap-2 sm:gap-0">
+          <AccountChoice channels={matchingChannels} value={channelId} onChange={setChannelId} disabled={busy} />
+          <DialogFooter>
             <Button variant="outline" onClick={() => setPickFor(null)} disabled={busy}>
               Cancel
             </Button>

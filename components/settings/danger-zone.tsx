@@ -3,9 +3,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { WorkspaceRole } from "@prisma/client";
+import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -46,6 +46,9 @@ export interface DangerZoneProps {
   subscriptionActive: boolean;
 }
 
+/** Outline buttons in the zone read red, so nothing in it looks harmless. */
+const DANGER_OUTLINE = "text-destructive hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive";
+
 /**
  * After leaving or deleting, the API has already cleared the active cookies; a
  * full navigation (not a soft router push) guarantees the shell re-resolves the
@@ -61,9 +64,9 @@ function displayName(member: TransferCandidate): string {
 
 function Row({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
       <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm font-semibold text-ink">{title}</p>
         <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
       </div>
       <div className="shrink-0">{children}</div>
@@ -103,7 +106,7 @@ function TransferOwnership({ organization, candidates }: { organization: { id: s
           Transfer ownership
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Transfer ownership</DialogTitle>
           <DialogDescription>
@@ -131,7 +134,7 @@ function TransferOwnership({ organization, candidates }: { organization: { id: s
             </SelectContent>
           </Select>
         </div>
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
             Cancel
           </Button>
@@ -190,13 +193,13 @@ function DeleteDialog({
           {triggerLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void handleDelete();
           }}
-          className="space-y-4"
+          className="space-y-5"
         >
           <DialogHeader>
             <DialogTitle>Delete {name}?</DialogTitle>
@@ -216,7 +219,7 @@ function DeleteDialog({
               placeholder={name}
             />
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
               Cancel
             </Button>
@@ -245,12 +248,12 @@ function LeaveOrganization({ organization, userId }: { organization: { id: strin
   return (
     <ConfirmDialog
       trigger={
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" className={DANGER_OUTLINE}>
           Leave organization
         </Button>
       }
       title={`Leave ${organization.name}?`}
-      description="You'll lose access to all of its workspaces immediately. An admin can invite you back later."
+      description="You lose access to all of its workspaces right away. An admin can invite you back later."
       confirmLabel="Leave organization"
       destructive
       onConfirm={handleLeave}
@@ -274,19 +277,25 @@ export function DangerZone({
   const onlyWorkspace = workspaceCount <= 1;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ownership and deletion</CardTitle>
-        <CardDescription>These affect everyone in {organization.name}. Deleting can&apos;t be undone.</CardDescription>
-      </CardHeader>
-      <CardContent className="divide-y">
+    <section
+      aria-labelledby="danger-zone-title"
+      className="rise rounded-3xl border border-destructive/30"
+      style={{ "--i": 2 } as React.CSSProperties}
+    >
+      <div className="flex items-center gap-2 px-5 pt-5 sm:px-6 sm:pt-6">
+        <TriangleAlert className="h-3.5 w-3.5 text-destructive" aria-hidden />
+        <h2 id="danger-zone-title" className="brand-label text-destructive">
+          Danger zone
+        </h2>
+      </div>
+      <div className="divide-y divide-destructive/15 px-5 pb-1 pt-1 sm:px-6">
         {isOwner ? (
           <Row
             title="Transfer ownership"
             description={
               transferCandidates.length === 0
-                ? "Invite a teammate first. There's nobody to hand the organization to yet."
-                : "Make another member the owner of the organization. You'll remain an admin."
+                ? "Invite a teammate first, then hand the organization to them."
+                : "Hand the organization to another member. You stay on as an admin."
             }
           >
             <TransferOwnership organization={organization} candidates={transferCandidates} />
@@ -297,14 +306,14 @@ export function DangerZone({
           title="Leave organization"
           description={
             canLeave
-              ? `Remove yourself from ${organization.name} and all of its workspaces. Your automations and messages stay with the team.`
+              ? `You lose access to every workspace in ${organization.name}. Your work stays with the team.`
               : "You're the only owner. Transfer ownership before leaving."
           }
         >
           {canLeave ? (
             <LeaveOrganization organization={organization} userId={currentUserId} />
           ) : (
-            <Button variant="outline" size="sm" disabled>
+            <Button variant="outline" size="sm" className={DANGER_OUTLINE} disabled>
               Leave organization
             </Button>
           )}
@@ -314,9 +323,7 @@ export function DangerZone({
           <Row
             title={`Delete the ${workspace.name} workspace`}
             description={
-              onlyWorkspace
-                ? "This is the organization's only workspace. Delete the organization instead."
-                : "Permanently delete this workspace and all of its data. Its connected accounts are disconnected."
+              onlyWorkspace ? "This is the organization's only workspace. Delete the organization instead." : "Deletes it and all of its data."
             }
           >
             {onlyWorkspace ? (
@@ -327,7 +334,7 @@ export function DangerZone({
               <DeleteDialog
                 name={workspace.name}
                 triggerLabel="Delete workspace"
-                description="This permanently removes every account, automation, contact, conversation and log in this workspace. Connected Instagram and Facebook accounts are released."
+                description="Every account, automation, contact, conversation and log in it is deleted. This can't be undone."
                 endpoint={`/api/workspaces/${workspace.id}`}
                 failure="Couldn't delete the workspace"
               />
@@ -340,8 +347,8 @@ export function DangerZone({
             title="Delete organization"
             description={
               subscriptionActive
-                ? "Cancel the subscription under Billing first. You can delete the organization once it won't charge again."
-                : `Permanently delete ${organization.name}, all ${workspaceCount === 1 ? "of its data" : `${workspaceCount} workspaces`} and its payment history.`
+                ? "Cancel the subscription under Billing first."
+                : `Deletes ${organization.name}, ${workspaceCount === 1 ? "its workspace" : `its ${workspaceCount} workspaces`} and its payment history.`
             }
           >
             {subscriptionActive ? (
@@ -352,14 +359,14 @@ export function DangerZone({
               <DeleteDialog
                 name={organization.name}
                 triggerLabel="Delete organization"
-                description="This permanently removes every workspace in the organization with all of their accounts, automations, contacts and logs, plus the team and payment history."
+                description="Its workspaces, team and payment history are deleted, with every account, automation, contact and log in them. This can't be undone."
                 endpoint={`/api/organizations/${organization.id}`}
                 failure="Couldn't delete the organization"
               />
             )}
           </Row>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

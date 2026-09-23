@@ -31,9 +31,10 @@ function hourRange(h: number): string {
 }
 
 /**
- * When people engage, as a week × hour grid. One hue, light to dark: nothing
- * is lighter than "none", so an empty slot recedes into the page. Each cell is
- * its own hover and focus target; the busiest slot is called out in words below.
+ * When people engage, as a week × hour grid. One hue, lavender to deep purple,
+ * and "none" is a neutral grey, so an empty slot recedes and any activity reads
+ * as colour. Each cell is its own hover and focus target; the busiest slot is
+ * called out in words below, so the colour never has to be read alone.
  */
 export function Heatmap({
   grid,
@@ -64,16 +65,16 @@ export function Heatmap({
     <div className={cn("space-y-3", className)}>
       <div className="overflow-x-auto scrollbar-thin">
         <div className="min-w-[560px]">
-          <div className="grid grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] gap-[2px]">
+          <div className="grid grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] gap-[3px]">
             <span />
             {Array.from({ length: 24 }, (_, h) => (
-              <span key={h} className="text-center text-[10px] text-muted-foreground">
+              <span key={h} className="text-center text-[10px] tabular-nums text-muted-foreground">
                 {h % 3 === 0 ? hourLabel(h) : ""}
               </span>
             ))}
             {grid.map((row, d) => (
               <React.Fragment key={d}>
-                <span className="flex items-center text-[11px] text-muted-foreground">{DAY_LABELS[d]}</span>
+                <span className="flex items-center text-[11px] font-medium text-muted-foreground">{DAY_LABELS[d]}</span>
                 {row.map((v, h) => {
                   const isActive = active?.d === d && active.h === h;
                   return (
@@ -86,8 +87,8 @@ export function Heatmap({
                       onFocus={() => setActive({ d, h })}
                       onBlur={() => setActive(null)}
                       className={cn(
-                        "aspect-square w-full rounded-[3px] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring",
-                        isActive && "ring-2 ring-foreground/70",
+                        "aspect-square w-full rounded-[4px] outline-none transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-ring",
+                        isActive && "ring-2 ring-ink ring-offset-1",
                       )}
                       style={{ backgroundColor: HEAT_RAMP[step(v)] }}
                     />
@@ -103,22 +104,22 @@ export function Heatmap({
         <p aria-live="polite" className="min-h-[1rem]">
           {active && current !== null ? (
             <>
-              <span className="font-medium text-foreground">{plural(current)}</span> · {DAY_NAMES[active.d]} {hourRange(active.h)}
+              <span className="font-semibold text-ink">{plural(current)}</span> · {DAY_NAMES[active.d]} {hourRange(active.h)}
             </>
           ) : total > 0 ? (
             <>
-              Busiest: <span className="font-medium text-foreground">{DAY_NAMES[peak.d]}s, {hourRange(peak.h)}</span> ({plural(peak.v)}) · {zoneName(timezone)}
+              Busiest: <span className="font-semibold text-ink">{DAY_NAMES[peak.d]}s, {hourRange(peak.h)}</span> ({plural(peak.v)}) · {zoneName(timezone)}
             </>
           ) : (
             `No activity in this range · ${zoneName(timezone)}`
           )}
         </p>
-        <span className="flex items-center gap-1.5">
-          Less
+        <span className="flex items-center gap-1" aria-hidden>
+          <span className="mr-0.5">Less</span>
           {HEAT_RAMP.map((c) => (
-            <span key={c} className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: c }} aria-hidden />
+            <span key={c} className="h-3 w-3 rounded-[3px]" style={{ backgroundColor: c }} />
           ))}
-          More
+          <span className="ml-0.5">More</span>
         </span>
       </div>
     </div>

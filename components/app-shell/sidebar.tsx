@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, Settings } from "lucide-react";
 
 import { LogoMark, Wordmark } from "@/components/ui/logo";
+import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 import { isActivePath, PRIMARY_NAV, settingsLinks } from "./nav-config";
@@ -43,12 +44,15 @@ export function Sidebar({ user, organization, organizationCount, workspaces, act
 
   const rowClass = (active: boolean) =>
     cn(
-      "group flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-      active ? "bg-sidebar-accent font-medium text-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+      "group flex h-10 items-center gap-3 rounded-xl px-1.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+      active ? "bg-fog font-semibold text-ink" : "text-sidebar-foreground hover:bg-fog/70 hover:text-ink",
     );
 
   const iconClass = (active: boolean) =>
     cn("h-[18px] w-[18px] shrink-0", active ? "text-foreground" : "text-muted-foreground group-hover:text-foreground");
+
+  const tileClass = (tone: (typeof PRIMARY_NAV)[number]["tone"]) =>
+    cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", TONES[tone].solid);
 
   return (
     <aside className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
@@ -81,7 +85,9 @@ export function Sidebar({ user, organization, organizationCount, workspaces, act
             return (
               <li key={item.href}>
                 <Link href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={rowClass(active)}>
-                  <Icon className={iconClass(active)} strokeWidth={active ? 2 : 1.75} />
+                  <span className={tileClass(item.tone)}>
+                    <Icon className="h-4 w-4" strokeWidth={2} />
+                  </span>
                   <span className="truncate">{item.label}</span>
                 </Link>
               </li>
@@ -96,14 +102,16 @@ export function Sidebar({ user, organization, organizationCount, workspaces, act
               aria-controls="sidebar-settings"
               className={cn("w-full text-left", rowClass(settingsActive && !settingsOpen))}
             >
-              <Settings className={iconClass(settingsActive)} strokeWidth={settingsActive ? 2 : 1.75} />
+              <span className={cn(tileClass("fog"), "border border-border")}>
+                <Settings className={iconClass(settingsActive)} strokeWidth={2} />
+              </span>
               <span className="flex-1">Settings</span>
               <ChevronDown
                 className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200", settingsOpen && "rotate-180")}
               />
             </button>
             {settingsOpen ? (
-              <ul id="sidebar-settings" className="mt-0.5 space-y-0.5 pl-[2.375rem]">
+              <ul id="sidebar-settings" className="mt-0.5 space-y-0.5 pl-[2.625rem]">
                 {subLinks.map((link) => {
                   const active = isActivePath(pathname, link.href, link.exact);
                   return (

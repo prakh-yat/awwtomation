@@ -1,48 +1,77 @@
+import { TONES, type Tone } from "@/components/ui/tone";
 import { cn, formatNumber } from "@/lib/utils";
 
 export type UsageRow = {
   label: string;
   used: number;
   limit: number;
-  /** Small muted note under the bar, e.g. "Resets Oct 1". */
+  /** One short muted line under the meter, e.g. "Resets Oct 1". */
   hint?: string;
 };
 
-/**
- * Bars stay black until a quota is nearly gone: warning at 80%, destructive
- * at 100%. Those are the only two colours the design system allows here.
- */
-function tone(ratio: number): string {
-  if (ratio >= 1) return "bg-destructive";
-  if (ratio >= 0.8) return "bg-warning";
-  return "bg-foreground";
+export type MeterLevel = "ok" | "near" | "full";
+
+/** Orange from 80% of a limit, red once it is reached. */
+export function meterLevel(used: number, limit: number): MeterLevel {
+  const ratio = limit > 0 ? used / limit : 0;
+  if (ratio >= 1) return "full";
+  if (ratio >= 0.8) return "near";
+  return "ok";
 }
 
-export function UsageBars({ rows, className }: { rows: UsageRow[]; className?: string }) {
+export interface MeterProps {
+  used: number;
+  limit: number;
+  /** Accessible name, e.g. "DMs used this month". */
+  label: string;
+  size?: "default" | "lg";
+  /** Fill while there is room left. Near the limit it turns orange, at it red, whatever the tone. */
+  tone?: Tone;
+  /** Light track and fill, for the ink plan block. */
+  dark?: boolean;
+  className?: string;
+}
+
+/** A quota bar that grows in on load. */
+export function Meter({ used, limit, label, size = "default", tone = "ink", dark = false, className }: MeterProps) {
+  const level = meterLevel(used, limit);
+  const ratio = limit > 0 ? Math.min(used / limit, 1) : 0;
+  // Any use at all shows a sliver, so 3 of 15,000 doesn't read as none.
+  const width = `${Math.max(ratio * 100, used > 0 ? 1.5 : 0)}%`;
+  const fill = level === "full" ? "bg-destructive" : level === "near" ? "bg-orange" : dark ? "bg-white" : TONES[tone].dot;
+
   return (
-    <dl className={cn("grid gap-5 sm:grid-cols-2", className)}>
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={limit}
+      aria-valuenow={Math.min(used, limit)}
+      aria-valuetext={`${used.toLocaleString("en-US")} of ${limit.toLocaleString("en-US")}`}
+      className={cn("w-full overflow-hidden rounded-full", size === "lg" ? "h-3" : "h-1.5", dark ? "bg-white/15" : "bg-ink/[0.08]", className)}
+    >
+      <div className={cn("h-full origin-left animate-bar-grow rounded-full motion-reduce:animate-none", fill)} style={{ width }} />
+    </div>
+  );
+}
+
+/** Label, count and meter for each quota. `dark` sets them on the ink plan block. */
+export function UsageBars({ rows, className, dark = false }: { rows: UsageRow[]; className?: string; dark?: boolean }) {
+  return (
+    <dl className={cn("grid gap-x-8 gap-y-6 sm:grid-cols-2", className)}>
       {rows.map((row) => {
-        const ratio = row.limit > 0 ? row.used / row.limit : 0;
-        const width = `${Math.min(100, Math.round(ratio * 100))}%`;
+        const full = meterLevel(row.used, row.limit) === "full";
         return (
-          <div key={row.label}>
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-[13px] font-medium">{row.label}</dt>
-              <dd className="text-[13px] tabular-nums text-muted-foreground">
-                <span className="font-medium text-foreground">{formatNumber(row.used)}</span> / {formatNumber(row.limit)}
-              </dd>
-            </div>
-            <div
-              role="progressbar"
-              aria-label={`${row.label} usage`}
-              aria-valuemin={0}
-              aria-valuemax={row.limit}
-              aria-valuenow={Math.min(row.used, row.limit)}
-              className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted"
-            >
-              <div className={cn("h-full rounded-full transition-[width]", tone(ratio))} style={{ width }} />
-            </div>
-            {row.hint ? <p className="mt-1.5 text-xs text-muted-foreground">{row.hint}</p> : null}
+          <div key={row.label} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3">
+            <dt className={cn("brand-label truncate", dark ? "text-white/60" : "text-muted-foreground")}>{row.label}</dt>
+            <dd className={cn("text-[13px] tabular-nums", dark ? "text-white/60" : "text-muted-foreground")}>
+              <span className={cn("font-semibold", dark ? "text-white" : full ? "text-destructive" : "text-ink")}>{formatNumber(row.used)}</span> /{" "}
+              {formatNumber(row.limit)}
+            </dd>
+            <dd className="col-span-2 mt-2.5">
+              <Meter used={row.used} limit={row.limit} label={`${row.label} usage`} dark={dark} />
+              {row.hint ? <p className={cn("mt-2 text-xs", dark ? "text-white/50" : "text-muted-foreground")}>{row.hint}</p> : null}
+            </dd>
           </div>
         );
       })}

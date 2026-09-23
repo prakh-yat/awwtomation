@@ -24,14 +24,13 @@ export default async function BroadcastsPage() {
       <>
         <PageHeader title="Broadcasts" />
         <EmptyState
+          tone="orange"
           icon={Megaphone}
-          title={`Broadcasts aren't included in the ${plan.label} plan`}
-          description="Upgrade to Starter or above to message a group of contacts at once."
+          title="Broadcasts start on Starter"
+          description={`Your ${plan.label} plan doesn't include them.`}
           action={
-            <Button asChild>
-              <Link href="/settings/billing">
-                See plans
-              </Link>
+            <Button asChild variant="highlight">
+              <Link href="/settings/billing">See plans</Link>
             </Button>
           }
         />
@@ -58,14 +57,15 @@ export default async function BroadcastsPage() {
       />
       {rows.length === 0 ? (
         <EmptyState
+          tone="orange"
           icon={Megaphone}
           title="No broadcasts yet"
-          description="Choose who gets it by tag or saved segment, write the message and send it now or later."
+          description="Message a group of contacts at once, now or later."
           action={
             <Button asChild>
               <Link href="/broadcasts/new">
                 <Plus />
-                Create your first broadcast
+                New broadcast
               </Link>
             </Button>
           }

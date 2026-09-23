@@ -3,13 +3,14 @@ import Link from "next/link";
 import { AlertTriangle, Layers } from "lucide-react";
 
 import { BarList } from "@/components/charts/bar-list";
-import { VIZ } from "@/components/charts/tokens";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { PlatformIcon } from "@/components/ui/platform-icon";
+import { PlatformMark } from "@/components/ui/platform-badge";
+import { Stat } from "@/components/ui/stat";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TONE_HEX } from "@/components/ui/tone";
 import { deliveryReason } from "@/lib/errors/customer-messages";
 import { cn, initials } from "@/lib/utils";
 
@@ -45,16 +46,6 @@ function share(part: number, whole: number): string {
   return `${pct > 0 && pct < 1 ? pct.toFixed(1) : Math.round(pct)}%`;
 }
 
-function Figure({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
-      {detail ? <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p> : null}
-    </div>
-  );
-}
-
 /** Read-only view for SENDING / SENT / FAILED / CANCELLED broadcasts. Server component. */
 function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, channelAvatarUrl }: BroadcastReportProps) {
   const meta = statusMeta(row.status);
@@ -69,8 +60,8 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
     .map(([status, count]) => ({ key: status, label: deliveryReason(status).label, value: count }));
 
   const segments = [
-    { key: "sent", label: "Sent", value: stats.sent, color: VIZ.accent },
-    { key: "skipped", label: "Not sent", value: stats.skipped, color: VIZ.context },
+    { key: "sent", label: "Sent", value: stats.sent, color: TONE_HEX.green },
+    { key: "skipped", label: "Not sent", value: stats.skipped, color: TONE_HEX.orange },
     { key: "failed", label: "Failed", value: stats.failed, color: "hsl(var(--destructive))" },
   ].filter((s) => s.value > 0);
 
@@ -84,7 +75,7 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
         title={
           <span className="flex flex-wrap items-center gap-2.5">
             {row.name}
-            <Badge variant={meta.variant} className={sending ? "animate-pulse" : undefined}>
+            <Badge variant={meta.variant} dot={meta.live ? "pulse" : undefined}>
               {meta.label}
             </Badge>
           </span>
@@ -95,8 +86,8 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
       {/* Who it went to and from where. It used to sit in the page description,
           which only the dashboard carries now. */}
       <p className="-mt-3 mb-6 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <PlatformIcon platform={row.channel.platform} size={14} />
+        <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+          <PlatformMark platform={row.channel.platform} size={18} />
           {channelLabel(row.channel)}
         </span>
         <span aria-hidden>·</span>
@@ -115,45 +106,45 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
       </p>
 
       {row.status === "FAILED" ? (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px]" role="alert">
+        <div className="mb-6 flex items-start gap-3 rounded-2xl bg-destructive/10 px-4 py-3 text-[13px]" role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div>
-            <p className="font-medium text-destructive">This broadcast didn&apos;t go out.</p>
-            <p className="text-muted-foreground">
-              Check that the account is still connected on{" "}
-              <Link href="/channels" className="underline underline-offset-2">
-                Channels
-              </Link>{" "}
-              and that your plan includes broadcasts, then send it again.
-            </p>
-          </div>
+          <p>
+            <span className="font-semibold text-destructive">It didn&apos;t go out.</span> Check the account on{" "}
+            <Link href="/dashboard?accounts=1" className="font-semibold underline underline-offset-2">
+              Channels
+            </Link>
+            , then send it again.
+          </p>
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
+          {sending ? (
+            <div className="flex items-center gap-3 rounded-2xl bg-blue-soft px-4 py-3 text-[13px] text-blue-ink" role="status">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping-soft rounded-full bg-blue motion-reduce:animate-none" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-blue" />
+              </span>
+              <span className="font-semibold">
+                Sending: {formatCount(p.processed)} of {formatCount(p.target)} done
+              </span>
+              <AutoRefresh intervalMs={5000} />
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Sent" value={formatCount(stats.sent)} tone="orange" meta={`${share(stats.sent, stats.target)} of the audience`} />
+            <Stat label="Audience" value={formatCount(stats.target)} />
+            <Stat label="Not sent" value={formatCount(notSent)} />
+            <Stat label="Failed" value={formatCount(stats.failed)} meta={stats.pendingJobs > 0 ? `${formatCount(stats.pendingJobs)} still to go` : undefined} />
+          </div>
+
           <Card>
-            <CardContent className="space-y-5 p-5">
-              {sending ? (
-                <div className="flex items-center justify-between gap-4 text-[13px]" role="status">
-                  <span className="font-medium">
-                    Sending: {formatCount(p.processed)} of {formatCount(p.target)} done
-                  </span>
-                  <span className="text-xs text-muted-foreground">This page updates on its own</span>
-                  <AutoRefresh intervalMs={5000} />
-                </div>
-              ) : null}
-
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
-                <Figure label="Audience" value={formatCount(stats.target)} detail="Matched when sending started" />
-                <Figure label="Sent" value={formatCount(stats.sent)} detail={`${share(stats.sent, stats.target)} of the audience`} />
-                <Figure label="Not sent" value={formatCount(notSent)} detail={notSent > 0 ? "See the reasons below" : "Nobody was skipped"} />
-                <Figure label="Failed" value={formatCount(stats.failed)} detail={stats.pendingJobs > 0 ? `${formatCount(stats.pendingJobs)} still in the queue` : undefined} />
-              </div>
-
+            <CardContent className="p-5">
               {total > 0 ? (
                 <div>
-                  <div className="flex h-2.5 w-full gap-[2px] overflow-hidden rounded-full bg-muted" aria-hidden>
+                  <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-fog" aria-hidden>
                     {segments.map((s) => (
                       <div key={s.key} className="h-full first:rounded-l-full last:rounded-r-full" style={{ width: `${(s.value / total) * 100}%`, backgroundColor: s.color }} />
                     ))}
@@ -175,12 +166,8 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
           {reasons.length > 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Why some people didn&apos;t get it</CardTitle>
-                {stats.byStatus.SKIPPED_WINDOW ? (
-                  <CardDescription>
-                    {row.channel.platform === "FACEBOOK" ? "Facebook" : "Instagram"} only lets a broadcast reach people who messaged you in the last 24 hours.
-                  </CardDescription>
-                ) : null}
+                <CardTitle>Why some didn&apos;t get it</CardTitle>
+                {stats.byStatus.SKIPPED_WINDOW ? <CardDescription>Only people who messaged you in the last 24 hours can get a broadcast.</CardDescription> : null}
               </CardHeader>
               <CardContent>
                 <BarList items={reasons} valueLabel="people" />
@@ -201,11 +188,8 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
                 </CardDescription>
               </div>
               {deliveryTotal > rows.length ? (
-                <Link
-                  href={`/logs?broadcastId=${encodeURIComponent(row.id)}`}
-                  className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                >
-                  See everyone in Logs
+                <Link href={`/logs?broadcastId=${encodeURIComponent(row.id)}`} className="text-[13px] font-semibold text-orange-ink hover:underline">
+                  See all in Logs
                 </Link>
               ) : null}
             </CardHeader>
@@ -248,7 +232,7 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
                           </TableCell>
                           <TableCell>
                             <span className="inline-flex items-center gap-1.5">
-                              <span className={cn("h-1.5 w-1.5 rounded-full", sent ? "bg-success" : failed ? "bg-destructive" : "bg-muted-foreground/50")} aria-hidden />
+                              <span className={cn("h-2 w-2 rounded-full", sent ? "bg-green" : failed ? "bg-destructive" : "bg-orange")} aria-hidden />
                               {sent ? "Sent" : (d.reason ?? (failed ? "Failed" : "Not sent"))}
                             </span>
                           </TableCell>

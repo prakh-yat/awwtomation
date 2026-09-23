@@ -39,9 +39,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
   async function send(_est: AudienceEstimate) {
     try {
       const result = await apiFetch<{ eligible: number; skippedWindow: number }>(`/api/broadcasts/${row.id}/send`, { method: "POST" });
-      toast.success(`Sending “${row.name}” to ${formatCount(result.eligible)} contact${result.eligible === 1 ? "" : "s"}`, {
-        description: result.skippedWindow > 0 ? `${formatCount(result.skippedWindow)} not sent because they haven't messaged you in the last 24 hours` : undefined,
-      });
+      toast.success(`Sending “${row.name}” to ${formatCount(result.eligible)} ${result.eligible === 1 ? "person" : "people"}`);
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't send the broadcast"));
@@ -52,7 +50,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
   async function cancel() {
     try {
       const result = await apiFetch<{ cancelledJobs: number }>(`/api/broadcasts/${row.id}/cancel`, { method: "POST" });
-      toast.success(row.status === "SENDING" ? `Cancelled. ${formatCount(result.cancelledJobs)} queued messages won't be sent.` : "Schedule cancelled");
+      toast.success(row.status === "SENDING" ? `Stopped. ${formatCount(result.cancelledJobs)} messages were not sent.` : "Schedule cancelled");
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't cancel the broadcast"));
@@ -82,8 +80,8 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
         title={row.status === "SENDING" ? "Stop this broadcast?" : "Cancel the schedule?"}
         description={
           row.status === "SENDING"
-            ? "Messages already delivered stay delivered. Everything still queued is cancelled and the broadcast is marked as cancelled."
-            : "The broadcast won't go out. You can delete it afterwards."
+            ? "Messages already sent stay sent. The rest are not sent."
+            : "It won't go out. You can delete it afterwards."
         }
         confirmLabel={row.status === "SENDING" ? "Stop sending" : "Cancel schedule"}
         destructive
@@ -94,7 +92,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title={`Delete “${row.name}”?`}
-        description="The broadcast is removed from this list. Delivery logs are kept."
+        description="Its delivery history stays in Logs."
         confirmLabel="Delete"
         destructive
         onConfirm={remove}
@@ -114,7 +112,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
           </Button>
         ) : null}
         {canEdit ? (
-          <Button onClick={() => setSendOpen(true)}>
+          <Button variant="highlight" onClick={() => setSendOpen(true)}>
             <Send />
             Send now
           </Button>
@@ -140,7 +138,7 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${row.name}`}>
+          <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${row.name}`}>
             <MoreHorizontal />
           </Button>
         </DropdownMenuTrigger>

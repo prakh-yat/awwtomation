@@ -15,7 +15,7 @@ import {
   type Contact,
   type DeliveryLog,
 } from "@prisma/client";
-import { reserveDmQuota } from "@/lib/billing/usage";
+import { releaseDmQuota, reserveDmQuota } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { sendFacebookPrivateReply, sendMessengerMessage } from "@/lib/meta/facebook";
@@ -276,6 +276,11 @@ export async function sendToContact(input: SendToContactInput): Promise<SendToCo
   try {
     result = await dispatch(channel, contact, message, viaPrivateReplyCommentId, tag);
   } catch (err) {
+    // The reservation was made for a message that is not going out. Give it
+    // back on every path below: the retryable ones will reserve again on the
+    // next attempt, and the terminal ones were never delivered at all.
+    await releaseDmQuota(channel.workspaceId, 1);
+
     if (err instanceof MetaTokenError) {
       await markChannelTokenExpired(channel.id, err.message);
       return skip(DeliveryStatus.FAILED, `Channel token invalid: ${err.message}`, metaErrorJson(err));

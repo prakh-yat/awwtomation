@@ -5,6 +5,7 @@
  */
 import {
   AutomationStatus,
+  ChannelPlatform,
   ChannelStatus,
   DeliveryKind,
   DeliveryStatus,
@@ -14,7 +15,6 @@ import {
   TriggerType,
   type Automation,
   type Channel,
-  type ChannelPlatform,
 } from "@prisma/client";
 import { z } from "zod";
 
@@ -207,12 +207,12 @@ export class ActivationBlockedError extends ApiError {
 const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
   SENT: "Sent",
   FAILED: "Failed",
-  SKIPPED_DUPLICATE: "Already sent (duplicate)",
-  SKIPPED_RATE_LIMIT: "Rate limited",
-  SKIPPED_SELF: "Own comment",
+  SKIPPED_DUPLICATE: "Already sent",
+  SKIPPED_RATE_LIMIT: "Too many at once",
+  SKIPPED_SELF: "Own account",
   SKIPPED_NOT_FOLLOWING: "Not following",
-  SKIPPED_WINDOW: "Outside 24h window",
-  SKIPPED_PLAN_LIMIT: "Plan limit reached",
+  SKIPPED_WINDOW: "Over 24 hours",
+  SKIPPED_PLAN_LIMIT: "Monthly limit",
   SKIPPED_OPTED_OUT: "Opted out",
 };
 
@@ -273,15 +273,23 @@ function parseStoredFlow(json: Prisma.JsonValue): { flow: FlowGraph; recovered: 
 
 /**
  * Activation rules from ARCHITECTURE §5: an ACTIVE channel, a flow that passes
- * `validateFlow`, and at least one keyword unless the mode is ANY.
+ * `validateFlow`, and at least one keyword unless the mode is ANY. A story
+ * reply trigger also needs an Instagram account: Facebook Pages have no story
+ * replies, so it would sit live and never fire.
  */
-function activationBlockers(input: { matchMode: MatchMode; keywords: string[]; flow: FlowGraph }, channel: Pick<Channel, "status">): string[] {
+function activationBlockers(
+  input: { triggerType: TriggerType; matchMode: MatchMode; keywords: string[]; flow: FlowGraph },
+  channel: Pick<Channel, "status" | "platform">,
+): string[] {
   const blockers: string[] = [];
+  if (input.triggerType === TriggerType.STORY_REPLY && channel.platform === ChannelPlatform.FACEBOOK) {
+    blockers.push("Story replies only happen on Instagram. Pick Comment or DM for a Facebook Page.");
+  }
   if (channel.status !== ChannelStatus.ACTIVE) {
     blockers.push(
       channel.status === ChannelStatus.DISCONNECTED
-        ? "This account is disconnected. Reconnect it on the Channels page first."
-        : "This account needs to be reconnected on the Channels page first.",
+        ? "This account is disconnected. Reconnect it from the dashboard first."
+        : "This account needs to be reconnected from the dashboard first.",
     );
   }
   const validation = validateFlow(input.flow);
@@ -516,7 +524,7 @@ async function toDetail(automation: Automation & { channel: Channel }): Promise<
     selectedMedia: selectedMedia.map(mediaSummary),
     validation,
     activationBlockers: [
-      ...activationBlockers({ matchMode: automation.matchMode, keywords: automation.keywords, flow }, automation.channel),
+      ...activationBlockers({ triggerType: automation.triggerType, matchMode: automation.matchMode, keywords: automation.keywords, flow }, automation.channel),
       ...(await pipelineBlockers(automation.workspaceId, flow)),
     ],
   };
@@ -634,7 +642,7 @@ export async function setAutomationStatus(workspaceId: string, id: string, statu
   if (status === "ACTIVE") {
     const { flow } = parseStoredFlow(existing.flow);
     const blockers = [
-      ...activationBlockers({ matchMode: existing.matchMode, keywords: existing.keywords, flow }, existing.channel),
+      ...activationBlockers({ triggerType: existing.triggerType, matchMode: existing.matchMode, keywords: existing.keywords, flow }, existing.channel),
       ...(await pipelineBlockers(workspaceId, flow)),
     ];
     if (blockers.length > 0) throw new ActivationBlockedError(blockers);

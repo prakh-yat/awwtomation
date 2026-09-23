@@ -3,9 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings } from "lucide-react";
-
 import { LogoMark } from "@/components/ui/logo";
+import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 import { isActivePath, PRIMARY_NAV } from "./nav-config";
@@ -16,35 +15,42 @@ import { WorkspaceCard, WorkspaceSwitcher } from "./workspace-switcher";
 
 // ───────────────────────── Geometry ─────────────────────────
 //
-// Magnification is computed from the resting layout and applied with transforms
-// only, so nothing reflows while the pointer moves: an icon's growth is a
-// `scale`, and its neighbours are pushed aside with a `translateY` derived from
-// that same growth. That keeps the slot centres below constant and lets them be
-// worked out arithmetically instead of measured on every frame.
+// Every slot is laid out at its magnified size, so the dock itself grows
+// around the icons instead of letting them spill over its edges. Scales come
+// from the pointer's distance to each slot's resting centre, which never
+// moves, so the magnification can't feed back into itself. The layout is then
+// shifted so the point under the pointer stays under the pointer.
+//
+// Everything below is in dock units; on a short window the whole dock is
+// scaled down by `fit`, and viewport pixels are units times `fit`.
 
 /** Resting size of one dock slot. */
-const SLOT = 44;
-/** Vertical gap between slots. */
-const GAP = 8;
-/** Height a divider occupies, gaps included. */
+const SLOT = 50;
+/** The brand mark at the top: smaller than a slot, and it never magnifies. */
+const BRAND = 34;
+/** Space between slots. */
+const GAP = 5;
+/** Height a divider occupies, its own spacing included. */
 const DIVIDER = 13;
-/** Padding at the top and bottom of the dock. */
+/** Padding inside the dock, on every side. */
 const PAD = 10;
-/** How big the icon under the pointer gets. */
-const MAX_SCALE = 1.55;
-/** How far the pointer's influence reaches, in pixels. */
-const RADIUS = 105;
-/** Below this the label bubble would be unreadable, so it is not drawn. */
-const LABEL_SCALE = 1.18;
+/** Size of the slot under the pointer, relative to its resting size. */
+const MAX_SCALE = 2;
+/** How far the pointer's influence reaches: the icon under it and about two either side. */
+const RADIUS = 130;
+/** Below this the label bubble would crowd the icon, so it is not drawn. */
+const LABEL_SCALE = 1.3;
+/** Space kept between the dock and the top and bottom of the window. */
+const EDGE = 12;
 
 type Slot =
-  | { kind: "divider" }
+  | { kind: "divider"; key: string }
   | {
       kind: "item";
       key: string;
       label: string;
-      render: (scale: number) => React.ReactNode;
-      /** Decorative: does not magnify, does not get a label bubble. */
+      node: React.ReactNode;
+      /** Decorative: does not magnify and gets no label bubble. */
       fixed?: boolean;
     };
 
@@ -66,6 +72,57 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+function useWindowHeight(): number {
+  const [height, setHeight] = React.useState(0);
+  React.useEffect(() => {
+    const update = () => setHeight(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return height;
+}
+
+/** A slot's size at rest: dividers are drawn in their own spacing, the brand mark is smaller. */
+function restSize(slot: Slot): number {
+  if (slot.kind === "divider") return 0;
+  return slot.fixed ? BRAND : SLOT;
+}
+
+/** Slot offsets for a given set of sizes: where each slot starts, and the total length. */
+function layout(slots: readonly Slot[], sizes: readonly number[]) {
+  const starts: number[] = [];
+  let y = PAD;
+  slots.forEach((slot, i) => {
+    starts.push(y);
+    y += slot.kind === "divider" ? DIVIDER : sizes[i] + GAP;
+  });
+  return { starts, length: y - GAP + PAD };
+}
+
+/**
+ * The shift that keeps the point `p` (resting units) where it is after the
+ * slots grow: `p` sits a fraction of the way through some slot or gap, and
+ * that same fraction of the magnified slot is lined up with it.
+ */
+function anchorShift(slots: readonly Slot[], rest: number[], grown: number[], sizes: readonly number[], p: number): number {
+  for (let i = 0; i < slots.length; i += 1) {
+    const slot = slots[i];
+    const restLength = slot.kind === "divider" ? DIVIDER : restSize(slot);
+    const grownSize = slot.kind === "divider" ? DIVIDER : sizes[i];
+    const restEnd = rest[i] + restLength;
+    if (p < rest[i]) return rest[i] - grown[i];
+    if (p <= restEnd) {
+      const f = restLength > 0 ? (p - rest[i]) / restLength : 0;
+      return rest[i] + f * restLength - (grown[i] + f * grownSize);
+    }
+    // In the gap after this slot: gaps keep their size, so line up its start.
+    if (slot.kind === "item" && p < restEnd + GAP) return restEnd - (grown[i] + grownSize);
+  }
+  const last = slots.length - 1;
+  return last >= 0 ? rest[last] - grown[last] : 0;
+}
+
 /**
  * The dock.
  *
@@ -77,21 +134,22 @@ export function Dock(props: ShellProps) {
   const { user, organization, organizationCount, workspaces, activeWorkspaceId, role, usage } = props;
   const pathname = usePathname() ?? "";
   const reducedMotion = usePrefersReducedMotion();
+  const windowHeight = useWindowHeight();
 
   const [open, setOpen] = React.useState(false);
   const [pointerY, setPointerY] = React.useState<number | null>(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const dockRef = React.useRef<HTMLDivElement>(null);
-  const topRef = React.useRef(0);
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Shrinks the whole dock on a short window rather than letting it run off the
-  // top and bottom of the screen. 1 on anything laptop-sized or larger.
-  const [fit, setFit] = React.useState(1);
+  const hovering = React.useRef(false);
 
-  // A menu or the workspace overlay has to outlive the pointer leaving the dock.
+  // A menu or the workspace panel has to outlive the pointer leaving the dock.
   const pinned = switcherOpen || menuOpen;
+  const pinnedRef = React.useRef(pinned);
+  React.useEffect(() => {
+    pinnedRef.current = pinned;
+  }, [pinned]);
 
   const cancelClose = React.useCallback(() => {
     if (closeTimer.current) {
@@ -107,66 +165,77 @@ export function Dock(props: ShellProps) {
 
   const hide = React.useCallback(() => {
     cancelClose();
-    // A short grace period: crossing the gap between the hot zone and the dock,
-    // or clipping a corner on the way to an icon, should not dismiss it.
+    // A short grace period: crossing the gap between the edge and the dock, or
+    // clipping a corner on the way to an icon, should not dismiss it.
     closeTimer.current = setTimeout(() => {
+      if (pinnedRef.current || hovering.current) return;
       setOpen(false);
       setPointerY(null);
-    }, 160);
+    }, 180);
   }, [cancelClose]);
 
   React.useEffect(() => cancelClose, [cancelClose]);
 
+  // The left edge wakes the dock. Watched on the window rather than with a strip
+  // of its own, so nothing sits over the page and swallows clicks there.
+  React.useEffect(() => {
+    if (open) return;
+    let frame = 0;
+    const onMove = (event: MouseEvent) => {
+      if (event.clientX > 10 || frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (window.matchMedia("(min-width: 768px)").matches) show();
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      cancelAnimationFrame(frame);
+    };
+  }, [open, show]);
+
+  // Opening a menu keeps the dock out; closing it lets the dock go if the
+  // pointer has moved on.
   React.useEffect(() => {
     if (pinned) show();
-  }, [pinned, show]);
-
-  // Measured once per open and on resize. Nothing in the dock reflows while the
-  // pointer moves, so a stale rect is not a risk between those two moments.
-  React.useEffect(() => {
-    if (!open) return;
-    const measure = () => {
-      const rect = dockRef.current?.getBoundingClientRect();
-      if (rect) topRef.current = rect.top;
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [open, fit]);
+    else if (!hovering.current) hide();
+  }, [pinned, show, hide]);
 
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !pinned) {
+      if (event.key === "Escape" && !pinnedRef.current) {
         setOpen(false);
         setPointerY(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, pinned]);
+  }, [open]);
 
+  // Built once per navigation, not per frame: the pointer only changes sizes,
+  // so every slot's content keeps its identity and React skips it.
   const slots = React.useMemo<Slot[]>(() => {
     const list: Slot[] = [
       {
         // The mark, not a link: the dock is for navigating, and a logo that
-        // silently means "dashboard" is a guess the Dashboard row already covers.
+        // silently means "dashboard" is a guess the Dashboard tile already covers.
         kind: "item",
         key: "brand",
         label: "",
         fixed: true,
-        render: () => (
-          <span
-            aria-hidden
-            className="flex h-full w-full items-center justify-center rounded-[16px] bg-foreground text-background"
-          >
-            <LogoMark size={22} className="text-background" />
+        node: (
+          <span aria-hidden className="flex h-full w-full items-center justify-center rounded-[30%] bg-ink text-white">
+            <LogoMark size={18} className="text-white" />
           </span>
         ),
       },
-      { kind: "divider" },
+      { kind: "divider", key: "divider-nav" },
     ];
 
+    // Every section keeps its colour, like the icons in a real dock; the one
+    // you are on gets the dot on the screen side, where a dock puts it.
     for (const item of PRIMARY_NAV) {
       const active = isActivePath(pathname, item.href);
       const Icon = item.icon;
@@ -174,72 +243,44 @@ export function Dock(props: ShellProps) {
         kind: "item",
         key: item.href,
         label: item.label,
-        render: () => (
+        node: (
           <Link
             href={item.href}
             aria-label={item.label}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex h-full w-full items-center justify-center rounded-[14px] border outline-none transition-colors",
+              "relative flex h-full w-full items-center justify-center rounded-[28%] outline-none transition-[filter] duration-200",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              active
-                ? "border-transparent bg-foreground text-background"
-                : "border-transparent bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
+              "shadow-[inset_0_-2px_0_rgb(15_15_15/0.08)] hover:brightness-[1.04]",
+              TONES[item.tone].solid,
             )}
           >
-            <Icon className="h-[19px] w-[19px]" strokeWidth={active ? 2 : 1.75} />
+            <Icon className="h-[40cqw] w-[40cqw]" strokeWidth={2} />
+            {active ? <span aria-hidden className="absolute -left-[8px] top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-ink" /> : null}
           </Link>
         ),
       });
     }
 
-    const settingsActive = isActivePath(pathname, "/settings");
-    list.push({ kind: "divider" });
-    list.push({
-      kind: "item",
-      key: "/settings",
-      label: "Settings",
-      render: () => (
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          aria-current={settingsActive ? "page" : undefined}
-          className={cn(
-            "flex h-full w-full items-center justify-center rounded-[14px] outline-none transition-colors",
-            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            settingsActive ? "bg-foreground text-background" : "bg-secondary/70 text-muted-foreground hover:bg-secondary hover:text-foreground",
-          )}
-        >
-          <Settings className="h-[19px] w-[19px]" strokeWidth={settingsActive ? 2 : 1.75} />
-        </Link>
-      ),
-    });
-
-    list.push({ kind: "divider" });
+    const workspace = workspaces.find((w) => w.id === activeWorkspaceId);
+    list.push({ kind: "divider", key: "divider-account" });
     list.push({
       kind: "item",
       key: "workspace",
-      label: workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? "Workspace",
-      render: () => (
-        <WorkspaceCard
-          organizationName={organization.name}
-          workspace={workspaces.find((w) => w.id === activeWorkspaceId)}
-          collapsed
-          onOpen={() => setSwitcherOpen(true)}
-        />
-      ),
+      label: workspace?.name ?? "Workspace",
+      node: <WorkspaceCard organizationName={organization.name} workspace={workspace} collapsed onOpen={() => setSwitcherOpen(true)} />,
     });
     list.push({
       kind: "item",
       key: "usage",
       label: "DMs this month",
-      render: () => <UsageMeter usage={usage} collapsed />,
+      node: <UsageMeter usage={usage} collapsed />,
     });
     list.push({
       kind: "item",
       key: "account",
       label: user.name?.trim() || user.email,
-      render: () => (
+      node: (
         <UserMenu
           user={user}
           organization={organization}
@@ -254,133 +295,151 @@ export function Dock(props: ShellProps) {
     return list;
   }, [pathname, workspaces, activeWorkspaceId, organization, organizationCount, usage, user]);
 
-  // Resting offset of every slot from the top of the dock, and the centre of each.
-  const geometry = React.useMemo(() => {
-    const offsets: number[] = [];
-    let y = PAD;
-    for (const slot of slots) {
-      offsets.push(y);
-      y += slot.kind === "divider" ? DIVIDER : SLOT + GAP;
-    }
-    return { offsets, height: y - GAP + PAD };
+  // The resting layout, and the most it can grow: the dock is fitted to the
+  // window at its largest, so it never runs off the top or bottom.
+  const rest = React.useMemo(() => {
+    const sizes = slots.map(restSize);
+    const { starts, length } = layout(slots, sizes);
+    let peak = 0;
+    slots.forEach((slot, i) => {
+      if (slot.kind !== "item" || slot.fixed) return;
+      const centre = starts[i] + SLOT / 2;
+      let growth = 0;
+      slots.forEach((other, j) => {
+        if (other.kind === "item" && !other.fixed) growth += SLOT * (scaleFor(Math.abs(starts[j] + SLOT / 2 - centre)) - 1);
+      });
+      peak = Math.max(peak, growth);
+    });
+    return { starts, length, peak };
   }, [slots]);
 
-  React.useEffect(() => {
-    const update = () => {
-      const available = window.innerHeight - 24;
-      setFit(geometry.height > available ? Math.max(available / geometry.height, 0.62) : 1);
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [geometry.height]);
+  const fit = windowHeight > 0 ? Math.min(1, Math.max(0.55, (windowHeight - EDGE * 2) / (rest.length + (reducedMotion ? 0 : rest.peak)))) : 1;
+  const restTop = windowHeight > 0 ? (windowHeight - rest.length * fit) / 2 : 0;
 
-  // One pass over the slots: the scale each one takes, and the shift needed to
-  // keep its neighbours from overlapping it.
-  const { scales, shifts, focus } = React.useMemo(() => {
+  const frame = React.useMemo(() => {
     const scales = slots.map(() => 1);
-    const shifts = slots.map(() => 0);
-    if (pointerY === null || reducedMotion) return { scales, shifts, focus: -1 };
-
-    let growthAbove = 0;
     let focus = -1;
-    let best = LABEL_SCALE;
-    for (let i = 0; i < slots.length; i += 1) {
-      const slot = slots[i];
-      if (slot.kind !== "item" || slot.fixed) continue;
-      const centre = topRef.current + (geometry.offsets[i] + SLOT / 2) * fit;
-      const scale = scaleFor(Math.abs(pointerY - centre));
-      scales[i] = scale;
-      if (scale > best) {
-        best = scale;
-        focus = i;
-      }
+    if (pointerY !== null && !reducedMotion) {
+      const p = (pointerY - restTop) / fit;
+      let best = LABEL_SCALE;
+      slots.forEach((slot, i) => {
+        if (slot.kind !== "item" || slot.fixed) return;
+        const scale = scaleFor(Math.abs(p - (rest.starts[i] + SLOT / 2)));
+        scales[i] = scale;
+        if (scale > best) {
+          best = scale;
+          focus = i;
+        }
+      });
     }
+    const sizes = slots.map((slot, i) => restSize(slot) * scales[i]);
+    const { starts, length } = layout(slots, sizes);
+    const shift = pointerY === null || reducedMotion ? 0 : anchorShift(slots, rest.starts, starts, sizes, (pointerY - restTop) / fit);
+    const width = Math.max(...sizes) + PAD * 2;
 
-    // Push each slot down by everything that grew above it, then lift the whole
-    // stack by half the total so the dock stays visually centred.
-    let total = 0;
-    for (let i = 0; i < slots.length; i += 1) {
-      shifts[i] = growthAbove;
-      const growth = (scales[i] - 1) * SLOT;
-      growthAbove += growth;
-      total += growth;
-    }
-    for (let i = 0; i < slots.length; i += 1) shifts[i] -= total / 2;
+    // Keep the grown dock inside the window; near the ends that wins over
+    // holding the icon exactly under the pointer.
+    const maxTop = Math.max(EDGE, windowHeight - EDGE - length * fit);
+    const top = Math.min(Math.max(restTop + shift * fit, EDGE), maxTop);
 
-    return { scales, shifts, focus };
-  }, [slots, pointerY, reducedMotion, geometry, fit]);
+    return { sizes, starts, length, width, top, focus };
+  }, [slots, pointerY, reducedMotion, rest, restTop, fit, windowHeight]);
 
-  function handlePointerMove(event: React.MouseEvent<HTMLDivElement>) {
-    if (reducedMotion) return;
-    setPointerY(event.clientY);
-  }
+  const tracking = pointerY !== null;
 
   return (
     <>
-      {/* The strip that wakes the dock. Wide enough to hit without aiming, narrow
-          enough not to swallow clicks meant for the page. */}
+      {/* At rest the dock shows as a column of its section colours at the left
+          edge, so there is always a visible way in. It wakes the dock the same
+          way the edge does. */}
       <div
         aria-hidden
         onMouseEnter={show}
-        className="fixed inset-y-0 left-0 z-40 hidden w-4 md:block"
-        data-dock-hotzone=""
-      />
+        onClick={show}
+        className={cn(
+          "fixed left-1 top-1/2 z-40 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-full border border-border/80 bg-background/90 px-[3px] py-2 shadow-elevated backdrop-blur md:flex",
+          "transition-[opacity,transform] duration-300 ease-soft",
+          open ? "pointer-events-none -translate-x-3 opacity-0" : "opacity-100",
+        )}
+        data-dock-peek=""
+      >
+        {PRIMARY_NAV.map((item) => (
+          <span
+            key={item.href}
+            className={cn(
+              "w-1 rounded-full transition-[height] duration-300 ease-soft",
+              isActivePath(pathname, item.href) ? "h-3.5" : "h-1",
+              TONES[item.tone].dot,
+              item.tone === "yellow" && "ring-1 ring-inset ring-ink/15",
+            )}
+          />
+        ))}
+      </div>
 
       <div
-        ref={dockRef}
         data-state={open ? "open" : "closed"}
-        onMouseEnter={show}
-        onMouseLeave={hide}
-        onMouseMove={handlePointerMove}
+        data-tracking={tracking ? "" : undefined}
+        onMouseEnter={() => {
+          hovering.current = true;
+          show();
+        }}
+        onMouseLeave={() => {
+          hovering.current = false;
+          setPointerY(null);
+          hide();
+        }}
+        onMouseMove={(event) => {
+          if (!reducedMotion) setPointerY(event.clientY);
+        }}
         onFocusCapture={show}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hide();
         }}
-        style={{ height: `${geometry.height}px`, "--dock-fit": fit } as React.CSSProperties}
+        style={
+          {
+            top: frame.top,
+            width: frame.width,
+            height: frame.length,
+            "--dock-fit": fit,
+          } as React.CSSProperties
+        }
         className={cn(
-          "fixed left-3 top-1/2 z-50 hidden origin-left flex-col items-center rounded-[22px] border border-border/70 md:flex",
-          "[transform:translateY(-50%)_scale(var(--dock-fit))]",
+          "group/dock fixed left-3 z-50 hidden origin-top-left rounded-[24px] border border-border/70 md:block",
           "bg-background/70 shadow-elevated backdrop-blur-xl supports-[backdrop-filter]:bg-background/55",
-          "transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-          open
-            ? "opacity-100"
-            : "pointer-events-none opacity-0 [transform:translate(calc(-100%-1.25rem),-50%)_scale(var(--dock-fit))]",
+          // Quick while following the pointer so it feels attached to it,
+          // slower on the way back to rest.
+          "transition-[top,width,height,transform,opacity] duration-300 ease-soft data-[tracking]:duration-150 motion-reduce:transition-none",
+          open ? "opacity-100 [transform:scale(var(--dock-fit))]" : "pointer-events-none opacity-0 [transform:translateX(calc(-100%-1.5rem))_scale(var(--dock-fit))]",
         )}
       >
-        <nav aria-label="Main" className="relative w-full" style={{ width: SLOT + PAD * 2 }}>
+        <nav aria-label="Main" className="relative h-full w-full">
           {slots.map((slot, i) => {
-            const top = geometry.offsets[i];
+            const top = frame.starts[i];
             if (slot.kind === "divider") {
               return (
                 <div
-                  key={`divider-${i}`}
+                  key={slot.key}
                   aria-hidden
-                  className="absolute left-1/2 h-px w-6 -translate-x-1/2 bg-border"
-                  style={{ top: `${top + DIVIDER / 2}px`, transform: `translate(-50%, ${shifts[i]}px)` }}
+                  className="absolute h-px bg-border transition-[top] duration-300 ease-soft group-data-[tracking]/dock:duration-150"
+                  style={{ top: top + DIVIDER / 2, left: PAD + SLOT * 0.2, width: SLOT * 0.6 }}
                 />
               );
             }
-            const scale = scales[i];
+            const size = frame.sizes[i];
+            const labelled = frame.focus === i;
             return (
               <div
                 key={slot.key}
-                className="absolute left-1/2 will-change-transform"
-                style={{
-                  top: `${top}px`,
-                  width: SLOT,
-                  height: SLOT,
-                  transform: `translate(-50%, ${shifts[i]}px) scale(${scale})`,
-                  transformOrigin: "center center",
-                  zIndex: focus === i ? 2 : 1,
-                }}
+                className="absolute [container-type:size] transition-[top,width,height] duration-300 ease-soft group-data-[tracking]/dock:duration-150 motion-reduce:transition-none"
+                // Slots hang from the dock's inner edge and grow away from the screen's;
+                // the smaller brand mark is centred over them.
+                style={{ top, left: slot.fixed ? PAD + (SLOT - BRAND) / 2 : PAD, width: size, height: size, zIndex: labelled ? 2 : 1 }}
               >
-                {slot.render(scale)}
-                {focus === i ? (
+                {slot.node}
+                {labelled ? (
                   <span
                     role="tooltip"
-                    className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground shadow-elevated"
-                    style={{ transform: `translateY(-50%) scale(${1 / scale})`, transformOrigin: "left center" }}
+                    className="pointer-events-none absolute left-full top-1/2 ml-3.5 -translate-y-1/2 whitespace-nowrap rounded-lg bg-ink px-2.5 py-1 text-[13px] font-semibold text-white shadow-elevated"
                   >
                     {slot.label}
                   </span>

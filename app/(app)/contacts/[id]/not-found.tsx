@@ -8,11 +8,12 @@ import { PageHeader } from "@/components/ui/page-header";
 export default function ContactNotFound() {
   return (
     <>
-      <PageHeader backHref="/contacts" backLabel="Contacts" title="Contact not found" />
+      <PageHeader title="Contacts" />
       <EmptyState
+        tone="green"
         icon={UserRoundX}
-        title="Nothing here"
-        description="If you switched workspaces, the link may belong to another one."
+        title="Contact not found"
+        description="It may belong to another workspace."
         action={
           <Button asChild>
             <Link href="/contacts">Back to contacts</Link>

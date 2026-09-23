@@ -1,34 +1,58 @@
+import { TONE_HEX } from "@/components/ui/tone";
+
 /**
- * Chart colours. The brand is monochrome, so charts use *emphasis* rather than
- * a categorical palette: the series that matters in the accent, anything it's
- * compared against in a quiet gray. Both were run through the data-viz
- * validator against the white surface:
+ * Chart colours, taken from the brand accents. The series that matters is
+ * brand purple; anything it is compared against is a quiet neutral grey. Every
+ * value was run through the data-viz validator against the white card surface:
  *
- *   accent  #4F4C99  lightness band ✓  chroma ✓  contrast ≥ 3:1 ✓
- *   context #8A8A95  vs accent: CVD ΔE 20.3 ✓  normal-vision ΔE 20.7 ✓  contrast ≥ 3:1 ✓
- *   ordinal #A9A6D6 → #35336F  monotone ✓  step gaps ✓  light end 2.3:1 ✓  single hue ✓
- *
- * The accent is a deeper step of the brand lavender (#C1C1D7), which is far
- * too light to draw a line with.
+ *   accent   #7b34ce  6.5:1 on white ✓
+ *   context  #8a8a8a  3.4:1 ✓  vs accent: CVD ΔE 23.0 ✓  normal-vision ΔE 25.4 ✓
+ *   series   every adjacent pair: CVD ΔE ≥ 11.6 ✓  normal-vision ΔE ≥ 26.8 ✓  all ≥ 3:1 ✓
+ *   ramp     #c893de → #431377: monotone ✓  steps ≥ 0.06 L ✓  light end 2.4:1 ✓  one hue (17°) ✓
  */
 export const VIZ = {
-  accent: "#4F4C99",
-  /** Area wash under the accent line (~10%). */
-  accentWash: "rgba(79, 76, 153, 0.10)",
-  context: "#8A8A95",
-  grid: "#EBEBF0",
-  axis: "#71717A",
-  surface: "#FFFFFF",
+  accent: TONE_HEX.purple,
+  /** The accent at 10%, for the wash under a line. */
+  accentWash: "rgba(123, 52, 206, 0.10)",
+  context: "#8a8a8a",
+  grid: "#ebebeb",
+  axis: "#6b6b6b",
+  surface: "#ffffff",
 } as const;
 
-/** Ordered steps for funnels and ranked stages: light → dark, one hue. */
-export const ORDINAL_RAMP = ["#A9A6D6", "#8683C4", "#6461AD", "#4B4893", "#35336F"] as const;
+/**
+ * The brand green one step lighter. #007257 sits at OKLCH chroma 0.098, just
+ * under the 0.10 floor where a hue starts to read as grey next to the others.
+ */
+const SERIES_GREEN = "#00765a";
 
 /**
- * Sequential ramp for the heatmap. Step 0 is "none" and may recede into the
- * surface; the rest reuse the validated ordinal steps.
+ * Separate series, in a fixed order: assign them in sequence and never reorder
+ * by rank, so a series keeps its colour when a filter removes another. Purple
+ * next to blue is too close even for full colour vision, and purple next to
+ * indigo collapses under protanopia, so the order keeps both pairs apart.
+ * Where any two marks can touch (scatter, small multiples) only the first two
+ * are safe together. Charts of platforms use the platform colours instead.
  */
-export const HEAT_RAMP = ["#F3F2F8", "#D9D7EE", "#A9A6D6", "#8683C4", "#6461AD", "#4B4893", "#35336F"] as const;
+export const SERIES = [TONE_HEX.purple, SERIES_GREEN, TONE_HEX.blue, TONE_HEX.orange, TONE_HEX.magenta, TONE_HEX.indigo] as const;
+
+/** Colour for series `index`; anything past the palette folds into grey, as "Other". */
+export function seriesColor(index: number): string {
+  return SERIES[index] ?? VIZ.context;
+}
+
+/**
+ * Ordered steps (funnel stages, ranked buckets): lavender to deep purple, with
+ * brand purple in the middle. The lavender is a step deeper than the brand's
+ * own, which is too pale to draw a mark with on white.
+ */
+export const ORDINAL_RAMP = ["#c893de", "#a86bdb", TONE_HEX.purple, "#6226a6", "#431377"] as const;
+
+/**
+ * Sequential ramp for the heatmap. Step 0 is "none" in the neutral fog, so an
+ * empty slot recedes and any activity at all reads as colour.
+ */
+export const HEAT_RAMP = [TONE_HEX.fog, ...ORDINAL_RAMP] as const;
 
 /** Picks an ordinal colour for step `index` of `count`, spreading evenly across the ramp. */
 export function ordinalColor(index: number, count: number): string {

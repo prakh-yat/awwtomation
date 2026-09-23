@@ -6,24 +6,27 @@ import { LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  // Pill shaped, as on the marketing site. Hairline focus ring and no color
-  // transitions on text, so the UI still feels snappy at app density.
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  // Pill shaped, as on the marketing site. A slight press on click; colour
+  // transitions only, so the UI still feels quick at app density.
+  "inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-semibold transition-[background-color,color,border-color,box-shadow,transform] duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/70",
-        outline: "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "bg-ink text-white hover:bg-ink/85",
+        /** The one action a page wants you to take next, in the site's yellow. */
+        highlight: "bg-yellow text-ink hover:bg-yellow/80",
+        secondary: "bg-fog text-ink hover:bg-[hsl(0_0%_92%)]",
+        outline: "border border-input bg-background text-ink hover:border-ink/40 hover:bg-fog/60",
+        ghost: "text-ink hover:bg-fog",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        link: "rounded-md text-ink underline-offset-4 hover:underline active:scale-100",
       },
       size: {
-        default: "h-9 px-4 py-2 [&_svg]:size-4",
+        default: "h-9 px-4 [&_svg]:size-4",
         sm: "h-8 px-3.5 text-[13px] [&_svg]:size-3.5",
-        lg: "h-11 px-7 [&_svg]:size-4",
+        lg: "h-11 px-6 text-[15px] [&_svg]:size-4",
         icon: "h-9 w-9 [&_svg]:size-4",
+        "icon-sm": "h-8 w-8 [&_svg]:size-3.5",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

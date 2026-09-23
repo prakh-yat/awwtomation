@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import type { PlanTier } from "@prisma/client";
-import { Check, Minus } from "lucide-react";
 
+import { type ComparisonGroup, PlanComparison } from "@/components/marketing/plan-comparison";
 import { PricingPlans } from "@/components/marketing/pricing-plans";
-import { Container, SectionText, SectionTitle } from "@/components/marketing/section";
+import { count, RECOMMENDED_PLAN } from "@/components/marketing/plans";
+import { Band, Container, Eyebrow, SectionText, SectionTitle } from "@/components/marketing/section";
 import { annualSavingsPercent, PLAN_ORDER, PLANS, type PlanLimits, PURCHASABLE_PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
 
@@ -11,8 +12,6 @@ export const metadata: Metadata = {
   title: "Pricing",
   description: `${brand.name} plans and prices in US dollars. Start free with one Instagram or Facebook account and upgrade when you need more.`,
 };
-
-const count = (n: number) => n.toLocaleString("en-US");
 
 type Row = { label: string; value: (plan: PlanLimits, tier: PlanTier) => string | boolean };
 
@@ -52,6 +51,7 @@ const comparison: Array<{ group: string; rows: Row[] }> = [
 
 export default function PricingPage() {
   const savings = Math.min(...PURCHASABLE_PLANS.map(annualSavingsPercent));
+  const broadcastsFrom = PLAN_ORDER.find((tier) => PLANS[tier].broadcasts);
 
   const billing = [
     `Prices are in US dollars. Paying yearly costs ${savings}% less than twelve monthly payments.`,
@@ -62,95 +62,63 @@ export default function PricingPage() {
     "You can cancel from Settings at any time. Your plan stays active until the end of the period you paid for.",
   ];
 
+  // Resolved here so the client table gets plain values, not functions.
+  const plans = PLAN_ORDER.map((tier) => ({ tier, label: PLANS[tier].label }));
+  const groups: ComparisonGroup[] = comparison.map((section) => ({
+    group: section.group,
+    rows: section.rows.map((row) => ({ label: row.label, values: PLAN_ORDER.map((tier) => row.value(PLANS[tier], tier)) })),
+  }));
+
   return (
     <>
-      <section>
-        <Container className="pb-20 pt-14 sm:pb-24 sm:pt-20">
-          <h1 className="text-[40px] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[54px]">Pricing</h1>
-          <p className="mt-5 max-w-[40rem] text-[17px] leading-[1.6] text-muted-foreground sm:text-[18px]">
-            Every plan has the same automations, inbox, contacts, tracked links and analytics. Choose by how many
-            accounts, DMs and teammates you need. Broadcasts start on Starter.
-          </p>
+      <Band>
+        <Container className="pb-20 pt-28 sm:pb-24 sm:pt-36">
+          <div className="mx-auto max-w-4xl text-center">
+            <Eyebrow className="text-muted-foreground">Pricing</Eyebrow>
+            <h1 className="mt-5 text-balance font-display text-[clamp(2.75rem,7vw,5.25rem)] leading-[0.88] tracking-[-0.04em]">
+              Start free. Upgrade when you need more.
+            </h1>
+            <p className="mx-auto mt-6 max-w-[38rem] text-pretty text-[17px] leading-[1.55] text-muted-foreground sm:text-[19px]">
+              Every plan has the same automations, inbox, contacts, tracked links and analytics. Choose by how many
+              accounts, DMs and teammates you need.
+              {broadcastsFrom ? ` Broadcasts start on ${PLANS[broadcastsFrom].label}.` : null}
+            </p>
+          </div>
           <PricingPlans className="mt-12" />
         </Container>
-      </section>
+      </Band>
 
-      <section className="border-t">
-        <Container className="py-20 sm:py-24">
-          <SectionTitle>Compare plans</SectionTitle>
-          <div className="mt-10 overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left">
-              <caption className="sr-only">What each plan includes</caption>
-              <thead>
-                <tr className="border-b">
-                  <th scope="col" className="w-[40%] py-3 pr-4 text-[13px] font-normal text-muted-foreground">
-                    <span className="sr-only">Feature</span>
-                  </th>
-                  {PLAN_ORDER.map((tier) => (
-                    <th key={tier} scope="col" className="px-3 py-3 text-right text-[14px] font-semibold">
-                      {PLANS[tier].label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              {comparison.map((section) => (
-                <tbody key={section.group}>
-                  <tr>
-                    <th colSpan={PLAN_ORDER.length + 1} scope="colgroup" className="pb-2 pt-8 text-left text-[13px] font-medium text-muted-foreground">
-                      {section.group}
-                    </th>
-                  </tr>
-                  {section.rows.map((row) => (
-                    <tr key={row.label} className="border-t">
-                      <th scope="row" className="py-3 pr-4 text-[14px] font-normal text-foreground">
-                        {row.label}
-                      </th>
-                      {PLAN_ORDER.map((tier) => {
-                        const v = row.value(PLANS[tier], tier);
-                        return (
-                          <td key={tier} className="px-3 py-3 text-right text-[14px] tabular-nums">
-                            {typeof v === "boolean" ? (
-                              v ? (
-                                <Check role="img" aria-label="Included" className="ml-auto size-4" strokeWidth={2.25} />
-                              ) : (
-                                <Minus role="img" aria-label="Not included" className="ml-auto size-4 text-muted-foreground/70" strokeWidth={2} />
-                              )
-                            ) : (
-                              v
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              ))}
-            </table>
-          </div>
+      <Band>
+        <Container className="pb-20 sm:pb-28">
+          <SectionTitle className="text-center">Compare plans</SectionTitle>
+          <PlanComparison className="mt-10 sm:mt-12" plans={plans} groups={groups} recommended={RECOMMENDED_PLAN} />
         </Container>
-      </section>
+      </Band>
 
-      <section className="border-t">
+      <Band tone="fog">
         <Container className="grid gap-x-16 gap-y-8 py-20 sm:py-24 lg:grid-cols-12">
           <div className="lg:col-span-4">
             <SectionTitle>How billing works</SectionTitle>
-            <SectionText className="mt-4">
+            <SectionText className="mt-5">
               Questions about a plan? Email{" "}
-              <a href={`mailto:${brand.supportEmail}`} className="font-medium text-foreground underline underline-offset-4">
+              <a
+                href={`mailto:${brand.supportEmail}`}
+                className="rounded-sm font-semibold text-ink underline underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 {brand.supportEmail}
               </a>
               .
             </SectionText>
           </div>
-          <ul className="border-t lg:col-span-8">
+          <ul className="border-t border-ink/10 lg:col-span-8">
             {billing.map((item) => (
-              <li key={item} className="border-b py-4 text-[15px] leading-[1.65] text-muted-foreground">
+              <li key={item} className="border-b border-ink/10 py-4 text-[15px] leading-[1.65] text-ink/80 sm:text-[16px]">
                 {item}
               </li>
             ))}
           </ul>
         </Container>
-      </section>
+      </Band>
     </>
   );
 }

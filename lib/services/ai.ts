@@ -21,7 +21,7 @@ import {
   type AgentButton,
   type AgentContext,
 } from "@/lib/ai/agent";
-import { chat, checkBaseUrl } from "@/lib/ai/providers";
+import { chat, checkBaseUrl, listModels } from "@/lib/ai/providers";
 import type { ChatResult } from "@/lib/ai/types";
 import { decrypt, encrypt } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
@@ -42,6 +42,14 @@ export const providerCreateSchema = z.object({
 });
 export type ProviderCreateInput = z.infer<typeof providerCreateSchema>;
 
+/** A key that has not been saved yet, to list its models while the connect dialog is open. */
+export const modelPreviewSchema = z.object({
+  kind: providerKindSchema,
+  apiKey: z.string().trim().min(8, "That key looks too short").max(500),
+  baseUrl: z.string().trim().max(300).optional().or(z.literal("")),
+});
+export type ModelPreviewInput = z.infer<typeof modelPreviewSchema>;
+
 export const providerUpdateSchema = providerCreateSchema.partial().extend({
   /** Omitted when the key is not being changed; the stored one is kept. */
   apiKey: z.string().trim().min(8).max(500).optional(),
@@ -52,6 +60,8 @@ export type ProviderUpdateInput = z.infer<typeof providerUpdateSchema>;
 export const agentCreateSchema = z.object({
   name: z.string().trim().min(1, "Give it a name").max(60),
   providerId: z.string().max(64).nullable().optional(),
+  /** Null or empty uses the provider's default model. */
+  model: z.string().trim().max(120).nullable().optional(),
   systemPrompt: z.string().trim().min(1, "The prompt cannot be empty").max(20_000),
   knowledge: z.string().max(40_000).nullable().optional(),
   guardrails: z.string().max(10_000).nullable().optional(),
@@ -96,6 +106,8 @@ export type AgentView = {
   id: string;
   name: string;
   providerId: string | null;
+  /** Null when the agent uses its provider's default model. */
+  model: string | null;
   systemPrompt: string;
   knowledge: string | null;
   guardrails: string | null;
@@ -132,6 +144,7 @@ export function toAgentView(agent: AiAgent): AgentView {
     id: agent.id,
     name: agent.name,
     providerId: agent.providerId,
+    model: agent.model,
     systemPrompt: agent.systemPrompt,
     knowledge: agent.knowledge,
     guardrails: agent.guardrails,
@@ -277,6 +290,22 @@ export async function testProvider(workspaceId: string, id: string): Promise<{ o
   return { ok: false, message: result.message };
 }
 
+/** The models a saved connection's key can use, fetched live from the provider. */
+export async function listProviderModels(workspaceId: string, id: string): Promise<{ models: string[] }> {
+  const provider = await requireProvider(workspaceId, id);
+  const result = await listModels({ kind: provider.kind, apiKey: decrypt(provider.apiKeyEnc), baseUrl: provider.baseUrl });
+  if (!result.ok) throw new ApiError(422, result.message, "AI_MODELS_UNAVAILABLE");
+  return { models: result.models };
+}
+
+/** The same for a key that is being connected and has not been saved. Nothing is stored. */
+export async function previewModels(input: ModelPreviewInput): Promise<{ models: string[] }> {
+  const baseUrl = normalizeBaseUrl(input.baseUrl);
+  const result = await listModels({ kind: input.kind, apiKey: input.apiKey, baseUrl });
+  if (!result.ok) throw new ApiError(422, result.message, "AI_MODELS_UNAVAILABLE");
+  return { models: result.models };
+}
+
 // ───────────────────────── Agents ─────────────────────────
 
 export async function listAgents(workspaceId: string): Promise<AgentView[]> {
@@ -300,6 +329,7 @@ export async function createAgent(workspaceId: string, input: AgentCreateInput):
     data: {
       workspaceId,
       providerId: fallbackProvider,
+      model: input.model?.trim() || null,
       name: input.name,
       systemPrompt: input.systemPrompt,
       knowledge: input.knowledge ?? null,
@@ -332,6 +362,7 @@ export async function updateAgent(workspaceId: string, id: string, input: AgentU
     data: {
       name: input.name,
       providerId: input.providerId,
+      model: input.model === undefined ? undefined : input.model?.trim() || null,
       systemPrompt: input.systemPrompt,
       knowledge: input.knowledge,
       guardrails: input.guardrails,
@@ -411,7 +442,7 @@ export async function runAgent(input: {
     kind: provider.kind,
     apiKey: decrypt(provider.apiKeyEnc),
     baseUrl: provider.baseUrl,
-    model: provider.model,
+    model: agent.model?.trim() || provider.model,
     messages: buildMessages(agent, input.context, input.history),
     temperature: agent.temperature,
     maxTokens: agent.maxTokens,

@@ -5,17 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { isActivePath, sectionTabs } from "@/components/app-shell/nav-config";
+import { isTabActive, sectionFor, sectionTabs } from "@/components/app-shell/nav-config";
 import { useShell } from "@/components/app-shell/shell-context";
+import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 export interface PageHeaderProps extends Omit<React.HTMLAttributes<HTMLElement>, "title"> {
+  /** The page's only heading. It stands alone: no page has a line of explanation under it. */
   title: React.ReactNode;
-  /**
-   * Reserved for the dashboard, which is the one page that has to explain what
-   * to do before anything is connected. Every other page carries its title alone.
-   */
-  description?: React.ReactNode;
   /** Right-aligned actions (buttons, filters). */
   actions?: React.ReactNode;
   /** Renders a small "Back" link above the title. */
@@ -30,26 +27,21 @@ function SectionTabs() {
   if (tabs.length === 0) return null;
 
   return (
-    <nav aria-label="Section" className="scrollbar-thin -mb-3 flex min-w-0 items-center gap-1 overflow-x-auto pb-3">
+    <nav aria-label="Section" className="scrollbar-none flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-full bg-fog p-1">
       {tabs.map((tab) => {
-        // A tab can point at a query string (Templates opens a dialog); the path
-        // in front of it is what decides whether it reads as the current page.
-        const [path] = tab.href.split("?");
-        const hasQuery = tab.href.includes("?");
-        const active = !hasQuery && isActivePath(pathname, path, tab.exact);
+        const active = isTabActive(pathname, tab);
         return (
           <Link
             key={tab.href}
             href={tab.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] outline-none transition-colors",
+              "whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-semibold outline-none transition-colors duration-150",
               "focus-visible:ring-2 focus-visible:ring-ring",
-              active ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              active ? "bg-ink text-white" : "text-muted-foreground hover:bg-background hover:text-ink",
             )}
           >
             {tab.label}
-            {active ? <span aria-hidden className="absolute inset-x-3 -bottom-3 h-0.5 rounded-full bg-foreground" /> : null}
           </Link>
         );
       })}
@@ -57,35 +49,49 @@ function SectionTabs() {
   );
 }
 
-/**
- * Every app page starts with this: the page's only <h1>, the tabs for the
- * section it belongs to, and whatever actions the page offers, all on one line
- * above a rule that separates the chrome from the content.
- */
-function PageHeader({ title, description, actions, backHref, backLabel = "Back", className, ...props }: PageHeaderProps) {
+/** The section's colour tile, so every page says where you are before you read it. */
+function SectionTile() {
+  const pathname = usePathname() ?? "";
+  const section = sectionFor(pathname);
+  if (!section) return null;
+  const Icon = section.icon;
   return (
-    <header className={cn("-mx-5 mb-6 border-b px-5 pb-3 md:-mx-8 md:px-8", className)} {...props}>
+    <span aria-hidden className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", TONES[section.tone].solid)}>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+    </span>
+  );
+}
+
+/**
+ * Every app page starts with this: the section's colour tile, the page's only
+ * <h1>, the tabs for the section it belongs to, and whatever actions the page
+ * offers, on one line.
+ */
+function PageHeader({ title, actions, backHref, backLabel = "Back", className, ...props }: PageHeaderProps) {
+  return (
+    <header className={cn("mb-7", className)} {...props}>
       {backHref ? (
         <Link
           href={backHref}
-          className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="group mb-3 inline-flex items-center gap-1.5 rounded-full py-1 pr-2 text-[13px] font-medium text-muted-foreground outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft className="h-3.5 w-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" />
           {backLabel}
         </Link>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <h1 className="font-display shrink-0 text-[26px] leading-none">{title}</h1>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <SectionTile />
+          <h1 className="font-display truncate text-[28px] leading-none sm:text-[32px]">{title}</h1>
+        </div>
         <SectionTabs />
         {actions ? (
           // Full width below sm so it wraps onto its own line instead of
-          // colliding with the tab underline.
-          <div className="ml-auto flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">{actions}</div>
+          // squeezing the title.
+          <div className="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">{actions}</div>
         ) : null}
       </div>
-
-      {description ? <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p> : null}
     </header>
   );
 }

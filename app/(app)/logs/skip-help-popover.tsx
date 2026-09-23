@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 
 import { STATUS_HELP, STATUS_ORDER, STATUS_SHORT_LABELS, statusVariant } from "./labels";
 
-/** One-paragraph explanation per outcome, so nobody has to read the Meta docs to understand a skip. */
+/** One line per status, so a skipped message never needs a manual. */
 export function SkipHelpPopover() {
   return (
     <Popover>
@@ -18,19 +18,13 @@ export function SkipHelpPopover() {
           Why not sent?
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[380px] max-w-[calc(100vw-2rem)] p-0">
-        <div className="border-b px-4 py-3">
-          <p className="text-sm font-medium">What each outcome means</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            A message that wasn&apos;t sent isn&apos;t an error: an Instagram or Facebook rule, or one of your own settings, held it back. A failed
-            message is one Instagram or Facebook refused.
-          </p>
-        </div>
+      <PopoverContent align="end" className="w-[340px] max-w-[calc(100vw-2rem)] p-0">
+        <p className="brand-label border-b px-4 py-3 text-muted-foreground">What each status means</p>
         <ul className="max-h-[60vh] divide-y overflow-y-auto scrollbar-thin">
           {STATUS_ORDER.map((status) => (
-            <li key={status} className="px-4 py-3">
+            <li key={status} className="flex flex-col items-start gap-1.5 px-4 py-2.5">
               <Badge variant={statusVariant(status)}>{STATUS_SHORT_LABELS[status]}</Badge>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{STATUS_HELP[status]}</p>
+              <p className="text-[12px] leading-snug text-muted-foreground">{STATUS_HELP[status]}</p>
             </li>
           ))}
         </ul>

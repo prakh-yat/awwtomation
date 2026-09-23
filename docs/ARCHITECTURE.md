@@ -9,10 +9,10 @@ Awwtomation is a **multi-tenant SaaS** (a ManyChat alternative) for Instagram an
 
 - **Comment → DM automation**: someone comments a keyword on a post/reel → we send them a private reply (DM) with links/buttons, optionally reply publicly under the comment, optionally gate the link behind a follow.
 - **DM & Story-reply triggers**: keywords in inbound DMs / story replies start flows.
-- **Flow builder**: visual canvas (React Flow), Trigger → Message (with buttons) → Ask a question → Follow gate → Delay → Tag → Add to pipeline / Move stage / Remove from pipeline. "New automation" opens an empty canvas (just the trigger); templates are a dialog over the list, opened from the header button, the Templates tab (`/automations?templates=1`) or the empty state.
+- **Flow builder**: visual canvas (React Flow), Trigger → Message (with buttons) → Ask a question → AI reply → Follow gate → Delay → Tag → Add to pipeline / Move stage / Remove from pipeline. Steps are added from the palette (click, or drag onto the canvas; dropped on a connection a step goes in between), from the + under a step or on a connection, or by letting go of a dragged connection on empty canvas. Edits can be undone (⌘Z / ⇧⌘Z). Steps a platform cannot run are not offered: no follow gate on Messenger, no story reply trigger on a Facebook Page (activation refuses it too). "New automation" opens an empty canvas (just the trigger); templates are a dialog over the list, opened from the header button, the Templates tab (`/automations?templates=1`) or the empty state.
 - **Inbox**: unified live chat for IG + FB with the 24h window indicator.
 - **Contacts (CRM)**: everyone who interacted plus manual and imported records, in a paginated list. Each workspace has any number of **pipelines**, each with ordered, coloured stages; a contact can be in several pipelines at one stage each, or in none. Owners, notes, tags, custom fields and segments.
-- **Broadcasts**: send a message to a tagged audience (only contacts inside the 24h window are eligible, Meta rule).
+- **Broadcasts**: send a message to a tagged audience (only contacts inside the 24h window are eligible, Meta rule). `/broadcasts/new` is four steps (Audience, Message, When, Review) with the live reach beside them; a saved draft or scheduled broadcast reopens on Review.
 - **Analytics**: DMs sent, triggers, CTR via tracked links, per automation and per workspace, plus where contacts sit in each pipeline.
 - **Tracked links**: `/l/{slug}` redirects with click counting.
 - **Organizations, workspaces & team**: an **organization** is the billable account. It holds the plan, billing, the team (owner/admin/member roles apply to every workspace in it) and invitations. A **workspace** is a brand or client inside it and holds all product data. Users can belong to several organizations and switch between them from the account menu; workspaces are switched from the sidebar.
@@ -20,18 +20,18 @@ Awwtomation is a **multi-tenant SaaS** (a ManyChat alternative) for Instagram an
 - **No platform admin UI**: the product only ever shows a customer their own organizations. Operator tasks (comping a plan) run from `scripts/set-plan.ts`.
 - **Marketing site**: landing, pricing, privacy, terms, data-deletion (required by Meta App Review).
 
-Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`). Never hardcode "Awwtomation" in UI: import `brand`.
+Branding: the marketing site's palette, ink on paper with flat colour blocks (see `docs/DESIGN.md`). Product name lives in `lib/brand.ts` (`brand.name`). Never hardcode "Awwtomation" in UI: import `brand`.
 
 ## 2. Stack (already installed: do not add dependencies without a strong reason)
 
 - Next.js 15 App Router, React 19, TypeScript strict. **Node runtime for all route handlers** (`export const runtime = "nodejs"` where Prisma/crypto is used).
 - Tailwind 3.4 + shadcn-style components in `components/ui/*` (Radix primitives, `cva`, `cn` from `@/lib/utils`).
 - Prisma 6 + Postgres. Schema is FINAL at `prisma/schema.prisma`: read it. If you truly need a schema change, make it additive and note it in your final report.
-- AI replies are bring-your-own-key: `lib/ai/*` (providers, prompt assembly, marker parsing), `lib/services/ai.ts` (CRUD, `runAgent`), the `ai_reply` flow node, and `/ai` for agents and providers. No shared key and no model cost to us.
+- AI replies are bring-your-own-key: `lib/ai/*` (providers, prompt assembly, marker parsing, `presets.ts` for the provider picker, logos in `public/providers/`), `lib/services/ai.ts` (CRUD, `runAgent`, live model lists), the `ai_reply` flow node, and `/ai` for agents and providers. No shared key and no model cost to us. A connection has a default model; an agent may name its own (`AiAgent.model`). `lib/ai/providers.ts` adapts parameters per model family (no `temperature` for reasoning models, `max_completion_tokens` for OpenAI, headroom for thinking) and retries once when a provider names a parameter it refuses.
 - Google OAuth 2.0 + PKCE, implemented in-app (`lib/auth/*`). Our own `User` row mirrors the Google identity (`authId` = `google:<sub>`; the column is still physically named `supabaseId`, see the `@map` in the schema).
 - Postgres-backed job queue (`Job` model) + `worker/index.ts` (run with `npm run worker`). No Redis.
 - `@xyflow/react` for the flow builder. `recharts` for charts. `sonner` for toasts. `lucide-react` icons. `zod` validation. `date-fns`.
-- Fonts: Geist Sans / Geist Mono via the `geist` package.
+- Fonts: Archivo (display) and Figtree (body) via `@fontsource-variable`, Geist Mono via the `geist` package.
 
 ## 3. Conventions
 
@@ -41,7 +41,7 @@ Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`)
 - API responses: success `NextResponse.json(data)`; errors `NextResponse.json({ error: string, code?: string }, { status })`. Validate bodies with zod. Return 401 for no user, 403 for wrong role/workspace, 404 for missing, 422 for validation.
 - Use `requireWorkspaceContext()` (see §5) at the top of every app page/route. Use `requireRole(ctx, "ADMIN")` for mutating settings/channels/billing.
 - Toast on success/failure in client components (`toast` from `sonner`).
-- Loading + empty states for every list. Skeletons for initial loads. Every page has exactly one `<h1>`, rendered by `<PageHeader>` along with the section tabs and the page's actions. Only the dashboard passes a `description`.
+- Loading + empty states for every list. Skeletons for initial loads. Every page has exactly one `<h1>`, rendered by `<PageHeader>` along with the section tabs and the page's actions. No page has a description line.
 - Comments explain *why*, not *what*. Match the density of the existing code.
 - No `any`. No `console.log` in production paths (use `logger` from `lib/logger.ts`).
 - Money/usage is integer counts. Dates in UTC in DB; render with workspace timezone where relevant.
@@ -51,12 +51,13 @@ Branding: **black & white**. Product name lives in `lib/brand.ts` (`brand.name`)
 Marketing (public, `app/(marketing)/`): `/` landing, `/pricing`, `/privacy`, `/terms`, `/data-deletion`.
 Auth: `/login` (Google button, a plain link), `app/auth/google/route.ts` (mint state + PKCE, redirect to Google), `app/auth/callback/route.ts` (verify state → exchange code → upsert User → start session → ensure an organization with a workspace → redirect), `app/auth/signout/route.ts`.
 App (protected, `app/(app)/`, uses sidebar shell):
-- `/dashboard`: overview KPIs + charts + recent activity
+- `/dashboard`: overview KPIs, charts and recent activity, fitted to one screen; also where accounts are connected and managed (`?accounts=1` opens the accounts dialog; the Meta OAuth callbacks land here with `?connected=` or `?error=`)
 - `/automations` (the template dialog opens over it on `?templates=1`), `/automations/[id]` (builder; draws edge to edge), `/automations/[id]/analytics`. `/automations/templates` and `/automations/new` redirect to the list with the dialog open.
 - `/inbox` (+ `?c=<conversationId>`)
 - `/contacts` (`?pipelineId=&stageId=&view=board&page=&pageSize=` plus filters), `/contacts/[id]`, `/contacts/pipelines` (create, rename, recolour, reorder and delete pipelines and stages)
 - `/broadcasts`, `/broadcasts/new`, `/broadcasts/[id]`
-- `/channels` (connect IG / FB, list, reconnect, disconnect)
+- `/channels` redirects to `/dashboard?accounts=1`; `/channels/select-pages` is the Facebook Page picker the OAuth callback hands over to
+- `/ai` (agents, with providers in the editor's dropdown; `/ai/providers` redirects here)
 - `/links`
 - `/logs`
 - `/analytics`, `/automations/[id]/analytics`
@@ -214,7 +215,7 @@ export async function executeFlowStep(job: Job): Promise<void>;
 `lib/automation/reconcile.ts`: `reconcileChannel(job)`, polling safety net: for each ACTIVE COMMENT automation on the channel, fetch recent comments on its media (or last 10 media if all), and feed unseen ones through `handleIncomingEvent` (dedupe makes this safe).
 
 ### lib/services/* (server-side data access; every function takes workspaceId first)
-`channels.ts`, `automations.ts`, `contacts.ts`, `pipelines.ts` (pipelines, stages and contact moves; every move writes an AuditLog `contact.stage_changed` or `contact.pipeline_removed`), `segments.ts`, `inbox.ts`, `broadcasts.ts`, `analytics.ts`, `links.ts`, `logs.ts`, `workspaces.ts`, `onboarding.ts`, `ai.ts` (providers and agents; keys encrypted at rest and never serialised to the client), `templates/` (36 static flow templates: 24 Instagram, 12 Messenger, every one native to the platform it names, each tagged with a goal and a trigger for the gallery filters). Organization-level services take `organizationId` first: `organizations.ts` (create, switch, rename, delete, members, ownership, invitations), `billing.ts`, `usage-history.ts`. `audit.ts` exports `recordAudit`.
+`channels.ts`, `automations.ts`, `contacts.ts`, `pipelines.ts` (pipelines, stages and contact moves; every move writes an AuditLog `contact.stage_changed` or `contact.pipeline_removed`), `segments.ts`, `inbox.ts`, `broadcasts.ts`, `analytics.ts`, `links.ts`, `logs.ts`, `workspaces.ts`, `onboarding.ts`, `ai.ts` (providers and agents; keys encrypted at rest and never serialised to the client), `templates/` (39 static flow templates: 26 Instagram, 13 Messenger, every one native to the platform it names, each tagged with a goal and a trigger for the gallery filters). Organization-level services take `organizationId` first: `organizations.ts` (create, switch, rename, delete, members, ownership, invitations), `billing.ts`, `usage-history.ts`. `audit.ts` exports `recordAudit`.
 
 ## 6. Meta rules the code must respect
 
@@ -226,17 +227,21 @@ export async function executeFlowStep(job: Job): Promise<void>;
 - Webhook: verify `X-Hub-Signature-256` with `META_APP_SECRET` (Instagram Login webhooks are signed with `INSTAGRAM_APP_SECRET`, try both). Respond 200 fast; process inline but never throw; persist `WebhookEvent` first (dedupe).
 - Disclose automation: the default first message template starts with a friendly line; the Inbox shows "Automated" badge on automation-sent messages.
 
-## 7. Design system (black & white, professional)
+## 7. Design system
 
-- Tokens are in `app/globals.css` (already written). Primary = near-black on white. Grays only, plus `success`/`warning`/`destructive` used sparingly for status dots/badges.
-- Type: Geist Sans. Page title `text-2xl font-semibold tracking-tight`. Section `text-sm font-medium`. Body `text-sm`. Muted `text-muted-foreground`.
-- Surfaces: white cards with `border` + `shadow-card`, radius `rounded-lg`. No gradients, no colored fills except status.
-- Navigation: on desktop the dock (`components/app-shell/dock.tsx`), a floating icon column pinned to the left edge. Hidden until the pointer reaches the left 16px of the window or something inside it takes focus, magnifying under the cursor. Holds the logo, `PRIMARY_NAV`, Settings, the workspace switcher, the usage ring and the account menu. Below `md` the same navigation is `components/app-shell/sidebar.tsx`, expanded with labels, inside the drawer behind `topbar.tsx`. There is no persistent sidebar and no collapsed-width cookie; pages get the full window.
-- Buttons: primary = black bg/white text; secondary = white bg/border; ghost; destructive. Sizes sm/default/lg/icon.
-- Data density like Linear/Vercel: 13–14px text, 12px meta, tight spacing, hairline borders.
-- Components available in `components/ui`: button, input, textarea, label, card, badge, avatar, dialog, dropdown-menu, popover, select, switch, checkbox, tabs, tooltip, separator, skeleton, table, scroll-area, sonner (Toaster), empty-state, page-header, stat-card, kbd, spinner, copy-button, confirm-dialog.
-- Every list page: header (title, description, primary action), filters row, table/cards, empty state with illustration-free icon + CTA.
-- Instagram DM preview component (`components/automations/dm-preview.tsx`): phone-shaped black/white mock rendering an `OutboundMessage`.
+The full reference is `docs/DESIGN.md`. In short:
+
+- Tokens are in `app/globals.css` and `tailwind.config.ts`; named tones in `components/ui/tone.ts`. Ink on paper, fog surfaces, and the site's flat accents (yellow, magenta, purple, indigo, blue, green, orange, lavender, sky, sage), each with a solid, a `-soft` tint and an `-ink` text step. Never gradients.
+- Colour carries meaning: each section has a tone (`components/app-shell/nav-config.ts`), Instagram is magenta and Facebook/Messenger blue (`components/ui/platform-badge.tsx`), statuses map to badge variants, and flow steps each have a colour.
+- Type: Archivo 900 (`font-display`) for page titles and big numbers, Figtree for body, Geist Mono uppercase (`brand-label`) for eyebrows and table headers.
+- Surfaces: white cards with hairline borders (`rounded-2xl`, no shadow), fog panels, and at most one filled colour block per page.
+- Navigation: on desktop the dock (`components/app-shell/dock.tsx`), a floating column of section tiles in their colours. It rests as a thin column of colour dots at the left edge and opens when the pointer reaches the edge or something inside it takes focus, magnifying under the cursor. Holds the logo, `PRIMARY_NAV`, the workspace switcher, the usage ring and the account menu (which has Settings). Slots are laid out at their magnified size, so the dock grows around the icon under the pointer. Below `md` the same navigation is `components/app-shell/sidebar.tsx`, inside the drawer behind `topbar.tsx`. There is no persistent sidebar; pages get the full window.
+- Buttons are pills: `default` ink, `highlight` yellow (the one growth action on a page), `secondary` fog, `outline`, `ghost`, `destructive`, `link`.
+- Components in `components/ui`: button, input, textarea, label, card, badge, avatar, dialog, dropdown-menu, popover, select, switch, checkbox, tabs, tooltip, separator, skeleton, table, scroll-area, sonner (Toaster), empty-state, page-header, stat, stepper, segmented, filter-menu, platform-badge, tone, kbd, spinner, copy-button, confirm-dialog.
+- A set of mutually exclusive list filters with counts (inbox views, log, broadcast and automation statuses, contact segments, pipeline stages) is a `FilterMenu`: one icon button that names the active filter, not a row of chips.
+- Every list page: header (section tile, title, tabs, primary action), filters, list, and an `EmptyState` in the section's tone.
+- Words: plain, short, no em dashes, no filler, no explaining internal mechanics (see DESIGN.md, "Words").
+- The DM preview (`components/automations/dm-preview.tsx`) is a phone drawn as Instagram or Messenger, rendering an `OutboundMessage`.
 
 ## 8. Environment variables (documented in `.env.example`)
 `NEXT_PUBLIC_APP_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `DATABASE_URL`, `DIRECT_URL`, `APP_ENCRYPTION_KEY`, `CRON_SECRET`, `META_APP_ID`, `META_APP_SECRET`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `META_GRAPH_API_VERSION`, optional `RESEND_API_KEY`, `EMAIL_FROM`.
