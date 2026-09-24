@@ -3,7 +3,7 @@
 import { ErrorCard } from "@/components/errors/error-card";
 
 /**
- * Root route boundary (marketing, auth and anything outside the app shell).
+ * Root route boundary (pricing, auth and anything outside the app shell).
  * Only `digest` is rendered: Next already logs the underlying error on the
  * server with the same digest, so the customer gets a reference and nothing
  * else about the failure.

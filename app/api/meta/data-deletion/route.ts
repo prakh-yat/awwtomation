@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { appUrl } from "@/lib/env";
+import { brand } from "@/lib/brand";
 import { logger } from "@/lib/logger";
 import { handleMetaDataDeletion } from "@/lib/services/channels";
 
@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Meta "Data deletion request URL". Must answer with `{ url, confirmation_code }`;
- * Meta shows both to the user. The status page is the public /data-deletion
- * page with the code in the query string.
+ * Meta shows both to the user. The purge finishes before we answer, so the
+ * URL is the marketing site's data deletion page, with the code attached.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const payload = await verifySignedRequest(req, "data_deletion");
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { confirmationCode } = await handleMetaDataDeletion(payload.userId);
     return NextResponse.json({
-      url: appUrl(`/data-deletion?code=${encodeURIComponent(confirmationCode)}`),
+      url: `${brand.legal.dataDeletion}?code=${encodeURIComponent(confirmationCode)}`,
       confirmation_code: confirmationCode,
     });
   } catch (err) {

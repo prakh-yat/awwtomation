@@ -4,7 +4,7 @@ import { updateSession } from "@/lib/auth/middleware";
 import { sanitizeNextPath } from "@/lib/utils";
 
 /**
- * Route prefixes that require a signed-in user. Everything else (marketing,
+ * Route prefixes that require a signed-in user. Everything else (/pricing,
  * /login, /invite, /l, webhooks) is public: the page itself decides what to do.
  */
 const PROTECTED_PREFIXES = [
@@ -42,6 +42,14 @@ function redirectWithCookies(url: URL, from: NextResponse): NextResponse {
 export async function middleware(request: NextRequest) {
   const { response, userId } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
+
+  // The app has no landing page: `/` is the sign-in, or the dashboard once signed in.
+  if (pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = userId ? "/dashboard" : "/login";
+    url.search = "";
+    return redirectWithCookies(url, response);
+  }
 
   if (!userId && isProtected(pathname)) {
     const url = request.nextUrl.clone();

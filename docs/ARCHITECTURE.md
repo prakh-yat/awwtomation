@@ -18,7 +18,7 @@ Awwtomation is a **multi-tenant SaaS** (a ManyChat alternative) for Instagram an
 - **Organizations, workspaces & team**: an **organization** is the billable account. It holds the plan, billing, the team (owner/admin/member roles apply to every workspace in it) and invitations. A **workspace** is a brand or client inside it and holds all product data. Users can belong to several organizations and switch between them from the account menu; workspaces are switched from the sidebar.
 - **Plans & usage**: FREE/STARTER/PRO/AGENCY per organization, with DM, channel, automation and seat caps counted across all of its workspaces, enforced server-side.
 - **No platform admin UI**: the product only ever shows a customer their own organizations. Operator tasks (comping a plan) run from `scripts/set-plan.ts`.
-- **Marketing site**: landing, pricing, privacy, terms, data-deletion (required by Meta App Review).
+- **Marketing site**: a separate project. This app keeps only `/pricing`; the legal pages Meta App Review needs are on the marketing site.
 
 Branding: the marketing site's palette, ink on paper with flat colour blocks (see `docs/DESIGN.md`). Product name lives in `lib/brand.ts` (`brand.name`). Never hardcode "Awwtomation" in UI: import `brand`.
 
@@ -48,7 +48,7 @@ Branding: the marketing site's palette, ink on paper with flat colour blocks (se
 
 ## 4. Routes
 
-Marketing (public, `app/(marketing)/`): `/` landing, `/pricing`, `/privacy`, `/terms`, `/data-deletion`.
+Marketing (public, `app/(marketing)/`): `/pricing` only. `/` has no page: middleware sends it to `/login`, or `/dashboard` when signed in. Privacy, terms and data deletion live on the marketing site (`brand.legal` in `lib/brand.ts`); Meta's data deletion callback points there.
 Auth: `/login` (Google button, a plain link), `app/auth/google/route.ts` (mint state + PKCE, redirect to Google), `app/auth/callback/route.ts` (verify state → exchange code → upsert User → start session → ensure an organization with a workspace → redirect), `app/auth/signout/route.ts`.
 App (protected, `app/(app)/`, uses sidebar shell):
 - `/dashboard`: overview KPIs, charts and recent activity, fitted to one screen; also where accounts are connected and managed (`?accounts=1` opens the accounts dialog; the Meta OAuth callbacks land here with `?connected=` or `?error=`)

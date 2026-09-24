@@ -69,13 +69,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
           <p className="mt-6 text-[13px] leading-relaxed text-muted-foreground">
             By continuing you agree to our{" "}
-            <Link href="/terms" className="font-medium text-ink underline underline-offset-4 hover:text-ink/70">
+            <a href={brand.legal.terms} className="font-medium text-ink underline underline-offset-4 hover:text-ink/70">
               Terms
-            </Link>{" "}
+            </a>{" "}
             and{" "}
-            <Link href="/privacy" className="font-medium text-ink underline underline-offset-4 hover:text-ink/70">
+            <a href={brand.legal.privacy} className="font-medium text-ink underline underline-offset-4 hover:text-ink/70">
               Privacy Policy
-            </Link>
+            </a>
             .
           </p>
         </div>

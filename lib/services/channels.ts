@@ -589,7 +589,7 @@ export async function connectFacebookPages(input: {
 }): Promise<ChannelSummary[]> {
   const { userToken, pages } = await beginFacebookConnect(input);
   if (pages.length === 0) {
-    throw new ApiError(422, "Your Facebook account doesn't manage any Pages. Create a Page first, then reconnect.", "NO_PAGES");
+    throw new ApiError(422, "No Page was shared. Connect again, choose Edit settings and tick your Page.", "NO_PAGES");
   }
   return completeFacebookConnect({
     workspaceId: input.workspaceId,
@@ -1017,7 +1017,7 @@ const DATA_DELETION_AUDIT_ACTION = "meta.data_deletion";
  * user who authorized us, so every channel it maps to is purged outright:
  * the same full cascade as "Delete channel & data": in whichever workspace
  * holds it. The confirmation code Meta shows the user is stored on the
- * global audit row so /data-deletion?code= can report the outcome.
+ * global audit row so a request can be traced from the code alone.
  */
 export async function handleMetaDataDeletion(metaUserId: string): Promise<{ confirmationCode: string; channelIds: string[] }> {
   const confirmationCode = randomToken(9);
@@ -1048,23 +1048,4 @@ export async function handleMetaDataDeletion(metaUserId: string): Promise<{ conf
   });
   logger.info("meta.data_deletion", { metaUserId, confirmationCode, channels: channelIds.length });
   return { confirmationCode, channelIds };
-}
-
-export type DataDeletionRecord = { confirmationCode: string; completedAt: Date; channels: number };
-
-/**
- * Status lookup for the public /data-deletion page. The code is the only
- * key (no session), so it is validated as an opaque token before touching
- * the database and the response never names a workspace or account.
- */
-export async function findDataDeletionRecord(code: string): Promise<DataDeletionRecord | null> {
-  if (!/^[A-Za-z0-9_-]{8,64}$/.test(code)) return null;
-  const row = await prisma.auditLog.findFirst({
-    where: { action: DATA_DELETION_AUDIT_ACTION, metadata: { path: ["confirmationCode"], equals: code } },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true, metadata: true },
-  });
-  if (!row) return null;
-  const meta = row.metadata as { channelIds?: unknown } | null;
-  return { confirmationCode: code, completedAt: row.createdAt, channels: Array.isArray(meta?.channelIds) ? meta.channelIds.length : 0 };
 }

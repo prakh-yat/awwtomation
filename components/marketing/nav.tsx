@@ -12,9 +12,7 @@ import { cn } from "@/lib/utils";
 import { Container } from "./section";
 
 const links = [
-  { label: "How it works", href: "/#how-it-works" },
   { label: "Pricing", href: "/pricing" },
-  { label: "FAQ", href: "/#faq" },
 ];
 
 /**

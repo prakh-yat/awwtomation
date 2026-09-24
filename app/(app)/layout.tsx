@@ -9,7 +9,7 @@ import { isBareShellPath } from "@/lib/workspace/request";
 import { getRequestPathname, requireWorkspaceContext } from "@/lib/workspace/context";
 
 export const metadata: Metadata = {
-  // The product itself is never indexed; only the marketing pages are public.
+  // The product itself is never indexed; only /pricing is public.
   robots: { index: false, follow: false },
 };
 

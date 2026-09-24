@@ -36,7 +36,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "Only workspace admins can connect accounts.",
   meta: "Instagram or Facebook couldn't finish connecting. Try again.",
   channel_claimed: "This account is connected to another workspace. Disconnect it there first.",
-  no_pages: "Your Facebook account has no Pages. Create one, then connect it.",
+  no_pages: "No Page was shared. Connect again, choose Edit settings and tick your Page.",
   fb_session_expired: "Your Facebook sign-in timed out before you picked a Page. Connect again.",
   page_not_found: "One of those Pages is no longer on your Facebook account. Sign in again.",
   unknown: "Something went wrong while connecting. Try again.",

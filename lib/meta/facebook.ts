@@ -83,12 +83,37 @@ type RawPage = {
   instagram_business_account?: { id?: string };
 };
 
-export async function listFacebookPages(userToken: string): Promise<FacebookPageInfo[]> {
-  const pages = await metaFetchAll<RawPage>(
-    graphUrl(FB, "/me/accounts", { fields: "id,name,access_token,picture{url},instagram_business_account", limit: 100 }),
-    userToken,
-    { maxItems: 500 },
+const PAGE_FIELDS = "id,name,access_token,picture{url},instagram_business_account";
+
+/**
+ * Page ids the user granted in the login dialog's asset picker. With Facebook
+ * Login for Business, a Page reached through a business portfolio (or picked
+ * under "Edit settings") is granted here but often missing from /me/accounts.
+ */
+async function grantedPageIds(userToken: string): Promise<string[]> {
+  const { appId, appSecret } = credentials();
+  const res = await metaFetch<{ data?: { granular_scopes?: Array<{ scope?: string; target_ids?: string[] }> } }>(
+    graphUrl(FB, "/debug_token", { input_token: userToken }),
+    { token: `${appId}|${appSecret}` },
   );
+  const ids = new Set<string>();
+  for (const grant of res.data?.granular_scopes ?? []) {
+    if (grant.scope === "pages_show_list" || grant.scope === "pages_messaging") {
+      for (const id of grant.target_ids ?? []) ids.add(String(id));
+    }
+  }
+  return [...ids];
+}
+
+export async function listFacebookPages(userToken: string): Promise<FacebookPageInfo[]> {
+  let pages = await metaFetchAll<RawPage>(graphUrl(FB, "/me/accounts", { fields: PAGE_FIELDS, limit: 100 }), userToken, { maxItems: 500 });
+  if (pages.length === 0) {
+    const ids = await grantedPageIds(userToken);
+    const found = await Promise.all(
+      ids.map((id) => metaFetch<RawPage>(graphUrl(FB, `/${id}`, { fields: PAGE_FIELDS }), { token: userToken }).catch(() => null)),
+    );
+    pages = found.filter((p): p is RawPage => p !== null);
+  }
   return pages
     .filter((p) => Boolean(p.access_token))
     .map((p) => ({

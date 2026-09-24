@@ -9,7 +9,6 @@ const columns = [
   {
     heading: "Product",
     links: [
-      { label: "How it works", href: "/#how-it-works" },
       { label: "Pricing", href: "/pricing" },
       { label: "Sign in", href: "/login" },
     ],
@@ -17,9 +16,9 @@ const columns = [
   {
     heading: "Legal",
     links: [
-      { label: "Privacy", href: "/privacy" },
-      { label: "Terms", href: "/terms" },
-      { label: "Data deletion", href: "/data-deletion" },
+      { label: "Privacy", href: brand.legal.privacy },
+      { label: "Terms", href: brand.legal.terms },
+      { label: "Data deletion", href: brand.legal.dataDeletion },
     ],
   },
 ];
