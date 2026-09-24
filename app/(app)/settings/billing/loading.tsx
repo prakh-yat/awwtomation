@@ -7,7 +7,7 @@ export default function BillingSettingsLoading() {
     <div aria-busy="true" aria-label="Loading billing">
       <PageHeader title="Settings" />
       <div className="space-y-10">
-        <div className="rounded-3xl bg-ink px-6 py-7 sm:px-8 sm:py-8">
+        <div className="rounded-3xl bg-indigo px-6 py-7 sm:px-8 sm:py-8">
           <Skeleton className="h-3 w-24 bg-none bg-white/15" />
           <div className="mt-5 flex items-end justify-between gap-6">
             <Skeleton className="h-12 w-40 bg-none bg-white/15 sm:h-16" />

@@ -46,9 +46,9 @@ export default async function UsagePage() {
   const periodEndLabel = utcDay(new Date(new Date(period.resetsAt).getTime() - 86_400_000).toISOString());
 
   const limits: UsageRow[] = [
-    { label: "Connected accounts", used: usage.channels.used, limit: usage.channels.limit },
-    { label: "Automations", used: usage.automations.used, limit: usage.automations.limit },
-    { label: "Team seats", used: usage.members.used, limit: usage.members.limit, hint: "Includes pending invites" },
+    { label: "Connected accounts", used: usage.channels.used, limit: usage.channels.limit, tone: "yellow" },
+    { label: "Automations", used: usage.automations.used, limit: usage.automations.limit, tone: "purple" },
+    { label: "Team seats", used: usage.members.used, limit: usage.members.limit, hint: "Includes pending invites", tone: "indigo" },
   ];
 
   const channelItems = period.perChannel.map((row) => ({
@@ -114,44 +114,45 @@ export default async function UsagePage() {
           </div>
         ))}
 
-        <section aria-labelledby="dms-title" className="rise relative overflow-hidden rounded-3xl bg-fog">
+        {/* The number this page is for, as its one colour block, in the Settings indigo. */}
+        <section aria-labelledby="dms-title" className="rise relative overflow-hidden rounded-3xl bg-indigo text-white">
           <div
             aria-hidden
-            className="bg-grid pointer-events-none absolute inset-0 [--grid-size:40px] [mask-image:linear-gradient(to_bottom,black,transparent_80%)]"
+            className="bg-grid bg-grid-light pointer-events-none absolute inset-0 [--grid-size:40px] [mask-image:linear-gradient(to_bottom,black,transparent_80%)]"
           />
           <div className="relative p-6 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <h2 id="dms-title" className="brand-label text-muted-foreground">
+              <h2 id="dms-title" className="brand-label text-white/70">
                 DMs this month
               </h2>
-              <div className="flex items-center gap-2 text-[12px] tabular-nums text-muted-foreground">
+              <div className="flex items-center gap-2 text-[12px] tabular-nums text-white/70">
                 {utcDay(period.periodStart)} – {periodEndLabel}
-                <PlanBadge plan={period.plan} />
+                <PlanBadge plan={period.plan} className="bg-white text-ink" />
               </div>
             </div>
 
             <p className="mt-5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className={cn("font-display text-[64px] leading-[0.85] tabular-nums sm:text-[96px]", level === "full" && "text-destructive")}>
+              <span className={cn("font-display text-[64px] leading-[0.85] tabular-nums sm:text-[96px]", level === "full" && "text-orange")}>
                 {period.used.toLocaleString("en-US")}
               </span>
-              <span className="text-[15px] text-muted-foreground">of {period.limit.toLocaleString("en-US")}</span>
+              <span className="text-[15px] text-white/70">of {period.limit.toLocaleString("en-US")}</span>
             </p>
 
-            <Meter used={period.used} limit={period.limit} label="DMs used this month" size="lg" tone="purple" className="mt-6" />
+            <Meter used={period.used} limit={period.limit} label="DMs used this month" size="lg" dark className="mt-6" />
 
             <dl className="mt-6 grid grid-cols-3 gap-4 text-[13px]">
               <div className="min-w-0">
-                <dt className="brand-label text-muted-foreground">Used</dt>
+                <dt className="brand-label text-white/70">Used</dt>
                 <dd className="mt-1.5 font-semibold tabular-nums">{Math.round(period.pct * 100)}%</dd>
               </div>
               <div className="min-w-0">
-                <dt className="brand-label text-muted-foreground">At this pace</dt>
-                <dd className={cn("mt-1.5 font-semibold tabular-nums", period.overLimit && period.limit > 0 && "text-orange-ink")}>
+                <dt className="brand-label text-white/70">At this pace</dt>
+                <dd className={cn("mt-1.5 font-semibold tabular-nums", period.overLimit && period.limit > 0 && "text-orange")}>
                   {formatNumber(period.projected)} by {periodEndLabel}
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="brand-label text-muted-foreground">Resets</dt>
+                <dt className="brand-label text-white/70">Resets</dt>
                 <dd className="mt-1.5 font-semibold">{utcDay(period.resetsAt, "EEE, MMM d")}</dd>
               </div>
             </dl>

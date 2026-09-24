@@ -7,6 +7,8 @@ export type UsageRow = {
   limit: number;
   /** One short muted line under the meter, e.g. "Resets Oct 1". */
   hint?: string;
+  /** The meter's colour: the section the quota counts (accounts yellow, automations purple). */
+  tone?: Tone;
 };
 
 export type MeterLevel = "ok" | "near" | "full";
@@ -55,7 +57,7 @@ export function Meter({ used, limit, label, size = "default", tone = "ink", dark
   );
 }
 
-/** Label, count and meter for each quota. `dark` sets them on the ink plan block. */
+/** Label, count and meter for each quota. `dark` sets them on a dark plan block. */
 export function UsageBars({ rows, className, dark = false }: { rows: UsageRow[]; className?: string; dark?: boolean }) {
   return (
     <dl className={cn("grid gap-x-8 gap-y-6 sm:grid-cols-2", className)}>
@@ -69,7 +71,7 @@ export function UsageBars({ rows, className, dark = false }: { rows: UsageRow[];
               {formatNumber(row.limit)}
             </dd>
             <dd className="col-span-2 mt-2.5">
-              <Meter used={row.used} limit={row.limit} label={`${row.label} usage`} dark={dark} />
+              <Meter used={row.used} limit={row.limit} label={`${row.label} usage`} tone={row.tone} dark={dark} />
               {row.hint ? <p className={cn("mt-2 text-xs", dark ? "text-white/50" : "text-muted-foreground")}>{row.hint}</p> : null}
             </dd>
           </div>

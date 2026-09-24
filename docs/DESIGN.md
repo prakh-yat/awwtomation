@@ -48,7 +48,15 @@ is the default tone for that section's empty states.
 | Analytics | blue | | Broadcasts | orange |
 | Automations | purple | | Links | sky |
 | AI | ink | | Logs | lavender |
-| Inbox | magenta | | Settings, Usage | fog |
+| Inbox | magenta | | Settings, Usage | indigo |
+
+**Plans.** Each plan has a colour (`PLAN_TONE` in `components/billing/plan-badge.tsx`):
+Free fog, Starter sky, Pro purple, Agency indigo. The current-plan block on
+Billing and the plan tile on General settings wear it; Free keeps ink.
+
+**MCP tools.** A tool is green when it only reads, orange when it changes
+something and red when it can't be undone. Its access pill is green when every
+member can use it, red when nobody can, and neutral in between.
 
 **Platforms.** Instagram is magenta, Facebook and Messenger are blue. Use
 `PlatformMark` (a colour tile with the glyph) next to a handle, and
@@ -89,7 +97,9 @@ or on fog panels.
   `secondary` is fog, then `outline`, `ghost`, `destructive`, `link`.
 - Cards: `rounded-2xl border bg-card`, no shadow. Clickable cards get `lift`.
 - Inputs: 40px tall, `rounded-xl`, ink border and a soft magenta ring on focus.
-- Tabs and segmented controls: fog track, ink active pill (`components/ui/segmented.tsx`).
+- Segmented controls: fog track, ink active pill (`components/ui/segmented.tsx`).
+  Section tabs beside a page title: fog track, the current tab in the
+  section's tone (Settings indigo, Contacts green).
 - `PageHeader` renders the section tile, the `<h1>`, the section tabs and the
   page actions. Every app page starts with it, and none has a description line.
 - Filters that pick one of several views (inbox views, log, broadcast and

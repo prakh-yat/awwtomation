@@ -68,7 +68,7 @@ export default async function TeamSettingsPage() {
               <span className="tabular-nums text-muted-foreground">
                 <span className="font-semibold text-ink">{seats.used}</span> of {seats.limit} seats
               </span>
-              <Meter used={seats.used} limit={seats.limit} label="Team seats used" className="w-20 sm:w-28" />
+              <Meter used={seats.used} limit={seats.limit} label="Team seats used" tone="indigo" className="w-20 sm:w-28" />
             </div>
           </div>
           <Card className="overflow-hidden">

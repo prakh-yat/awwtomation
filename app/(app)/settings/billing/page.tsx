@@ -6,19 +6,23 @@ import { AlertCircle } from "lucide-react";
 
 import { BillingActions } from "@/components/billing/billing-actions";
 import { BillingUnavailable } from "@/components/billing/billing-unavailable";
-import { ON_DARK } from "@/components/billing/on-dark";
+import { ON_DARK, ON_LIGHT } from "@/components/billing/on-dark";
 import { PaymentHistory } from "@/components/billing/payment-history";
+import { PLAN_TONE } from "@/components/billing/plan-badge";
 import { PlanGrid } from "@/components/billing/plan-grid";
 import { ServiceStateBadge } from "@/components/billing/status-badge";
+import { isDarkTone } from "@/components/layout/grid-block";
 import { UsageBars, type UsageRow } from "@/components/settings/usage-bars";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
+import { TONES, type Tone } from "@/components/ui/tone";
 import { formatUsd, PLANS } from "@/lib/billing/plans";
 import { getOrganizationUsage } from "@/lib/billing/usage";
 import { getBillingOverview, listPayments } from "@/lib/services/billing";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 import { canManageBilling } from "@/lib/workspace/permissions";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Billing" };
 export const dynamic = "force-dynamic";
@@ -45,6 +49,11 @@ export default async function BillingSettingsPage({ searchParams }: { searchPara
     listPayments(ctx.organization.id),
   ]);
   const plan = PLANS[overview.effectivePlan];
+  // The block wears the plan's colour (Pro purple, Agency indigo, Starter sky); Free, which has none, stays ink.
+  const blockTone: Tone = overview.effectivePlan === "FREE" ? "ink" : PLAN_TONE[overview.effectivePlan].tone;
+  const dark = isDarkTone(blockTone);
+  const soft = dark ? "text-white/60" : "text-ink/60";
+  const line = dark ? "border-white/15" : "border-ink/10";
   const resetLabel = format(usage.periodEnd, "MMM d");
 
   const rows: UsageRow[] = [
@@ -80,32 +89,32 @@ export default async function BillingSettingsPage({ searchParams }: { searchPara
 
         {!overview.configured ? <BillingUnavailable /> : null}
 
-        <section aria-label="Current plan" className="rise overflow-hidden rounded-3xl bg-ink text-white">
-          <div className="bg-grid bg-grid-light px-6 pb-7 pt-7 sm:px-8 sm:pt-8">
+        <section aria-label="Current plan" className={cn("rise overflow-hidden rounded-3xl", TONES[blockTone].solid)}>
+          <div className={cn("bg-grid px-6 pb-7 pt-7 sm:px-8 sm:pt-8", dark && "bg-grid-light")}>
             <div className="flex flex-wrap items-center gap-2">
-              <p className="brand-label mr-1 text-white/60">Current plan</p>
-              <ServiceStateBadge label={overview.serviceLabel} tone={overview.serviceTone} onDark />
+              <p className={cn("brand-label mr-1", soft)}>Current plan</p>
+              <ServiceStateBadge label={overview.serviceLabel} tone={overview.serviceTone} onDark={dark} />
               {anyExhausted ? <Badge className="bg-orange text-ink">Limit reached</Badge> : null}
-              {overview.planSource === "ADMIN_OVERRIDE" ? <Badge className="bg-white/15 text-white">Custom plan</Badge> : null}
+              {overview.planSource === "ADMIN_OVERRIDE" ? <Badge className={dark ? "bg-white/15 text-white" : "bg-ink/10 text-ink"}>Custom plan</Badge> : null}
             </div>
             <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
               <h2 className="font-display text-[52px] leading-[0.9] sm:text-[72px]">{plan.label}</h2>
               <p className="flex items-baseline gap-1.5">
                 <span className="font-display text-[34px] leading-none tabular-nums sm:text-[44px]">{price.amount}</span>
-                <span className="brand-label text-white/60">/{price.per}</span>
+                <span className={cn("brand-label", soft)}>/{price.per}</span>
               </p>
             </div>
-            <p className="mt-4 max-w-2xl text-[14px] text-white/75">{overview.serviceDescription}</p>
-            {metaBits.length > 0 ? <p className="mt-1 text-[12px] text-white/50">{metaBits.join(" · ")}</p> : null}
+            <p className={cn("mt-4 max-w-2xl text-[14px]", dark ? "text-white/80" : "text-ink/75")}>{overview.serviceDescription}</p>
+            {metaBits.length > 0 ? <p className={cn("mt-1 text-[12px]", soft)}>{metaBits.join(" · ")}</p> : null}
           </div>
 
-          <div className="border-t border-white/10 px-6 py-6 sm:px-8">
-            <UsageBars rows={rows} dark className="lg:grid-cols-4" />
+          <div className={cn("border-t px-6 py-6 sm:px-8", line)}>
+            <UsageBars rows={rows} dark={dark} className="lg:grid-cols-4" />
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-6 py-4 sm:px-8">
-            <BillingActions overview={overview} canManage={isOwner} />
-            <Button asChild variant="ghost" size="sm" className={ON_DARK.ghost}>
+          <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t px-6 py-4 sm:px-8", line)}>
+            <BillingActions overview={overview} canManage={isOwner} onDark={dark} />
+            <Button asChild variant="ghost" size="sm" className={dark ? ON_DARK.ghost : ON_LIGHT.ghost}>
               <Link href="/settings/team">Manage seats</Link>
             </Button>
           </div>

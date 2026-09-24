@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
+import { TONES, type Tone } from "@/components/ui/tone";
 import { clientErrorMessage } from "@/lib/errors/customer-messages";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -32,6 +33,15 @@ async function send<T>(url: string, method: string, body: unknown): Promise<T> {
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${formatNumber(n)} ${n === 1 ? one : many}`;
+}
+
+/** A workspace's own colour, the same on every visit, so a list of brands reads at a glance. */
+const WORKSPACE_TONES: readonly Tone[] = ["purple", "magenta", "green", "orange", "blue", "sky", "lavender", "yellow"];
+
+function workspaceTone(id: string): Tone {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return WORKSPACE_TONES[hash % WORKSPACE_TONES.length];
 }
 
 export function WorkspacesList({
@@ -102,17 +112,18 @@ export function WorkspacesList({
           const isActive = w.id === activeWorkspaceId;
           const isEditing = editingId === w.id;
           const saving = savingId === w.id;
-          const stats = [
-            { label: "Accounts", value: w.channels },
-            { label: "Automations", value: w.automations },
-            { label: "Contacts", value: w.contacts },
+          // Each number in the colour of the section it counts.
+          const stats: Array<{ label: string; value: number; tone: Tone }> = [
+            { label: "Accounts", value: w.channels, tone: "yellow" },
+            { label: "Automations", value: w.automations, tone: "purple" },
+            { label: "Contacts", value: w.contacts, tone: "green" },
           ];
           return (
             <li
               key={w.id}
               className={cn(
                 "rise flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:p-5 lg:flex-row lg:items-center lg:gap-6",
-                isActive && "border-ink/25",
+                isActive && "border-indigo/40 ring-1 ring-indigo/15",
               )}
               style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
             >
@@ -121,7 +132,7 @@ export function WorkspacesList({
                   aria-hidden
                   className={cn(
                     "font-display flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[20px]",
-                    isActive ? "bg-ink text-white" : "bg-fog text-ink",
+                    TONES[workspaceTone(w.id)].solid,
                   )}
                 >
                   {w.name.trim().charAt(0).toUpperCase()}
@@ -176,7 +187,10 @@ export function WorkspacesList({
               <dl className="flex shrink-0 divide-x rounded-2xl bg-fog lg:w-[380px]">
                 {stats.map((s) => (
                   <div key={s.label} className="min-w-0 flex-auto px-3 py-2.5 sm:px-4">
-                    <dt className="brand-label truncate text-muted-foreground">{s.label}</dt>
+                    <dt className="brand-label flex items-center gap-1.5 truncate text-muted-foreground">
+                      <span aria-hidden className={cn("h-2 w-2 shrink-0 rounded-[3px]", TONES[s.tone].dot)} />
+                      {s.label}
+                    </dt>
                     <dd className="font-display mt-1 text-[20px] leading-none tabular-nums">{formatNumber(s.value)}</dd>
                   </div>
                 ))}

@@ -7,18 +7,18 @@ export default function Loading() {
     <div aria-busy="true" aria-label="Loading usage">
       <PageHeader title="Usage" />
       <div className="space-y-6">
-        <div className="rounded-3xl bg-fog p-6 sm:p-8">
+        <div className="rounded-3xl bg-indigo p-6 sm:p-8">
           <div className="flex items-center justify-between">
-            <Skeleton className="h-3 w-28 bg-none bg-background" />
-            <Skeleton className="h-5 w-32 rounded-full bg-none bg-background" />
+            <Skeleton className="h-3 w-28 bg-none bg-white/15" />
+            <Skeleton className="h-5 w-32 rounded-full bg-none bg-white/15" />
           </div>
-          <Skeleton className="mt-5 h-14 w-56 bg-none bg-background sm:h-20" />
-          <Skeleton className="mt-6 h-3 w-full rounded-full bg-none bg-background" />
+          <Skeleton className="mt-5 h-14 w-56 bg-none bg-white/15 sm:h-20" />
+          <Skeleton className="mt-6 h-3 w-full rounded-full bg-none bg-white/15" />
           <div className="mt-6 grid grid-cols-3 gap-4">
             {Array.from({ length: 3 }, (_, i) => (
               <div key={i} className="space-y-2">
-                <Skeleton className="h-3 w-16 bg-none bg-background" />
-                <Skeleton className="h-4 w-20 max-w-full bg-none bg-background" />
+                <Skeleton className="h-3 w-16 bg-none bg-white/15" />
+                <Skeleton className="h-4 w-20 max-w-full bg-none bg-white/15" />
               </div>
             ))}
           </div>

@@ -47,7 +47,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
   { label: "Logs", href: "/logs", icon: ScrollText, tone: "lavender" },
 ];
 
-export const SETTINGS_NAV: NavItem = { label: "Settings", href: "/settings", icon: Settings, tone: "fog" };
+export const SETTINGS_NAV: NavItem = { label: "Settings", href: "/settings", icon: Settings, tone: "indigo" };
 
 /**
  * The section a pathname belongs to, for the tile next to a page title. Usage

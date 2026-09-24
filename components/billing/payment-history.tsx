@@ -23,7 +23,7 @@ export function PaymentHistory({ payments, hasSubscription }: { payments: Paymen
     return (
       <EmptyState
         icon={Receipt}
-        tone="fog"
+        tone="indigo"
         compact
         className="border bg-background"
         title="No payments yet"

@@ -6,7 +6,7 @@ import { roleLabel } from "@/lib/workspace/permissions";
 
 /** One colour per role, so a list of people reads at a glance. */
 const ROLE_TONE: Record<WorkspaceRole, { badge: BadgeVariant; dot: string }> = {
-  OWNER: { badge: "default", dot: "bg-ink" },
+  OWNER: { badge: "indigo", dot: "bg-indigo" },
   ADMIN: { badge: "lavender", dot: "bg-lavender" },
   MEMBER: { badge: "secondary", dot: "bg-mute" },
 };

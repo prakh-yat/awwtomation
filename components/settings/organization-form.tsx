@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import type { PlanTier } from "@prisma/client";
 
 import { planLabel } from "@/components/app-shell/types";
-import { PlanSwatch } from "@/components/billing/plan-badge";
+import { PLAN_TONE } from "@/components/billing/plan-badge";
+import { isDarkTone } from "@/components/layout/grid-block";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/sonner";
+import { TONES } from "@/components/ui/tone";
+import { cn } from "@/lib/utils";
 
 import { apiFetch, errorMessage } from "./client-api";
 import { SettingsCardBody, SettingsCardFooter, SettingsCardHeader } from "./settings-card";
@@ -77,12 +80,10 @@ export function OrganizationForm({ organization, workspaceCount, memberCount, ca
           </div>
           {/* Cells size to their content, so "Workspaces" never clips on a phone. */}
           <dl className="flex divide-x rounded-2xl bg-fog">
-            <div className="min-w-0 flex-auto px-3 py-3 sm:px-4">
-              <dt className="brand-label text-muted-foreground">Plan</dt>
-              <dd className="font-display mt-1.5 flex items-center gap-2 text-[20px] leading-none">
-                <PlanSwatch plan={organization.plan} className="h-2.5 w-2.5 rounded-[3px]" />
-                <span className="truncate">{planLabel(organization.plan)}</span>
-              </dd>
+            {/* The plan in its own colour: Pro purple, Agency indigo, Starter sky. */}
+            <div className={cn("min-w-0 flex-auto rounded-l-2xl px-3 py-3 sm:px-4", TONES[PLAN_TONE[organization.plan].tone].solid)}>
+              <dt className={cn("brand-label", isDarkTone(PLAN_TONE[organization.plan].tone) ? "text-white/70" : "text-ink/60")}>Plan</dt>
+              <dd className="font-display mt-1.5 truncate text-[20px] leading-none">{planLabel(organization.plan)}</dd>
             </div>
             {facts.map((fact) => (
               <div key={fact.label} className="min-w-0 flex-auto px-3 py-3 sm:px-4">

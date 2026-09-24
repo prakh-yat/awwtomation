@@ -25,6 +25,8 @@ function SectionTabs() {
   const pathname = usePathname() ?? "";
   const tabs = shell ? sectionTabs(pathname, shell.role) : [];
   if (tabs.length === 0) return null;
+  // The current tab wears the section's colour, the same as the tile beside the title.
+  const activeTone = TONES[sectionFor(pathname)?.tone ?? "ink"].solid;
 
   return (
     <nav aria-label="Section" className="scrollbar-none flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-full bg-fog p-1">
@@ -38,7 +40,7 @@ function SectionTabs() {
             className={cn(
               "whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-semibold outline-none transition-colors duration-150",
               "focus-visible:ring-2 focus-visible:ring-ring",
-              active ? "bg-ink text-white" : "text-muted-foreground hover:bg-background hover:text-ink",
+              active ? activeTone : "text-muted-foreground hover:bg-background hover:text-ink",
             )}
           >
             {tab.label}

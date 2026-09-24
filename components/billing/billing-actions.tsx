@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 
-import { ON_DARK } from "@/components/billing/on-dark";
+import { ON_DARK, ON_LIGHT } from "@/components/billing/on-dark";
 import { apiFetch, errorMessage } from "@/components/settings/client-api";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ServiceState } from "@/lib/billing/entitlements";
 import { PLANS } from "@/lib/billing/plans";
 import type { BillingOverview } from "@/lib/services/billing";
+import { cn } from "@/lib/utils";
 
 const CANCEL_REASON_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "too_expensive", label: "It's too expensive" },
@@ -40,7 +41,11 @@ export interface BillingActionsProps {
   overview: BillingOverview;
   /** OWNER only. Admins get disabled buttons with an explanation. */
   canManage: boolean;
+  /** Whether the plan block behind the buttons is dark (ink, purple, indigo) or light (sky). */
+  onDark?: boolean;
 }
+
+type Palette = typeof ON_DARK | typeof ON_LIGHT;
 
 /**
  * Buttons on the ink plan block. Each action hits its own route and then
@@ -50,8 +55,9 @@ export interface BillingActionsProps {
  * One white pill per state: resuming while the plan is set to cancel, fixing
  * the card while a payment is failing, otherwise changing plan.
  */
-export function BillingActions({ overview, canManage }: BillingActionsProps) {
+export function BillingActions({ overview, canManage, onDark = true }: BillingActionsProps) {
   const router = useRouter();
+  const palette: Palette = onDark ? ON_DARK : ON_LIGHT;
   const [portalPending, setPortalPending] = React.useState(false);
   const [resumePending, setResumePending] = React.useState(false);
 
@@ -86,7 +92,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
 
   const changePlanFirst = !cancelling && !unpaid;
   const changePlan = (
-    <Button asChild size="sm" variant={changePlanFirst ? "secondary" : "outline"} className={changePlanFirst ? ON_DARK.primary : ON_DARK.outline}>
+    <Button asChild size="sm" variant={changePlanFirst ? "secondary" : "outline"} className={changePlanFirst ? palette.primary : palette.outline}>
       <Link href="#plans">Change plan</Link>
     </Button>
   );
@@ -94,7 +100,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
     <Button
       size="sm"
       variant={unpaid ? "secondary" : "outline"}
-      className={unpaid ? ON_DARK.primary : ON_DARK.outline}
+      className={unpaid ? palette.primary : palette.outline}
       onClick={openPortal}
       loading={portalPending}
       disabled={Boolean(disabledReason) || !overview.hasCustomer}
@@ -113,7 +119,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
             <Button
               size="sm"
               variant="secondary"
-              className={ON_DARK.primary}
+              className={palette.primary}
               onClick={resume}
               loading={resumePending}
               disabled={Boolean(disabledReason)}
@@ -124,18 +130,18 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
           ) : null}
           {unpaid ? portal : changePlan}
           {unpaid ? changePlan : portal}
-          {!cancelling ? <CancelDialog overview={overview} disabledReason={disabledReason} onDone={() => router.refresh()} /> : null}
+          {!cancelling ? <CancelDialog overview={overview} disabledReason={disabledReason} palette={palette} onDone={() => router.refresh()} /> : null}
         </>
       ) : (
         <>
-          <Button asChild size="sm" variant="secondary" className={ON_DARK.primary}>
+          <Button asChild size="sm" variant="secondary" className={palette.primary}>
             <Link href="#plans">Upgrade</Link>
           </Button>
           {overview.hasCustomer ? (
             <Button
               size="sm"
               variant="outline"
-              className={ON_DARK.outline}
+              className={palette.outline}
               onClick={openPortal}
               loading={portalPending}
               disabled={Boolean(disabledReason)}
@@ -147,7 +153,7 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
           ) : null}
         </>
       )}
-      {!canManage ? <p className="basis-full text-xs text-white/60">Only an owner can change billing.</p> : null}
+      {!canManage ? <p className={cn("basis-full text-xs", onDark ? "text-white/60" : "text-ink/60")}>Only an owner can change billing.</p> : null}
     </div>
   );
 }
@@ -155,10 +161,12 @@ export function BillingActions({ overview, canManage }: BillingActionsProps) {
 function CancelDialog({
   overview,
   disabledReason,
+  palette,
   onDone,
 }: {
   overview: BillingOverview;
   disabledReason: string | null;
+  palette: Palette;
   onDone: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -197,7 +205,7 @@ function CancelDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" className={ON_DARK.ghost} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
+        <Button size="sm" variant="ghost" className={palette.ghost} disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>
           Cancel plan
         </Button>
       </DialogTrigger>

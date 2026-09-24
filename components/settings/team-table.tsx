@@ -230,7 +230,7 @@ export function InvitationsTable({ invitations, inviteAction }: InvitationsTable
   }
 
   if (invitations.length === 0) {
-    return <EmptyState icon={Mail} tone="fog" compact className="border bg-background" title="No pending invitations" action={inviteAction} />;
+    return <EmptyState icon={Mail} tone="indigo" compact className="border bg-background" title="No pending invitations" action={inviteAction} />;
   }
 
   return (
