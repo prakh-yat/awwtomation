@@ -217,7 +217,8 @@ export const automationTools = [
   workspaceTool({
     name: "set_automation_status",
     title: "Turn an automation on or off",
-    description: "ACTIVE starts replying to real comments and messages; PAUSED stops it. When something must be fixed first, the error lists every blocker. Confirm with the person before turning one on.",
+    description:
+      "Turn an automation on or off. ACTIVE starts replying to real comments and messages; PAUSED stops it. When something must be fixed first, the error lists every blocker. Confirm with the person before turning one on.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     input: { automationId, status: z.enum(["ACTIVE", "PAUSED"]) },
     run: async (args, ctx) => ({ automation: await setAutomationStatus(ctx.workspace.id, args.automationId, args.status, ctx.user.id) }),

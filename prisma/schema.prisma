@@ -1005,14 +1005,17 @@ model OAuthToken {
   @@index([expiresAt])
 }
 
-/// Who in an organization may use one MCP tool. No row means every member,
-/// as their role allows. A row narrows the tool to `userIds`; the owner edits
-/// it in Settings, MCP. People added to the organization later are not included.
+/// Who in an organization may use one MCP tool, as the owner set it in
+/// Settings, MCP. With no row the tool's default applies: read-only tools are
+/// open to every member, tools that change something to owners only. A row
+/// opens the tool to everyone (`allMembers`, including people who join later)
+/// or to exactly `userIds`. Roles apply on top either way.
 model McpToolAccess {
   id             String   @id @default(cuid())
   organizationId String
   /// The tool's name, such as create_automation.
   tool           String
+  allMembers     Boolean  @default(false)
   userIds        String[]
   updatedById    String?
   updatedAt      DateTime @updatedAt

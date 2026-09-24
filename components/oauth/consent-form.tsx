@@ -172,8 +172,7 @@ export function ConsentForm({
           </ul>
         )}
         <p className="mt-4 text-[13px] leading-5 text-muted-foreground">
-          It acts as you, with your role in each workspace: it can build automations and AI agents, message contacts, send broadcasts and change what
-          your role lets you change. You can disconnect it any time in Settings.
+          It acts as you, with your role in each workspace, and can use the tools your workspace owner allows.
         </p>
       </div>
 

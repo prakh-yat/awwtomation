@@ -15,7 +15,7 @@ import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/sdk/
 import { z, ZodError, type ZodRawShape } from "zod";
 
 import { ActivationBlockedError } from "@/lib/services/automations";
-import type { ReachableWorkspace, ToolAccessMap } from "@/lib/services/mcp-access";
+import { defaultOpensToEveryone, type ReachableWorkspace, type ToolAccessMap } from "@/lib/services/mcp-access";
 import { ApiError, handleApiError } from "@/lib/workspace/api";
 import type { WorkspaceContext } from "@/lib/workspace/context";
 import { roleLabel, roleRank } from "@/lib/workspace/permissions";
@@ -82,8 +82,8 @@ export function workspaceTool<S extends ZodRawShape>(
           "FORBIDDEN",
         );
       }
-      if (!canUseTool(principal, ctx.organization.id, def.name)) {
-        throw new ApiError(403, `The owner of ${ctx.organization.name} has turned off ${def.name} for you.`, "TOOL_OFF");
+      if (!canUseTool(principal, ctx.organization.id, def, ctx.role)) {
+        throw new ApiError(403, `${def.name} is off for you in ${ctx.organization.name}. The owner can turn it on in Settings, MCP.`, "TOOL_OFF");
       }
       return def.run(rest as z.infer<z.ZodObject<S>>, ctx, principal);
     },
@@ -102,19 +102,27 @@ export function accountTool<S extends ZodRawShape>(
     scope: "account",
     input: def.input,
     run: async (args, principal) => {
-      const organizations = new Set(principal.reachable.map((r) => r.organization.id));
-      if (organizations.size > 0 && ![...organizations].some((id) => canUseTool(principal, id, def.name))) {
-        throw new ApiError(403, `The owner of your organization has turned off ${def.name} for you.`, "TOOL_OFF");
+      if (principal.reachable.length > 0 && !principal.reachable.some((r) => canUseTool(principal, r.organization.id, def, r.role))) {
+        throw new ApiError(403, `${def.name} is off for you. The owner can turn it on in Settings, MCP.`, "TOOL_OFF");
       }
       return def.run(args as z.infer<z.ZodObject<S>>, principal);
     },
   };
 }
 
-/** False when the organization's owner narrowed this tool to a list that leaves the caller out. */
-export function canUseTool(principal: McpPrincipal, organizationId: string, tool: string): boolean {
-  const allowed = principal.toolAccess.get(organizationId)?.get(tool);
-  return !allowed || allowed.has(principal.user.id);
+export function isReadOnlyTool(tool: { annotations?: ToolAnnotations }): boolean {
+  return tool.annotations?.readOnlyHint === true;
+}
+
+/**
+ * Whether an organization lets this person use a tool: the owner's rule when
+ * they set one, otherwise the default (read-only tools for everyone, the rest
+ * for owners).
+ */
+export function canUseTool(principal: McpPrincipal, organizationId: string, tool: { name: string; annotations?: ToolAnnotations }, role: WorkspaceRole): boolean {
+  const rule = principal.toolAccess.get(organizationId)?.get(tool.name);
+  if (!rule) return defaultOpensToEveryone(isReadOnlyTool(tool)) || role === "OWNER";
+  return rule.allMembers || rule.userIds.has(principal.user.id);
 }
 
 /**
@@ -126,7 +134,7 @@ export function canUseTool(principal: McpPrincipal, organizationId: string, tool
 export function isToolVisible(tool: McpTool, principal: McpPrincipal): boolean {
   if (principal.reachable.length === 0) return tool.scope === "account";
   return principal.reachable.some(
-    (r) => roleRank(r.role) >= roleRank(tool.minRole ?? "MEMBER") && canUseTool(principal, r.organization.id, tool.name),
+    (r) => roleRank(r.role) >= roleRank(tool.minRole ?? "MEMBER") && canUseTool(principal, r.organization.id, tool, r.role),
   );
 }
 

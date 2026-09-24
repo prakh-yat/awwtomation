@@ -5,17 +5,15 @@
  * workspace in it (`workspaceIds` empty, which also covers workspaces created
  * later) or a picked list. Nothing is cached: every MCP request resolves the
  * grants against the person's current memberships, so leaving an organization,
- * losing a role or disconnecting the app in Settings applies to the very next
- * call. The app always acts as the person, with the role they hold now.
+ * losing a role or the owner turning a tool off applies to the very next call.
+ * The app always acts as the person, with the role they hold now.
  */
 import type { Organization, User, Workspace, WorkspaceRole } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
-import { revokeTokensFor } from "@/lib/services/oauth";
 import { recordAudit } from "@/lib/services/audit";
 import { ApiError } from "@/lib/workspace/api";
-import { roleAtLeast } from "@/lib/workspace/permissions";
 
 /** How often a grant's "last used" is written: once per window is plenty for a Settings list. */
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -174,51 +172,82 @@ export async function addWorkspaceToGrant(grantId: string, workspaceId: string):
 
 // ───────────────────────── Tool access ─────────────────────────
 
-/** organizationId → tool name → the members allowed to use it. A tool that is not listed is open to every member. */
-export type ToolAccessMap = Map<string, Map<string, Set<string>>>;
+/** Who may use one tool in one organization, as the owner set it. */
+export type ToolRule = { allMembers: boolean; userIds: Set<string> };
 
-/** The narrowed tools of several organizations, for one MCP request. */
+/** organizationId → tool name → the owner's rule. A tool without a rule follows its default. */
+export type ToolAccessMap = Map<string, Map<string, ToolRule>>;
+
+/**
+ * Before the owner says otherwise, a tool that only reads is open to every
+ * member and a tool that changes something is for owners only. Roles apply on
+ * top either way.
+ */
+export function defaultOpensToEveryone(readOnly: boolean): boolean {
+  return readOnly;
+}
+
+/** The owner's rules for several organizations, for one MCP request. */
 export async function toolAccessFor(organizationIds: string[]): Promise<ToolAccessMap> {
   const map: ToolAccessMap = new Map();
   if (organizationIds.length === 0) return map;
   const rows = await prisma.mcpToolAccess.findMany({
     where: { organizationId: { in: organizationIds } },
-    select: { organizationId: true, tool: true, userIds: true },
+    select: { organizationId: true, tool: true, allMembers: true, userIds: true },
   });
   for (const row of rows) {
-    const tools = map.get(row.organizationId) ?? new Map<string, Set<string>>();
-    tools.set(row.tool, new Set(row.userIds));
+    const tools = map.get(row.organizationId) ?? new Map<string, ToolRule>();
+    tools.set(row.tool, { allMembers: row.allMembers, userIds: new Set(row.userIds) });
     map.set(row.organizationId, tools);
   }
   return map;
 }
 
-/** tool name → allowed user ids, for the tools the owner has narrowed. Everything else is open to every member. */
-export async function listToolAccess(organizationId: string): Promise<Record<string, string[]>> {
-  const rows = await prisma.mcpToolAccess.findMany({ where: { organizationId }, select: { tool: true, userIds: true } });
-  return Object.fromEntries(rows.map((row) => [row.tool, row.userIds]));
+export type ToolAccessSetting = { everyone: boolean; userIds: string[] };
+
+/** The tools whose access the owner has set, by name. Every other tool follows its default. */
+export async function listToolAccess(organizationId: string): Promise<Record<string, ToolAccessSetting>> {
+  const rows = await prisma.mcpToolAccess.findMany({ where: { organizationId }, select: { tool: true, allMembers: true, userIds: true } });
+  return Object.fromEntries(rows.map((row) => [row.tool, { everyone: row.allMembers, userIds: row.userIds }]));
 }
 
 /**
- * Sets who may use a tool: `null` opens it to every member again, including
- * people who join later; a list narrows it to those members. The caller
- * checks that the tool exists and that the actor is the owner.
+ * Sets who may use a tool: `everyone` opens it to every member, including
+ * people who join later; otherwise exactly `userIds`. A read-only tool opened
+ * to everyone is back at its default, so its row goes. The caller checks that
+ * the tool exists and that the actor is the owner.
  */
-export async function setToolAccess(input: { organizationId: string; actorId: string; tool: string; userIds: string[] | null }): Promise<string[] | null> {
-  if (input.userIds === null) {
+export async function setToolAccess(input: {
+  organizationId: string;
+  actorId: string;
+  tool: string;
+  readOnly: boolean;
+  everyone: boolean;
+  userIds: string[];
+}): Promise<ToolAccessSetting | null> {
+  const where = { organizationId_tool: { organizationId: input.organizationId, tool: input.tool } };
+  let saved: ToolAccessSetting | null;
+
+  if (input.everyone && defaultOpensToEveryone(input.readOnly)) {
     await prisma.mcpToolAccess.deleteMany({ where: { organizationId: input.organizationId, tool: input.tool } });
+    saved = null;
+  } else if (input.everyone) {
+    await prisma.mcpToolAccess.upsert({
+      where,
+      create: { organizationId: input.organizationId, tool: input.tool, allMembers: true, userIds: [], updatedById: input.actorId },
+      update: { allMembers: true, userIds: [], updatedById: input.actorId },
+    });
+    saved = { everyone: true, userIds: [] };
   } else {
     const requested = Array.from(new Set(input.userIds));
-    const members = await prisma.organizationMember.findMany({
-      where: { organizationId: input.organizationId, userId: { in: requested } },
-      select: { userId: true },
-    });
-    if (members.length !== requested.length) throw new ApiError(422, "Everyone you pick must be a member of this organization.", "NOT_A_MEMBER");
+    const members = await prisma.organizationMember.count({ where: { organizationId: input.organizationId, userId: { in: requested } } });
+    if (members !== requested.length) throw new ApiError(422, "Everyone you pick must be a member of this organization.", "NOT_A_MEMBER");
     await prisma.mcpToolAccess.upsert({
-      where: { organizationId_tool: { organizationId: input.organizationId, tool: input.tool } },
-      create: { organizationId: input.organizationId, tool: input.tool, userIds: requested, updatedById: input.actorId },
-      update: { userIds: requested, updatedById: input.actorId },
+      where,
+      create: { organizationId: input.organizationId, tool: input.tool, allMembers: false, userIds: requested, updatedById: input.actorId },
+      update: { allMembers: false, userIds: requested, updatedById: input.actorId },
     });
+    saved = { everyone: false, userIds: requested };
   }
 
   await recordAudit({
@@ -226,89 +255,7 @@ export async function setToolAccess(input: { organizationId: string; actorId: st
     action: "mcp.tool_access_changed",
     targetType: "mcp_tool",
     targetId: input.tool,
-    metadata: { organizationId: input.organizationId, userIds: input.userIds ?? "everyone" },
+    metadata: { organizationId: input.organizationId, access: saved ? (saved.everyone ? "everyone" : saved.userIds) : "default" },
   });
-  return input.userIds === null ? null : Array.from(new Set(input.userIds));
-}
-
-// ───────────────────────── Settings ─────────────────────────
-
-export type ConnectedApp = {
-  grantId: string;
-  clientName: string;
-  /** Where the app sends people back to, so two apps with the same name can be told apart. */
-  clientHost: string | null;
-  user: { id: string; name: string | null; email: string };
-  /** Null when the app can reach every workspace in the organization. */
-  workspaces: Array<{ id: string; name: string }> | null;
-  createdAt: string;
-  lastUsedAt: string | null;
-};
-
-function hostOf(uri: string | undefined): string | null {
-  if (!uri) return null;
-  try {
-    return new URL(uri).host || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The apps connected to an organization. Members see their own; admins and
- * owners see everyone's, so they can remove an app a teammate connected.
- */
-export async function listConnectedApps(organizationId: string, viewer: { userId: string; role: WorkspaceRole }): Promise<ConnectedApp[]> {
-  const seeAll = roleAtLeast(viewer.role, "ADMIN");
-  const [grants, workspaces] = await Promise.all([
-    prisma.oAuthGrant.findMany({
-      where: { organizationId, revokedAt: null, ...(seeAll ? {} : { userId: viewer.userId }), user: { memberships: { some: { organizationId } } } },
-      orderBy: { createdAt: "desc" },
-      include: {
-        client: { select: { clientName: true, redirectUris: true } },
-        user: { select: { id: true, name: true, email: true } },
-      },
-    }),
-    prisma.workspace.findMany({ where: { organizationId }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }),
-  ]);
-  const nameById = new Map(workspaces.map((w) => [w.id, w.name]));
-  return grants.map((grant) => ({
-    grantId: grant.id,
-    clientName: grant.client.clientName,
-    clientHost: hostOf(grant.client.redirectUris[0]),
-    user: grant.user,
-    workspaces:
-      grant.workspaceIds.length === 0
-        ? null
-        : grant.workspaceIds.filter((id) => nameById.has(id)).map((id) => ({ id, name: nameById.get(id) as string })),
-    createdAt: grant.createdAt.toISOString(),
-    lastUsedAt: grant.lastUsedAt?.toISOString() ?? null,
-  }));
-}
-
-/**
- * Disconnects an app from one organization. Anyone may remove their own;
- * admins and owners may remove anyone's. When the person has no other
- * organization left for this app, its tokens die too, so it cannot even refresh.
- */
-export async function revokeGrant(grantId: string, actor: { userId: string; organizationId: string; role: WorkspaceRole }): Promise<void> {
-  const grant = await prisma.oAuthGrant.findUnique({
-    where: { id: grantId },
-    include: { client: { select: { clientName: true } } },
-  });
-  if (!grant || grant.organizationId !== actor.organizationId || grant.revokedAt) throw new ApiError(404, "That app is not connected", "NOT_FOUND");
-  if (grant.userId !== actor.userId && !roleAtLeast(actor.role, "ADMIN")) {
-    throw new ApiError(403, "Only admins can disconnect an app someone else connected", "FORBIDDEN");
-  }
-
-  await prisma.oAuthGrant.update({ where: { id: grant.id }, data: { revokedAt: new Date() } });
-  if (!(await hasLiveGrant(grant.userId, grant.clientId))) await revokeTokensFor(grant.userId, grant.clientId);
-
-  await recordAudit({
-    userId: actor.userId,
-    action: "mcp.app_disconnected",
-    targetType: "oauth_client",
-    targetId: grant.clientId,
-    metadata: { organizationId: grant.organizationId, clientName: grant.client.clientName, connectedBy: grant.userId },
-  });
+  return saved;
 }

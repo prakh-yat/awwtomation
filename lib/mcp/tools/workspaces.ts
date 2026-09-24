@@ -105,7 +105,7 @@ export const workspaceTools = [
     name: "delete_workspace",
     title: "Delete a workspace",
     description:
-      "Permanently delete the workspace in workspaceId with its accounts, automations, contacts, conversations and broadcasts. Owners only, and never an organization's last workspace. Confirm with the person first.",
+      "Permanently delete a workspace with its accounts, automations, contacts, conversations and broadcasts. It deletes the one in workspaceId. Owners only, and never an organization's last workspace. Confirm with the person first.",
     minRole: "OWNER",
     annotations: DESTROY,
     input: { confirmName: z.string().describe("The workspace's exact name, as a safeguard.") },

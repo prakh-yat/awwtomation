@@ -161,7 +161,7 @@ export const broadcastTools = [
     title: "Send a broadcast now",
     description:
       "Start sending a draft or scheduled broadcast now. It goes to everyone in the audience inside the reply window and counts toward the plan's monthly DMs. This messages real people: confirm the message and the estimate with the user first.",
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     input: { broadcastId },
     run: async (args, ctx) => {
       assertRateLimit("broadcast_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);

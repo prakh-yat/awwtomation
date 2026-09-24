@@ -24,7 +24,7 @@ export type McpToolGroup = {
  * mirrors, in the order the navigation runs. Settings, MCP lists them this way.
  */
 export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
-  { id: "workspace", label: "Workspace and team", tone: "fog", tools: workspaceTools },
+  { id: "workspace", label: "Workspace and team", tone: "indigo", tools: workspaceTools },
   { id: "accounts", label: "Accounts", tone: "yellow", tools: accountTools },
   { id: "automations", label: "Automations", tone: "purple", tools: automationTools },
   { id: "ai", label: "AI", tone: "ink", tools: aiTools },

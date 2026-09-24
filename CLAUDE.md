@@ -93,8 +93,9 @@ allows loopback only in development.
 People paste the URL; the app registers itself (`/oauth/register`), the person
 approves it on `/oauth/authorize` and picks workspaces, and it acts as them
 with their current role. There are no API keys to hand out. Settings, MCP
-shows the URL, the connected apps and every tool; the owner decides which
-members may use each tool, and the server hides and refuses the rest.
+shows the URL and every tool. Read-only tools are open to every member and
+write tools to owners until the owner opens them to more people; the server
+hides and refuses the rest.
 
 Every tool calls the same `lib/services/*` function as the matching API route,
 with the same schema and role (`lib/mcp/tool.ts`). When you add or change a
