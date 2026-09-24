@@ -43,13 +43,15 @@ export interface AccountRowProps {
   canManage: boolean;
   /** OWNER only; gates the irreversible "Delete account and data" action. */
   canPurge?: boolean;
+  /** False when another account already holds this platform in the workspace. */
+  canReconnect?: boolean;
   /** Draws the row's attention when the dialog was opened for it. */
   highlighted?: boolean;
   index?: number;
 }
 
 /** One connected account in the accounts dialog: who it is, how it is doing, and what can be done with it. */
-export function AccountRow({ channel, canManage, canPurge = false, highlighted = false, index = 0 }: AccountRowProps) {
+export function AccountRow({ channel, canManage, canPurge = false, canReconnect = true, highlighted = false, index = 0 }: AccountRowProps) {
   const router = useRouter();
   const ref = React.useRef<HTMLLIElement>(null);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -61,7 +63,7 @@ export function AccountRow({ channel, canManage, canPurge = false, highlighted =
   const name = channelDisplayName(channel);
   const disconnected = channel.status === "DISCONNECTED";
   const expiring = channel.health.state === "expiring";
-  const showReconnect = canManage && (status.needsReconnect || expiring);
+  const showReconnect = canManage && canReconnect && (status.needsReconnect || expiring);
 
   React.useEffect(() => {
     if (highlighted) ref.current?.scrollIntoView({ block: "nearest" });

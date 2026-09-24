@@ -15,7 +15,7 @@ Awwtomation is a **multi-tenant SaaS** (a ManyChat alternative) for Instagram an
 - **Broadcasts**: send a message to a tagged audience (only contacts inside the 24h window are eligible, Meta rule). `/broadcasts/new` is four steps (Audience, Message, When, Review) with the live reach beside them; a saved draft or scheduled broadcast reopens on Review.
 - **Analytics**: DMs sent, triggers, CTR via tracked links, per automation and per workspace, plus where contacts sit in each pipeline.
 - **Tracked links**: `/l/{slug}` redirects with click counting.
-- **Organizations, workspaces & team**: an **organization** is the billable account. It holds the plan, billing, the team (owner/admin/member roles apply to every workspace in it) and invitations. A **workspace** is a brand or client inside it and holds all product data. Users can belong to several organizations and switch between them from the account menu; workspaces are switched from the sidebar.
+- **Organizations, workspaces & team**: an **organization** is the billable account. It holds the plan, billing, the team (owner/admin/member roles apply to every workspace in it) and invitations. A **workspace** is a brand or client inside it and holds all product data. A workspace connects at most one Instagram account and one Facebook Page (`assertPlatformFree` in `lib/services/channels.ts`); reconnecting that same account is always allowed, and a disconnected one frees the place. Users can belong to several organizations and switch between them from the account menu; workspaces are switched from the sidebar.
 - **Plans & usage**: FREE/STARTER/PRO/AGENCY per organization, with DM, channel, automation and seat caps counted across all of its workspaces, enforced server-side.
 - **No platform admin UI**: the product only ever shows a customer their own organizations. Operator tasks (comping a plan) run from `scripts/set-plan.ts`.
 - **Marketing site**: a separate project. This app keeps only `/pricing`; the legal pages Meta App Review needs are on the marketing site.
@@ -56,7 +56,7 @@ App (protected, `app/(app)/`, uses sidebar shell):
 - `/inbox` (+ `?c=<conversationId>`)
 - `/contacts` (`?pipelineId=&stageId=&view=board&page=&pageSize=` plus filters), `/contacts/[id]`, `/contacts/pipelines` (create, rename, recolour, reorder and delete pipelines and stages)
 - `/broadcasts`, `/broadcasts/new`, `/broadcasts/[id]`
-- `/channels` redirects to `/dashboard?accounts=1`; `/channels/select-pages` is the Facebook Page picker the OAuth callback hands over to
+- `/channels` redirects to `/dashboard?accounts=1`; `/channels/select-pages` is the Facebook Page picker the OAuth callback hands over to (one Page, as a radio choice)
 - `/ai` (agents, with providers in the editor's dropdown; `/ai/providers` redirects here)
 - `/links`
 - `/logs`

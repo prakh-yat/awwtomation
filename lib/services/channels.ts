@@ -113,7 +113,8 @@ export type MediaSummary = {
   likeCount: number | null;
 };
 
-export type SelectablePageState = "available" | "connected" | "claimed";
+/** `taken`: this workspace already has a different Page, and a workspace holds one. */
+export type SelectablePageState = "available" | "connected" | "claimed" | "taken";
 
 /** A Facebook Page the user manages, annotated with how it relates to this workspace. */
 export type SelectablePage = {
@@ -319,6 +320,21 @@ async function assertChannelSlots(workspaceId: string, needed: number): Promise<
 }
 
 /**
+ * A workspace holds one live account per platform: one Instagram account and
+ * one Facebook Page. Reconnecting that same account is always allowed, and a
+ * disconnected one no longer holds the place.
+ */
+async function assertPlatformFree(workspaceId: string, platform: ChannelPlatform, externalId: string): Promise<void> {
+  const other = await prisma.channel.findFirst({
+    where: { workspaceId, platform, status: { not: ChannelStatus.DISCONNECTED }, externalId: { not: externalId } },
+    select: { id: true },
+  });
+  if (!other) return;
+  const what = platform === ChannelPlatform.INSTAGRAM ? "an Instagram account" : "a Facebook Page";
+  throw new ApiError(409, `This workspace already has ${what}. Disconnect it first, or connect this one in another workspace.`, "PLATFORM_TAKEN");
+}
+
+/**
  * Resolves who currently holds `platform + externalId` (globally unique).
  * - Held live by another workspace → 409 CHANNEL_CLAIMED.
  * - Disconnected in another workspace → the stale row is removed (cascading
@@ -415,6 +431,7 @@ export async function connectInstagramAccount(input: {
   const long = await getInstagramLongLivedToken(short.accessToken);
   const me = await getInstagramMe(long.accessToken);
 
+  await assertPlatformFree(workspaceId, ChannelPlatform.INSTAGRAM, me.id);
   const existing = await resolveClaim(workspaceId, ChannelPlatform.INSTAGRAM, me.id);
   // Reconnecting a live channel refreshes its token and needs no new slot.
   await assertChannelSlots(workspaceId, !existing || existing.status === ChannelStatus.DISCONNECTED ? 1 : 0);
@@ -491,19 +508,26 @@ export function parseFacebookConnectSession(raw: string | undefined | null): Fac
   }
 }
 
-/** Pages the user manages, flagged as connected here / claimed elsewhere / available. */
+/** Pages the user manages, flagged as connected here / claimed elsewhere / taken by this workspace's other Page / available. */
 export async function listFacebookPagesForSelection(workspaceId: string, userToken: string): Promise<SelectablePage[]> {
   const pages = await listFacebookPages(userToken);
   if (pages.length === 0) return [];
-  const existing = await prisma.channel.findMany({
-    where: { platform: ChannelPlatform.FACEBOOK, externalId: { in: pages.map((p) => p.id) } },
-    select: { externalId: true, workspaceId: true, status: true },
-  });
+  const [existing, current] = await Promise.all([
+    prisma.channel.findMany({
+      where: { platform: ChannelPlatform.FACEBOOK, externalId: { in: pages.map((p) => p.id) } },
+      select: { externalId: true, workspaceId: true, status: true },
+    }),
+    prisma.channel.findFirst({
+      where: { workspaceId, platform: ChannelPlatform.FACEBOOK, status: { not: ChannelStatus.DISCONNECTED } },
+      select: { externalId: true },
+    }),
+  ]);
   const byExternalId = new Map(existing.map((c) => [c.externalId, c]));
   return pages.map((page) => {
     const row = byExternalId.get(page.id);
     let state: SelectablePageState = "available";
     if (row && row.status !== ChannelStatus.DISCONNECTED) state = row.workspaceId === workspaceId ? "connected" : "claimed";
+    else if (current && current.externalId !== page.id) state = "taken";
     return {
       id: page.id,
       name: page.name || "Untitled Page",
@@ -514,7 +538,7 @@ export async function listFacebookPagesForSelection(workspaceId: string, userTok
   });
 }
 
-/** Step 2 of the Facebook flow: connect the chosen Pages using the user token from the picker session. */
+/** Step 2 of the Facebook flow: connect the chosen Page using the user token from the picker session. */
 export async function completeFacebookConnect(input: {
   workspaceId: string;
   userId: string;
@@ -523,6 +547,8 @@ export async function completeFacebookConnect(input: {
 }): Promise<ChannelSummary[]> {
   const { workspaceId, userId } = input;
   const pageIds = Array.from(new Set(input.pageIds));
+  if (pageIds.length !== 1) throw new ApiError(422, "Choose one Page. A workspace connects one Facebook Page.", "ONE_PAGE");
+  await assertPlatformFree(workspaceId, ChannelPlatform.FACEBOOK, pageIds[0]);
   const pages = await listFacebookPages(input.userToken);
   const byId = new Map(pages.map((p) => [p.id, p]));
   const selected = pageIds.map((id) => byId.get(id)).filter((p): p is FacebookPageInfo => Boolean(p));
@@ -577,26 +603,6 @@ export async function completeFacebookConnect(input: {
 
   const summaries = await listChannels(workspaceId);
   return ids.map((id) => summaries.find((s) => s.id === id)).filter((s): s is ChannelSummary => Boolean(s));
-}
-
-/** Single-shot variant (no picker): connects `pageIds`, or every Page when omitted. */
-export async function connectFacebookPages(input: {
-  workspaceId: string;
-  userId: string;
-  code: string;
-  redirectUri: string;
-  pageIds?: string[];
-}): Promise<ChannelSummary[]> {
-  const { userToken, pages } = await beginFacebookConnect(input);
-  if (pages.length === 0) {
-    throw new ApiError(422, "No Page was shared. Connect again, choose Edit settings and tick your Page.", "NO_PAGES");
-  }
-  return completeFacebookConnect({
-    workspaceId: input.workspaceId,
-    userId: input.userId,
-    userToken,
-    pageIds: input.pageIds ?? pages.map((p) => p.id),
-  });
 }
 
 // ───────────────────────── Disconnect ─────────────────────────

@@ -23,7 +23,7 @@ import { canManageChannels } from "@/lib/workspace/permissions";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Choose Facebook Pages" };
+export const metadata: Metadata = { title: "Choose a Facebook Page" };
 
 /**
  * Step 2 of the Facebook connect flow. The OAuth callback parked the user
@@ -57,7 +57,7 @@ export default async function SelectPagesPage() {
       <PageHeader
         backHref="/dashboard?accounts=1"
         backLabel="Accounts"
-        title="Choose Facebook Pages"
+        title="Choose a Facebook Page"
       />
 
       {loadError ? (
@@ -80,7 +80,7 @@ export default async function SelectPagesPage() {
           icon={<PlatformIcon platform="FACEBOOK" size={24} />}
           tone="blue"
           title="No Pages found"
-          description="Sign in again and choose at least one Page when Facebook asks."
+          description="Sign in again, choose Edit settings and tick your Page."
           action={
             <Button asChild>
               <a href="/api/meta/facebook/start">

@@ -36,6 +36,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "Only workspace admins can connect accounts.",
   meta: "Instagram or Facebook couldn't finish connecting. Try again.",
   channel_claimed: "This account is connected to another workspace. Disconnect it there first.",
+  platform_taken: "A workspace holds one Instagram account and one Facebook Page.",
+  one_page: "Choose one Page. A workspace connects one Facebook Page.",
   no_pages: "No Page was shared. Connect again, choose Edit settings and tick your Page.",
   fb_session_expired: "Your Facebook sign-in timed out before you picked a Page. Connect again.",
   page_not_found: "One of those Pages is no longer on your Facebook account. Sign in again.",
@@ -49,6 +51,11 @@ const PLATFORMS: ReadonlyArray<{ platform: ChannelPlatform; label: string; hint:
   { platform: "INSTAGRAM", label: "Instagram", hint: "Business or creator account" },
   { platform: "FACEBOOK", label: "Facebook Page", hint: "A Page you manage" },
 ];
+
+/** Platforms that already have a live account here: a workspace holds one of each. */
+function takenPlatforms(channels: ChannelView[]): Set<ChannelPlatform> {
+  return new Set(channels.filter((c) => c.status !== "DISCONNECTED").map((c) => c.platform));
+}
 
 /** Most accounts a workspace shows as faces before the rest collapse into "+n". */
 const VISIBLE = 4;
@@ -69,7 +76,17 @@ export interface AccountsBarProps {
   canUpgrade: boolean;
 }
 
-function ConnectMenu({ configured, full, canUpgrade }: { configured: MetaConfigured; full: boolean; canUpgrade: boolean }) {
+function ConnectMenu({
+  configured,
+  platforms,
+  full,
+  canUpgrade,
+}: {
+  configured: MetaConfigured;
+  platforms: typeof PLATFORMS;
+  full: boolean;
+  canUpgrade: boolean;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -90,7 +107,7 @@ function ConnectMenu({ configured, full, canUpgrade }: { configured: MetaConfigu
             ) : null}
           </>
         ) : (
-          PLATFORMS.map((option) => {
+          platforms.map((option) => {
             const ready = option.platform === "INSTAGRAM" ? configured.instagram : configured.facebook;
             return (
               <DropdownMenuItem key={option.platform} asChild disabled={!ready} className="gap-3 py-2">
@@ -124,6 +141,8 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
   const handled = React.useRef<string | null>(null);
 
   const full = slots.limit > 0 && slots.used >= slots.limit;
+  const taken = takenPlatforms(channels);
+  const available = PLATFORMS.filter((option) => !taken.has(option.platform));
   const visible = channels.slice(0, VISIBLE);
   const hidden = channels.length - visible.length;
 
@@ -216,7 +235,7 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
             ) : null}
           </div>
         ) : null}
-        {canManage ? <ConnectMenu configured={configured} full={full} canUpgrade={canUpgrade} /> : null}
+        {canManage && available.length > 0 ? <ConnectMenu configured={configured} platforms={available} full={full} canUpgrade={canUpgrade} /> : null}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -231,31 +250,38 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
           {channels.length > 0 ? (
             <ul className="space-y-2">
               {channels.map((channel, i) => (
-                <AccountRow key={channel.id} channel={channel} canManage={canManage} canPurge={canPurge} highlighted={channel.id === focusId} index={i} />
+                <AccountRow
+                  key={channel.id}
+                  channel={channel}
+                  canManage={canManage}
+                  canPurge={canPurge}
+                  // A disconnected account can't come back while another one holds its platform here.
+                  canReconnect={channel.status !== "DISCONNECTED" || !taken.has(channel.platform)}
+                  highlighted={channel.id === focusId}
+                  index={i}
+                />
               ))}
             </ul>
           ) : null}
 
-          {canManage ? (
-            full ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-fog px-4 py-3">
-                <p className="text-[13px] font-medium">Your plan has no room for another account.</p>
-                {canUpgrade ? (
-                  <Button asChild size="sm" variant="highlight">
-                    <Link href="/settings/billing">Upgrade plan</Link>
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              <section aria-labelledby="connect-another" className="space-y-2.5">
-                <h3 id="connect-another" className="brand-label text-muted-foreground">
-                  {channels.length > 0 ? "Connect another" : "Connect an account"}
-                </h3>
-                <ConnectButtons configured={configured} />
-              </section>
-            )
-          ) : (
+          {!canManage ? (
             <p className="text-[13px] text-muted-foreground">Only workspace admins can connect or disconnect accounts.</p>
+          ) : available.length === 0 ? null : full ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-fog px-4 py-3">
+              <p className="text-[13px] font-medium">Your plan has no room for another account.</p>
+              {canUpgrade ? (
+                <Button asChild size="sm" variant="highlight">
+                  <Link href="/settings/billing">Upgrade plan</Link>
+                </Button>
+              ) : null}
+            </div>
+          ) : (
+            <section aria-labelledby="connect-another" className="space-y-2.5">
+              <h3 id="connect-another" className="brand-label text-muted-foreground">
+                {channels.length > 0 ? "Connect another" : "Connect an account"}
+              </h3>
+              <ConnectButtons configured={configured} platforms={available.map((option) => option.platform)} />
+            </section>
           )}
         </DialogContent>
       </Dialog>

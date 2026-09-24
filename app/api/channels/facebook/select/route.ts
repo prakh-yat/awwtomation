@@ -14,11 +14,11 @@ import { ApiError, parseBody, withWorkspace } from "@/lib/workspace/api";
 export const runtime = "nodejs";
 
 const bodySchema = z.object({
-  pageIds: z.array(z.string().min(1).max(64)).min(1, "Pick at least one Page").max(50),
+  pageIds: z.array(z.string().min(1).max(64)).length(1, "Choose one Page"),
 });
 
 /**
- * Step 2 of the Facebook flow. Body: `{ pageIds: string[] }`. Reads the
+ * Step 2 of the Facebook flow. Body: `{ pageIds: [pageId] }`, one Page per workspace. Reads the
  * picker cookie set by the OAuth callback; it must belong to the same user
  * and workspace. Responds `{ channels: ChannelView[] }` and clears the cookie.
  */

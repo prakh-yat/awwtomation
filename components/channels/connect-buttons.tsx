@@ -42,11 +42,23 @@ function isConfigured(configured: MetaConfigured, platform: ChannelPlatform): bo
 
 const UNAVAILABLE = "Unavailable right now";
 
-/** The two ways in: plain anchors, since the targets are route handlers that redirect to Meta. */
-export function ConnectButtons({ configured, className }: { configured: MetaConfigured; className?: string }) {
+/**
+ * The ways in: plain anchors, since the targets are route handlers that
+ * redirect to Meta. `platforms` narrows it to what the workspace can still add.
+ */
+export function ConnectButtons({
+  configured,
+  platforms,
+  className,
+}: {
+  configured: MetaConfigured;
+  platforms?: readonly ChannelPlatform[];
+  className?: string;
+}) {
+  const options = platforms ? OPTIONS.filter((o) => platforms.includes(o.platform)) : OPTIONS;
   return (
-    <div className={cn("grid gap-2 sm:grid-cols-2", className)}>
-      {OPTIONS.map((option, i) => {
+    <div className={cn("grid gap-2", options.length > 1 && "sm:grid-cols-2", className)}>
+      {options.map((option, i) => {
         const enabled = isConfigured(configured, option.platform);
         const body = (
           <>
