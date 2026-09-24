@@ -20,7 +20,7 @@ export class ClientApiError extends Error {
 type ErrorBody = { error?: string; code?: string };
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Serialised as the JSON body with the matching content-type header. */
   json?: unknown;
 };

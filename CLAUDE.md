@@ -87,6 +87,20 @@ A custom endpoint is user input that the server then fetches, so `checkBaseUrl`
 refuses link-local, private and metadata addresses in every environment, and
 allows loopback only in development.
 
+## MCP
+
+`/mcp` is an MCP server for AI apps (Claude, ChatGPT, Claude Code, Cursor).
+People paste the URL; the app registers itself (`/oauth/register`), the person
+approves it on `/oauth/authorize` and picks workspaces, and it acts as them
+with their current role. There are no API keys to hand out. Settings, MCP
+shows the URL, the connected apps and every tool; the owner decides which
+members may use each tool, and the server hides and refuses the rest.
+
+Every tool calls the same `lib/services/*` function as the matching API route,
+with the same schema and role (`lib/mcp/tool.ts`). When you add or change a
+route people use from the UI, add or change its tool in `lib/mcp/tools/*`.
+Tool descriptions are strings, so the em dash rule applies to them too.
+
 ## Checks
 
 ```bash

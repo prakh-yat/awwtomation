@@ -22,6 +22,8 @@ const PRIVATE_PATHS = [
   "/api",
   "/invite",
   "/l/",
+  "/oauth",
+  "/mcp",
 ];
 
 export default function robots(): MetadataRoute.Robots {

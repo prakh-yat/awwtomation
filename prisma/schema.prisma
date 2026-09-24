@@ -185,6 +185,11 @@ enum FlowSessionStatus {
   EXPIRED
 }
 
+enum OAuthTokenKind {
+  ACCESS
+  REFRESH
+}
+
 // ───────────────────────── Identity & tenancy ─────────────────────────
 
 model User {
@@ -208,6 +213,9 @@ model User {
   ownedContacts         Contact[]            @relation("ContactOwner")
   contactNotes          ContactNote[]
   auditLogs             AuditLog[]
+  oauthGrants           OAuthGrant[]
+  oauthCodes            OAuthCode[]
+  oauthTokens           OAuthToken[]
 }
 
 /// The billable account. Holds the plan, the monthly DM counter, the team and
@@ -241,6 +249,8 @@ model Organization {
   invitations Invitation[]
   workspaces  Workspace[]
   payments    Payment[]
+  oauthGrants OAuthGrant[]
+  mcpTools    McpToolAccess[]
 }
 
 /// Roles are organization-wide: a member can open every workspace in the organization.
@@ -904,4 +914,110 @@ model AiAgent {
 
   @@index([workspaceId])
   @@index([providerId])
+}
+
+// ───────────────────────── MCP (OAuth for AI apps) ─────────────────────────
+
+/// An AI app (Claude, ChatGPT, Cursor and the like) that registered itself at
+/// /oauth/register (RFC 7591) to reach the MCP server at /mcp. Nobody creates
+/// these by hand: the app gets its client id, and a secret when it asks for one,
+/// the moment someone pastes the MCP URL into it.
+model OAuthClient {
+  id                      String    @id @default(cuid())
+  clientId                String    @unique
+  /// sha256 of the client secret. Empty for public clients, which prove themselves with PKCE alone.
+  clientSecretHash        String    @default("")
+  clientName              String
+  clientUri               String?
+  /// Exact-match list; a loopback redirect may use any port (RFC 8252).
+  redirectUris            String[]
+  /// client_secret_post, client_secret_basic or none.
+  tokenEndpointAuthMethod String    @default("client_secret_post")
+  createdAt               DateTime  @default(now())
+  lastUsedAt              DateTime?
+
+  grants OAuthGrant[]
+  codes  OAuthCode[]
+  tokens OAuthToken[]
+}
+
+/// What one person let one app reach inside one organization. The app acts as
+/// that person, with the role they hold there now, so it can never do more
+/// than they could in the app themselves.
+model OAuthGrant {
+  id             String    @id @default(cuid())
+  userId         String
+  clientId       String
+  organizationId String
+  /// Empty means every workspace in the organization, including ones added later.
+  workspaceIds   String[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       OAuthClient  @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId, organizationId])
+  @@index([organizationId])
+}
+
+/// One-time authorization code from the consent screen, bound to the app, the
+/// redirect URI and a PKCE challenge. Stored hashed; lives ten minutes.
+model OAuthCode {
+  id            String    @id @default(cuid())
+  codeHash      String    @unique
+  clientId      String
+  userId        String
+  redirectUri   String
+  codeChallenge String
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  client OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+/// Access and refresh tokens, stored hashed. Access tokens are opaque and live
+/// an hour, so disconnecting an app takes effect on its next call. Refresh
+/// tokens rotate; presenting a used one revokes every token of that person and app.
+model OAuthToken {
+  id            String         @id @default(cuid())
+  tokenHash     String         @unique
+  kind          OAuthTokenKind
+  clientId      String
+  userId        String
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  /// The refresh token this one was minted from.
+  rotatedFromId String?
+  createdAt     DateTime       @default(now())
+
+  client OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, clientId])
+  @@index([expiresAt])
+}
+
+/// Who in an organization may use one MCP tool. No row means every member,
+/// as their role allows. A row narrows the tool to `userIds`; the owner edits
+/// it in Settings, MCP. People added to the organization later are not included.
+model McpToolAccess {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// The tool's name, such as create_automation.
+  tool           String
+  userIds        String[]
+  updatedById    String?
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, tool])
 }

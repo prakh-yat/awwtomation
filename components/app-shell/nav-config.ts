@@ -71,6 +71,7 @@ export function settingsLinks(role: WorkspaceRole): SettingsLink[] {
   const links: SettingsLink[] = [
     { label: "General", href: "/settings", exact: true },
     { label: "Workspaces", href: "/settings/workspaces" },
+    { label: "MCP", href: "/settings/mcp" },
   ];
   if (admin) {
     links.push({ label: "Team", href: "/settings/team" });
@@ -111,6 +112,7 @@ const SECTION_TABS: Record<string, readonly SectionTab[]> = {
   "/settings": [
     { label: "General", href: "/settings", exact: true },
     { label: "Workspaces", href: "/settings/workspaces" },
+    { label: "MCP", href: "/settings/mcp" },
     { label: "Team", href: "/settings/team", adminOnly: true },
     { label: "Billing", href: "/settings/billing", adminOnly: true },
   ],

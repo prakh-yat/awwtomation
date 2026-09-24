@@ -32,6 +32,13 @@ async function tick(req: Request): Promise<NextResponse> {
     } catch (err) {
       logger.error("cron.tick_broadcasts_error", { error: err instanceof Error ? err.message : String(err) });
     }
+    // Expired MCP sign-in codes and tokens. Housekeeping only, so it never stops the tick either.
+    try {
+      const { purgeExpiredOAuthRows } = await import("@/lib/services/oauth");
+      await purgeExpiredOAuthRows();
+    } catch (err) {
+      logger.error("cron.tick_oauth_purge_error", { error: err instanceof Error ? err.message : String(err) });
+    }
     const deadline = Date.now() + TIME_BUDGET_MS;
     let processed = 0;
     let failed = 0;
