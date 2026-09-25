@@ -35,7 +35,14 @@ export default async function AutomationBuilderPage({ params }: { params: Params
   return (
     <>
       <h1 className="sr-only">{automation.name}</h1>
-      <AutomationBuilder key={automation.id} automation={automation} channels={channels} pipelines={pipelines} agents={agents} />
+      <AutomationBuilder
+        key={automation.id}
+        automation={automation}
+        channels={channels}
+        pipelines={pipelines}
+        agents={agents}
+        canManageAi={ctx.role === "OWNER" || ctx.role === "ADMIN"}
+      />
     </>
   );
 }

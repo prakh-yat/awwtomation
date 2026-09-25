@@ -5,31 +5,53 @@ import { ArrowUp, ExternalLink, RotateCcw, X } from "lucide-react";
 
 import { apiFetch, errorMessage } from "@/components/automations/api";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/components/ui/sonner";
 import type { AgentButton } from "@/lib/ai/agent";
 import { cn } from "@/lib/utils";
 
-type Turn = { role: "user" | "assistant"; content: string; buttons?: AgentButton[]; note?: "handoff" | "done" };
+type Outcome = "handoff" | "done" | "limit";
+type Turn = { role: "user" | "assistant"; content: string; buttons?: AgentButton[]; note?: Outcome };
+
+const NOTES: Record<Outcome, string> = { handoff: "Hands over to your team", done: "Ends the conversation", limit: "Last reply" };
+const NOTE_TONE: Record<Outcome, string> = { handoff: "bg-orange-soft text-orange-ink", done: "bg-green-soft text-green-ink", limit: "bg-green-soft text-green-ink" };
+
+export type PlaygroundProps = {
+  agentId: string;
+  /** The agent has unsaved edits the chat cannot use yet. */
+  dirty: boolean;
+  onClose?: () => void;
+  /** A flow step's own instruction, added to the agent's for this chat. */
+  instruction?: string;
+  /** The step's reply limit: the reply that reaches it is marked. */
+  maxReplies?: number;
+  title?: string;
+  /** Overrides the words under a reply that ends the conversation, hands over, or uses the last reply. */
+  notes?: Partial<Record<Outcome, string>>;
+};
 
 /**
  * A chat with the saved agent: the same call an automation makes, with the same
  * key and prompt. Nothing is sent to anyone.
  */
-export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty: boolean; onClose?: () => void }) {
+export function Playground({ agentId, dirty, onClose, instruction, maxReplies, title = "Test chat", notes }: PlaygroundProps) {
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [input, setInput] = React.useState("");
   const [pending, setPending] = React.useState(false);
-  const endRef = React.useRef<HTMLDivElement>(null);
+  // Shown in the chat, where the eye already is: a toast would cover the box you type in.
+  const [error, setError] = React.useState<string | null>(null);
+  const listRef = React.useRef<HTMLDivElement>(null);
 
   // Switching agent starts a fresh conversation; a half-finished one would read
   // as the new agent's history.
   React.useEffect(() => {
     setTurns([]);
     setInput("");
+    setError(null);
   }, [agentId]);
 
+  // Scrolls the chat itself: scrollIntoView would also scroll whatever panel the chat sits in.
   React.useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    const list = listRef.current;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }, [turns, pending]);
 
   async function send() {
@@ -38,18 +60,25 @@ export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty
     const next: Turn[] = [...turns, { role: "user", content: text }];
     setTurns(next);
     setInput("");
+    setError(null);
     setPending(true);
     try {
       const result = await apiFetch<{ reply: string; buttons: AgentButton[]; handoff: boolean; done: boolean }>("/api/ai/playground", {
         method: "POST",
-        json: { agentId, messages: next.map(({ role, content }) => ({ role, content })) },
+        json: { agentId, messages: next.map(({ role, content }) => ({ role, content })), ...(instruction?.trim() ? { instruction: instruction.trim() } : {}) },
       });
+      const replies = next.filter((t) => t.role === "assistant").length + 1;
       setTurns((prev) => [
         ...prev,
-        { role: "assistant", content: result.reply, buttons: result.buttons, note: result.handoff ? "handoff" : result.done ? "done" : undefined },
+        {
+          role: "assistant",
+          content: result.reply,
+          buttons: result.buttons,
+          note: result.handoff ? "handoff" : result.done ? "done" : maxReplies && replies === maxReplies ? "limit" : undefined,
+        },
       ]);
     } catch (err) {
-      toast.error(errorMessage(err, "The provider did not answer"));
+      setError(errorMessage(err, "The provider did not answer"));
       setTurns((prev) => prev.slice(0, -1));
       setInput(text);
     } finally {
@@ -60,12 +89,15 @@ export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border bg-card">
       <div className="flex items-center justify-between gap-3 bg-ink px-4 py-3 text-white">
-        <p className="text-[13px] font-semibold">Test chat</p>
+        <p className="text-[13px] font-semibold">{title}</p>
         <div className="flex items-center gap-1">
           {turns.length > 0 ? (
             <button
               type="button"
-              onClick={() => setTurns([])}
+              onClick={() => {
+                setTurns([]);
+                setError(null);
+              }}
               className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[12px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
             >
               <RotateCcw className="h-3 w-3" /> Start over
@@ -84,10 +116,10 @@ export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty
         </div>
       </div>
 
-      <div className="scrollbar-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-fog/60 px-4 py-4">
+      <div ref={listRef} className="scrollbar-thin min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-fog/60 px-4 py-4">
         {dirty ? <p className="rounded-xl bg-yellow-soft px-3 py-2 text-[12px] font-medium">Save to test your changes.</p> : null}
 
-        {turns.length === 0 ? (
+        {turns.length === 0 && !error ? (
           <div className="flex h-full min-h-[12rem] flex-col items-center justify-center text-center">
             <p className="text-[13px] font-semibold">Message it as a customer would</p>
             <p className="mt-1 text-[12px] text-muted-foreground">Replies use your saved agent and key.</p>
@@ -116,13 +148,13 @@ export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty
                 </div>
               ) : null}
               {turn.note ? (
-                <p className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold", turn.note === "handoff" ? "bg-orange-soft text-orange-ink" : "bg-green-soft text-green-ink")}>
-                  {turn.note === "handoff" ? "Hands over to your team" : "Ends the conversation"}
-                </p>
+                <p className={cn("mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold", NOTE_TONE[turn.note])}>{notes?.[turn.note] ?? NOTES[turn.note]}</p>
               ) : null}
             </div>
           </div>
         ))}
+
+        {error ? <p className="animate-fade-in rounded-xl bg-destructive/10 px-3 py-2 text-[12px] font-medium leading-snug text-destructive">{error}</p> : null}
 
         {pending ? (
           <div className="flex justify-start">
@@ -135,7 +167,6 @@ export function Playground({ agentId, dirty, onClose }: { agentId: string; dirty
             </div>
           </div>
         ) : null}
-        <div ref={endRef} />
       </div>
 
       <form

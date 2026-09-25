@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertCircle, ExternalLink, MousePointerClick, Plus, Trash2, X } from "lucide-react";
 import type { ChannelPlatform } from "@prisma/client";
 
+import { Playground } from "@/components/ai/playground";
 import { DmPreview } from "@/components/automations/dm-preview";
 import { StageDot } from "@/components/pipelines/stage-badge";
 import { Button } from "@/components/ui/button";
@@ -22,14 +23,14 @@ import {
   type AnswerValidation,
   type FlowNodeData,
   DEFAULT_AI_TURNS,
-  MAX_AI_TURNS,
 } from "@/lib/automation/flow-types";
 import type { OutboundButton, OutboundMessage, OutboundQuickReply } from "@/lib/meta/types";
 import type { AgentOption } from "@/lib/services/ai";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
-import { charCount, followPromptMessage, renderPreviewMessage, utf8Bytes, type BuilderAction, type BuilderNode } from "./builder-state";
+import { AiStepEditor, type StepTarget } from "./ai-step-editor";
+import { charCount, followPromptMessage, renderPreviewMessage, utf8Bytes, type AddableNodeType, type BuilderAction, type BuilderNode } from "./builder-state";
 import { STEP_INFO, StepIcon } from "./step-catalog";
 import { TONES } from "@/components/ui/tone";
 
@@ -558,83 +559,6 @@ const PIPELINE_STEP_HINT: Record<PipelineStepData["type"], string> = {
   remove_from_pipeline: "",
 };
 
-function AiReplyEditor({
-  id,
-  data,
-  agents,
-  update,
-}: {
-  id: string;
-  data: Extract<FlowNodeData, { type: "ai_reply" }>;
-  agents: AgentOption[];
-  update: (next: FlowNodeData) => void;
-}) {
-  const turns = data.maxTurns ?? DEFAULT_AI_TURNS;
-
-  if (agents.length === 0) {
-    return (
-      <Note>
-        No AI agents yet.{" "}
-        <Link href="/ai" target="_blank" className="font-semibold underline underline-offset-2">
-          Create one
-        </Link>
-      </Note>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor={`${id}-agent`}>Agent</Label>
-        <Select value={data.agentId ?? ""} onValueChange={(agentId) => update({ ...data, agentId })}>
-          <SelectTrigger id={`${id}-agent`}>
-            <SelectValue placeholder="Pick an agent" />
-          </SelectTrigger>
-          <SelectContent>
-            {agents.map((agent) => (
-              <SelectItem key={agent.id} value={agent.id}>
-                {agent.name}
-                {agent.isDefault ? " (default)" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Link href="/ai" target="_blank" className="inline-block text-[12px] font-semibold text-purple-ink hover:underline">
-          Edit agents
-        </Link>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor={`${id}-instruction`}>Instruction for this step</Label>
-        <Textarea
-          id={`${id}-instruction`}
-          rows={3}
-          value={data.instruction ?? ""}
-          onChange={(e) => update({ ...data, instruction: e.target.value })}
-          placeholder="Only talk about the autumn collection, and ask for their size."
-        />
-        <p className="text-[12px] text-muted-foreground">Optional. Applies to this step only.</p>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor={`${id}-turns`}>Replies before moving on</Label>
-        <Input
-          id={`${id}-turns`}
-          type="number"
-          min={1}
-          max={MAX_AI_TURNS}
-          value={turns}
-          onChange={(e) => {
-            const next = Number(e.target.value);
-            update({ ...data, maxTurns: Number.isFinite(next) ? Math.min(Math.max(Math.round(next), 1), MAX_AI_TURNS) : DEFAULT_AI_TURNS });
-          }}
-        />
-
-      </div>
-    </div>
-  );
-}
-
 function PipelineStepEditor({ id, data, pipelines, update }: { id: string; data: PipelineStepData; pipelines: PipelineSummary[]; update: (next: FlowNodeData) => void }) {
   const pipeline = pipelines.find((p) => p.id === data.pipelineId);
   const needsStage = data.type !== "remove_from_pipeline";
@@ -762,6 +686,14 @@ export type InspectorProps = {
   contactLabel: string;
   pipelines: PipelineSummary[];
   agents: AgentOption[];
+  /** Admins and owners can create agents and connect AI providers from the AI step. */
+  canManageAi: boolean;
+  /** The step a node's exit leads to, if anything is connected there. */
+  stepAfter: (nodeId: string, handle: string) => StepTarget | null;
+  onAddAfter: (nodeId: string, handle: string, type: AddableNodeType) => void;
+  onOpenStep: (id: string) => void;
+  /** Closes the panel by clearing the selection. */
+  onClose: () => void;
 };
 
 export function Inspector({
@@ -776,6 +708,11 @@ export function Inspector({
   contactLabel,
   pipelines,
   agents,
+  canManageAi,
+  stepAfter,
+  onAddAfter,
+  onOpenStep,
+  onClose,
 }: InspectorProps) {
   const update = React.useCallback(
     (data: FlowNodeData, handleRemap?: Record<string, string | null>) => {
@@ -797,48 +734,57 @@ export function Inspector({
     previewTitle = "If they don't follow";
   }
 
-  return (
-    <div className="flex flex-col">
-      {node ? (
-        <div className={cn("px-5 py-4", node.data.type === "trigger" ? TONES.yellow.solid : node.data.type === "ai_reply" ? "bg-ink text-white" : TONES[STEP_INFO[node.data.type].tone].soft)}>
-          <div className="flex items-center gap-3">
-            <StepIcon type={node.data.type} size={36} className={node.data.type === "trigger" ? "bg-ink text-yellow" : node.data.type === "ai_reply" ? "bg-white text-ink" : undefined} />
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-[15px] font-semibold leading-tight">{STEP_INFO[node.data.type].label}</h2>
-              <p className="truncate text-[12px] leading-tight opacity-70">{STEP_INFO[node.data.type].hint}</p>
-            </div>
-            {node.data.type !== "trigger" ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Delete this step"
-                title="Delete this step"
-                className={cn("shrink-0", node.data.type === "ai_reply" ? "text-white hover:bg-white/10" : "hover:bg-white/60 hover:text-destructive")}
-                onClick={() => dispatch({ type: "removeNode", id: node.id })}
-              >
-                <Trash2 />
-              </Button>
-            ) : null}
-          </div>
-          {errors.length > 0 ? (
-            <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2">
-              {errors.map((e) => (
-                <li key={e} className="flex items-start gap-1.5 text-[12px] text-destructive">
-                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  {e}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : (
-        <div className="border-b px-5 py-4">
-          <h2 className="text-[15px] font-semibold">No step selected</h2>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">Click a step on the canvas to edit it.</p>
-        </div>
-      )}
+  if (!node) return null;
+  const isAi = node.data.type === "ai_reply";
+  const aiAgentId = node.data.type === "ai_reply" ? node.data.agentId : undefined;
+  const aiAgent = aiAgentId ? agents.find((a) => a.id === aiAgentId) : undefined;
 
-      {node ? (
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className={cn("shrink-0 px-5 py-4", node.data.type === "trigger" ? TONES.yellow.solid : isAi ? "bg-ink text-white" : TONES[STEP_INFO[node.data.type].tone].soft)}>
+        <div className="flex items-center gap-3">
+          <StepIcon type={node.data.type} size={36} className={node.data.type === "trigger" ? "bg-ink text-yellow" : isAi ? "bg-white text-ink" : undefined} />
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[15px] font-semibold leading-tight">{STEP_INFO[node.data.type].label}</h2>
+            <p className="truncate text-[12px] leading-tight opacity-70">{STEP_INFO[node.data.type].hint}</p>
+          </div>
+          {node.data.type !== "trigger" ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete this step"
+              title="Delete this step"
+              className={cn("shrink-0", isAi ? "text-white hover:bg-white/10 hover:text-white" : "hover:bg-white/60 hover:text-destructive")}
+              onClick={() => dispatch({ type: "removeNode", id: node.id })}
+            >
+              <Trash2 />
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Close"
+            title="Close (Esc)"
+            className={cn("-mr-1.5 shrink-0", isAi ? "text-white hover:bg-white/10 hover:text-white" : "hover:bg-white/60")}
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </div>
+        {errors.length > 0 ? (
+          <ul className="mt-3 space-y-1 rounded-xl bg-white/80 px-3 py-2">
+            {errors.map((e) => (
+              <li key={e} className="flex items-start gap-1.5 text-[12px] text-destructive">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {e}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
+      {/* Keyed by step, so moving to another step starts at its top. */}
+      <div key={node.id} data-panel-scroll className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
         <div className="border-b px-5 py-5">
           {node.data.type === "trigger" ? (
             <p className="text-[13px] text-muted-foreground">Account, keywords and posts are in the left panel.</p>
@@ -847,7 +793,18 @@ export function Inspector({
           ) : node.data.type === "ask_question" ? (
             <AskQuestionEditor key={node.id} id={node.id} data={node.data} update={update} />
           ) : node.data.type === "ai_reply" ? (
-            <AiReplyEditor key={node.id} id={node.id} data={node.data} agents={agents} update={update} />
+            <AiStepEditor
+              key={node.id}
+              id={node.id}
+              data={node.data}
+              agents={agents}
+              canManageAi={canManageAi}
+              platform={platform}
+              update={update}
+              exits={{ next: stepAfter(node.id, "next"), handoff: stepAfter(node.id, "handoff") }}
+              onAddAfter={(handle, type) => onAddAfter(node.id, handle, type)}
+              onOpenStep={onOpenStep}
+            />
           ) : node.data.type === "delay" ? (
             <DelayEditor id={node.id} seconds={node.data.seconds} update={update} />
           ) : node.data.type === "condition_follow" ? (
@@ -858,14 +815,30 @@ export function Inspector({
             <PipelineStepEditor id={node.id} data={node.data} pipelines={pipelines} update={update} />
           )}
         </div>
-      ) : null}
 
-      <div className="px-5 py-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="brand-label text-muted-foreground">{previewTitle}</h3>
-          <span className="text-[11px] text-muted-foreground">What they see</span>
-        </div>
-        <DmPreview messages={preview} accountHandle={accountHandle} accountAvatarUrl={accountAvatarUrl} platform={platform} contactText={contactText} contactLabel={contactLabel} />
+        {node.data.type === "ai_reply" ? (
+          aiAgent ? (
+            <div className="h-[28rem] px-5 py-5">
+              <Playground
+                key={node.id}
+                agentId={aiAgent.id}
+                dirty={false}
+                instruction={node.data.instruction}
+                maxReplies={node.data.maxTurns ?? DEFAULT_AI_TURNS}
+                title="Try this step"
+                notes={{ handoff: "Goes to Needs a human", done: "Goes to Done", limit: "Last reply, then Done" }}
+              />
+            </div>
+          ) : null
+        ) : (
+          <div className="px-5 py-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="brand-label text-muted-foreground">{previewTitle}</h3>
+              <span className="text-[11px] text-muted-foreground">What they see</span>
+            </div>
+            <DmPreview messages={preview} accountHandle={accountHandle} accountAvatarUrl={accountAvatarUrl} platform={platform} contactText={contactText} contactLabel={contactLabel} />
+          </div>
+        )}
       </div>
     </div>
   );

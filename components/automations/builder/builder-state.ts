@@ -158,11 +158,14 @@ export function initBuilderState(detail: AutomationDetail): BuilderState {
   const { nodes, edges } = fromFlowGraph(detail.flow);
   const mediaById: Record<string, MediaSummary> = {};
   for (const m of detail.selectedMedia) mediaById[m.externalId] = m;
+  // A new automation is just its trigger: open with the trigger's settings showing, since they come first.
+  const trigger = nodes.length === 1 && nodes[0].data.type === "trigger" ? nodes[0] : null;
+  if (trigger) trigger.selected = true;
   return {
     settings,
     nodes,
     edges,
-    selectedNodeId: null,
+    selectedNodeId: trigger?.id ?? null,
     status: detail.status,
     // A recovered (unparseable) flow must read as dirty so the user is nudged to save the repaired graph.
     savedSnapshot: detail.flowRecovered ? "" : snapshot(settings, nodes, edges),
@@ -187,6 +190,8 @@ export function allowedHandles(data: FlowNodeData): string[] {
     }
     case "condition_follow":
       return ["yes", "no"];
+    case "ai_reply":
+      return ["next", "handoff"];
     default:
       return ["next"];
   }
@@ -197,6 +202,7 @@ export function handleLabel(handle: string): string {
   if (h === "next") return "next";
   if (h === "yes") return "following";
   if (h === "no") return "not following";
+  if (h === "handoff") return "needs a human";
   if (h.startsWith("btn:")) return `button ${Number(h.slice(4)) + 1}`;
   if (h.startsWith("qr:")) return `quick reply ${Number(h.slice(3)) + 1}`;
   return h;
@@ -295,11 +301,11 @@ export function tidyPositions(nodes: BuilderNode[], edges: BuilderEdge[]): Recor
   return positions;
 }
 
-/** "next" and "yes" first, then buttons and quick replies in order, "no" last: the reading order of a flow. */
+/** "next" and "yes" first, then buttons and quick replies in order, "no" and "handoff" last: the reading order of a flow. */
 function handleOrder(handle: string | null | undefined): number {
   const h = normalizeHandle(handle);
   if (h === "next" || h === "yes") return 0;
-  if (h === "no") return 900;
+  if (h === "no" || h === "handoff") return 900;
   const n = Number(h.split(":")[1]);
   return Number.isFinite(n) ? 1 + n : 500;
 }
@@ -328,9 +334,20 @@ export function newNodeData(type: AddableNodeType): FlowNodeData {
   }
 }
 
-/** A new step's data with the first pipeline (and a sensible stage) already picked, so it works without extra clicks. */
-export function prefilledNodeData(type: AddableNodeType, pipelines: ReadonlyArray<{ id: string; stages: ReadonlyArray<{ id: string }> }>): FlowNodeData {
+/**
+ * A new step's data with the obvious choices already made, so it works without
+ * extra clicks: the first pipeline (and a sensible stage), the default AI agent.
+ */
+export function prefilledNodeData(
+  type: AddableNodeType,
+  pipelines: ReadonlyArray<{ id: string; stages: ReadonlyArray<{ id: string }> }>,
+  agents: ReadonlyArray<{ id: string; isDefault: boolean }> = [],
+): FlowNodeData {
   const data = newNodeData(type);
+  if (data.type === "ai_reply") {
+    const agent = agents.find((a) => a.isDefault) ?? agents[0];
+    return agent ? { ...data, agentId: agent.id } : data;
+  }
   const first = pipelines[0];
   if (!first) return data;
   if (data.type === "add_to_pipeline") return { ...data, pipelineId: first.id, stageId: first.stages[0]?.id ?? "" };
@@ -362,8 +379,9 @@ function uniqueId(prefix: string, taken: Set<string>): string {
 
 /**
  * Slot for a step leaving `anchor` by `handle`: below for "next" and
- * "following", below and to the right for "not following", beside for button
- * and quick-reply branches. Shifts right while another node already sits there.
+ * "following", below and to the right for "not following" and "needs a human",
+ * beside for button and quick-reply branches. Shifts right while another node
+ * already sits there.
  */
 function placeAfter(anchor: BuilderNode | undefined, nodes: BuilderNode[], handle = "next", avoidOverlap = true): { x: number; y: number } {
   if (!anchor) {
@@ -376,9 +394,9 @@ function placeAfter(anchor: BuilderNode | undefined, nodes: BuilderNode[], handl
   const candidate =
     h.startsWith("btn:") || h.startsWith("qr:")
       ? { x: anchor.position.x + STEP_X, y: anchor.position.y + (Number(h.split(":")[1]) || 0) * 64 }
-      : h === "no"
+      : h === "no" || (h === "handoff" && anchor.data.type === "ai_reply")
         ? { x: anchor.position.x + STEP_X / 2, y: below }
-        : h === "yes"
+        : h === "yes" || (h === "next" && anchor.data.type === "ai_reply")
           ? { x: anchor.position.x - STEP_X / 2, y: below }
           : { x: anchor.position.x, y: below };
   const occupied = (p: { x: number; y: number }) =>

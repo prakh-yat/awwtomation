@@ -21,6 +21,7 @@ import {
   type AgentButton,
   type AgentContext,
 } from "@/lib/ai/agent";
+import { presetFor, type ProviderPresetId } from "@/lib/ai/presets";
 import { chat, checkBaseUrl, listModels } from "@/lib/ai/providers";
 import type { ChatResult } from "@/lib/ai/types";
 import { decrypt, encrypt } from "@/lib/crypto";
@@ -83,6 +84,8 @@ export const playgroundSchema = z.object({
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(4000) }))
     .min(1)
     .max(40),
+  /** A flow step's own instruction, to try the agent as that step. */
+  instruction: z.string().max(4000).optional(),
 });
 
 // ───────────────────────── DTOs ─────────────────────────
@@ -165,6 +168,22 @@ export function toAgentView(agent: AiAgent): AgentView {
 
 function keyHint(apiKey: string): string {
   return apiKey.slice(-4);
+}
+
+const UNREADABLE_KEY = "The saved key can no longer be read. Enter it again under AI.";
+
+/**
+ * The provider's key, or null when it cannot be decrypted: it was saved under
+ * another APP_ENCRYPTION_KEY. That is a key to enter again, not a crash, so
+ * callers treat it like a key the provider refused.
+ */
+function readKey(provider: AiProvider): string | null {
+  try {
+    return decrypt(provider.apiKeyEnc);
+  } catch {
+    logger.warn("ai.key_unreadable", { providerId: provider.id });
+    return null;
+  }
 }
 
 function normalizeBaseUrl(raw: string | undefined | null): string | null {
@@ -271,9 +290,14 @@ async function recordProviderResult(providerId: string, result: ChatResult): Pro
 /** A one-token round trip, to prove the key and the model work before anyone relies on them. */
 export async function testProvider(workspaceId: string, id: string): Promise<{ ok: boolean; message: string }> {
   const provider = await requireProvider(workspaceId, id);
+  const apiKey = readKey(provider);
+  if (!apiKey) {
+    await recordProviderResult(id, { ok: false, reason: "invalid_key", message: UNREADABLE_KEY, retryable: false });
+    return { ok: false, message: UNREADABLE_KEY };
+  }
   const result = await chat({
     kind: provider.kind,
-    apiKey: decrypt(provider.apiKeyEnc),
+    apiKey,
     baseUrl: provider.baseUrl,
     model: provider.model,
     messages: [
@@ -293,7 +317,9 @@ export async function testProvider(workspaceId: string, id: string): Promise<{ o
 /** The models a saved connection's key can use, fetched live from the provider. */
 export async function listProviderModels(workspaceId: string, id: string): Promise<{ models: string[] }> {
   const provider = await requireProvider(workspaceId, id);
-  const result = await listModels({ kind: provider.kind, apiKey: decrypt(provider.apiKeyEnc), baseUrl: provider.baseUrl });
+  const apiKey = readKey(provider);
+  if (!apiKey) throw new ApiError(422, UNREADABLE_KEY, "AI_MODELS_UNAVAILABLE");
+  const result = await listModels({ kind: provider.kind, apiKey, baseUrl: provider.baseUrl });
   if (!result.ok) throw new ApiError(422, result.message, "AI_MODELS_UNAVAILABLE");
   return { models: result.models };
 }
@@ -392,16 +418,43 @@ export async function resolveAgent(workspaceId: string, agentId: string | undefi
   return prisma.aiAgent.findFirst({ where: { workspaceId, isDefault: true } });
 }
 
+/** Why an agent cannot reply right now: no connection to reply with, or the connection's key or last call failed. */
+export type AgentProblem = "no_provider" | "invalid_key" | "error";
+
 /** Just enough for the builder's agent picker. */
-export type AgentOption = { id: string; name: string; isDefault: boolean };
+export type AgentOption = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  /** The model it replies with; null when it has no connection. */
+  model: string | null;
+  /** Its connection's preset, for the logo. */
+  presetId: ProviderPresetId | null;
+  problem: AgentProblem | null;
+};
 
 export async function listAgentOptions(workspaceId: string): Promise<AgentOption[]> {
-  const rows = await prisma.aiAgent.findMany({
-    where: { workspaceId },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, isDefault: true },
+  const [rows, providers] = await Promise.all([
+    prisma.aiAgent.findMany({
+      where: { workspaceId },
+      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+      select: { id: true, name: true, isDefault: true, providerId: true, model: true },
+    }),
+    prisma.aiProvider.findMany({ where: { workspaceId }, select: { id: true, kind: true, baseUrl: true, model: true, status: true, isDefault: true } }),
+  ]);
+  const fallback = providers.find((p) => p.isDefault) ?? null;
+  return rows.map((agent) => {
+    // The same connection `runAgent` would reply with.
+    const provider = agent.providerId ? (providers.find((p) => p.id === agent.providerId) ?? null) : fallback;
+    return {
+      id: agent.id,
+      name: agent.name,
+      isDefault: agent.isDefault,
+      model: provider ? agent.model?.trim() || provider.model : null,
+      presetId: provider ? presetFor(provider).id : null,
+      problem: !provider ? "no_provider" : provider.status === AiProviderStatus.INVALID_KEY ? "invalid_key" : provider.status === AiProviderStatus.ERROR ? "error" : null,
+    };
   });
-  return rows;
 }
 
 // ───────────────────────── Running one ─────────────────────────
@@ -438,9 +491,15 @@ export async function runAgent(input: {
     };
   }
 
+  const apiKey = readKey(provider);
+  if (!apiKey) {
+    await recordProviderResult(provider.id, { ok: false, reason: "invalid_key", message: UNREADABLE_KEY, retryable: false });
+    return { ok: false, reason: "invalid_key", message: UNREADABLE_KEY, retryable: false, fallback: fallbackReplyFor(agent) };
+  }
+
   const result = await chat({
     kind: provider.kind,
-    apiKey: decrypt(provider.apiKeyEnc),
+    apiKey,
     baseUrl: provider.baseUrl,
     model: agent.model?.trim() || provider.model,
     messages: buildMessages(agent, input.context, input.history),

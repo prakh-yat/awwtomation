@@ -221,7 +221,7 @@ New automations are drafts. update_automation saves changes, test_automation sho
 Steps (data.type):
 - send_message { message: { text?, buttons?, imageUrl?, quickReplies? } }: needs text or an image. Up to 3 buttons with labels up to 20 characters; with buttons the text is up to 640 characters, otherwise about 1,000. web_url buttons open a link. postback buttons and quick replies branch: edges with sourceHandle "btn:<button index>" or "qr:<reply index>". Exits: next, btn:i, qr:i.
 - ask_question { prompt, saveTo, validation?, retryPrompt?, maxRetries? }: asks, waits for the answer and stores it on the contact ("name", "email", "phone" or a custom key such as "order_number"). Quick replies are suggested answers, not branches. Exit: next.
-- ai_reply { agentId, instruction?, maxTurns? }: an AI agent (list_ai_agents) talks with the contact for up to maxTurns replies. Exits: next (finished or out of turns), handoff (the agent wants a person).
+- ai_reply { agentId, instruction?, maxTurns? }: an AI agent (list_ai_agents) talks with the contact for up to maxTurns replies (default 4, at most 12), reading the whole conversation so far; messages sent in quick succession get one reply. instruction is added to the agent's own prompt for this step only. Exits: next (finished or out of turns), handoff (it cannot help, they asked for a person, or the model failed; with no handoff edge it takes next).
 - condition_follow { retryPrompt? }: checks whether the contact follows the account. Exits: yes, no.
 - delay { seconds }: waits, from 1 second to 7 days. Exit: next.
 - add_tag { tag } / remove_tag { tag }: exit next.

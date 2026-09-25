@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
-import { AlertTriangle, ArrowLeft, BarChart3, Copy, FlaskConical, MoreHorizontal, Pause, Play, Trash2, Workflow } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Copy, FlaskConical, MoreHorizontal, Pause, Play, Trash2, Workflow, X } from "lucide-react";
 
 import { apiFetch, ApiClientError, errorMessage } from "@/components/automations/api";
 import { Badge } from "@/components/ui/badge";
@@ -14,17 +14,20 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/sonner";
+import { TONES } from "@/components/ui/tone";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { describeFlowErrors, normalizeHandle, validateFlow } from "@/lib/automation/flow-types";
+import { describeFlowErrors, normalizeHandle, stepNames, validateFlow } from "@/lib/automation/flow-types";
 import type { AgentOption } from "@/lib/services/ai";
 import type { AutomationDetail, ChannelOption, UpdateAutomationResult } from "@/lib/services/automations";
 import type { PipelineSummary } from "@/lib/services/pipelines";
 import { cn } from "@/lib/utils";
 
+import type { StepTarget } from "./ai-step-editor";
 import { builderReducer, conversationPreview, initBuilderState, isDirty, nodeErrorsFrom, prefilledNodeData, toFlowGraph, type AddableNodeType } from "./builder-state";
-import { FlowCanvas } from "./flow-canvas";
+import { FlowCanvas, PANEL_WIDTH, type PanelSide } from "./flow-canvas";
 import { Inspector } from "./inspector";
 import { BuilderNodeContext } from "./nodes";
+import { STEP_INFO, StepIcon } from "./step-catalog";
 import { TestDialog } from "./test-dialog";
 import { TriggerPanel } from "./trigger-panel";
 
@@ -33,7 +36,43 @@ export type AutomationBuilderProps = {
   channels: ChannelOption[];
   pipelines: PipelineSummary[];
   agents: AgentOption[];
+  /** Admins and owners can create AI agents and connect providers from the AI step. */
+  canManageAi: boolean;
 };
+
+/**
+ * A settings panel floating over the canvas. It slides in when the step it
+ * edits is selected and out when nothing is, so the canvas keeps its size and
+ * never jumps under the pointer.
+ */
+function SidePanel({ side, open, label, children }: { side: PanelSide; open: boolean; label: string; children: React.ReactNode }) {
+  const ref = React.useRef<HTMLElement>(null);
+  // Each opening starts at the top, not wherever the panel was last scrolled to.
+  React.useEffect(() => {
+    if (open) ref.current?.querySelectorAll<HTMLElement>("[data-panel-scroll]").forEach((el) => (el.scrollTop = 0));
+  }, [open]);
+  return (
+    <aside
+      ref={ref}
+      aria-label={label}
+      aria-hidden={!open}
+      inert={!open}
+      style={{ width: `min(${PANEL_WIDTH[side]}px, calc(100% - 24px))` }}
+      className={cn(
+        "absolute bottom-3 top-3 z-20 flex flex-col overflow-hidden rounded-2xl border bg-background shadow-pop transition-[transform,opacity] duration-300 ease-soft motion-reduce:transition-none",
+        side === "left" ? "left-3" : "right-3",
+        open ? "translate-x-0 opacity-100" : cn("pointer-events-none opacity-0", side === "left" ? "-translate-x-[calc(100%+1.5rem)]" : "translate-x-[calc(100%+1.5rem)]"),
+      )}
+    >
+      {children}
+    </aside>
+  );
+}
+
+/** Open overlays (menus, popovers, dialogs) take Escape for themselves. */
+function overlayOpen(): boolean {
+  return Boolean(document.querySelector("[data-radix-popper-content-wrapper], [role='dialog']"));
+}
 
 function handleFor(channel: ChannelOption | undefined): string {
   if (!channel) return "@yourbrand";
@@ -60,7 +99,7 @@ function StatusBadge({ status }: { status: AutomationDetail["status"] }) {
   return <Badge variant="secondary">Draft</Badge>;
 }
 
-export function AutomationBuilder({ automation, channels, pipelines, agents }: AutomationBuilderProps) {
+export function AutomationBuilder({ automation, channels, pipelines, agents, canManageAi }: AutomationBuilderProps) {
   const router = useRouter();
   const [state, dispatch] = React.useReducer(builderReducer, automation, initBuilderState);
   const [saving, setSaving] = React.useState(false);
@@ -68,8 +107,6 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
   const [testOpen, setTestOpen] = React.useState(false);
   const [leaveOpen, setLeaveOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
-  // Hides the settings and inspector panels so the canvas gets the whole width.
-  const [canvasOnly, setCanvasOnly] = React.useState(false);
 
   const { settings, nodes, edges, selectedNodeId, status, mediaById, history } = state;
   const channel = channels.find((c) => c.id === settings.channelId);
@@ -101,12 +138,31 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
   }, [channel, platform, flowErrors, flow, settings.matchMode, settings.keywords.length, settings.triggerType]);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  // The trigger's settings open on the left, every other step's on the right, and nothing when nothing is selected.
+  const panel: PanelSide | null = selectedNode ? (selectedNode.data.type === "trigger" ? "left" : "right") : null;
+  // The step panel keeps showing its last step while it slides away.
+  const [shownStepId, setShownStepId] = React.useState<string | null>(null);
+  if (panel === "right" && selectedNodeId !== shownStepId) setShownStepId(selectedNodeId);
+  const inspectorNode = panel === "right" ? selectedNode : (nodes.find((n) => n.id === shownStepId) ?? null);
+
   const conversation = React.useMemo(() => conversationPreview(nodes, edges, accountHandle), [nodes, edges, accountHandle]);
   const connectedHandles = React.useMemo(() => new Set(edges.map((e) => `${e.source}::${normalizeHandle(e.sourceHandle)}`)), [edges]);
+  const prefill = React.useCallback((nodeType: AddableNodeType) => prefilledNodeData(nodeType, pipelines, agents), [pipelines, agents]);
   const onAddAfter = React.useCallback(
-    (nodeId: string, handle: string, nodeType: AddableNodeType) => dispatch({ type: "addNode", nodeType, data: prefilledNodeData(nodeType, pipelines), after: { nodeId, handle } }),
-    [pipelines],
+    (nodeId: string, handle: string, nodeType: AddableNodeType) => dispatch({ type: "addNode", nodeType, data: prefill(nodeType), after: { nodeId, handle } }),
+    [prefill],
   );
+  const names = React.useMemo(() => stepNames(flow), [flow]);
+  const stepAfter = React.useCallback(
+    (nodeId: string, handle: string): StepTarget | null => {
+      const edge = edges.find((e) => e.source === nodeId && normalizeHandle(e.sourceHandle) === handle);
+      const target = edge ? nodes.find((n) => n.id === edge.target) : undefined;
+      return target ? { id: target.id, name: names.get(target.id) ?? STEP_INFO[target.data.type].label, type: target.data.type } : null;
+    },
+    [edges, nodes, names],
+  );
+  const select = React.useCallback((id: string | null) => dispatch({ type: "select", id }), []);
+  const closePanel = React.useCallback(() => select(null), [select]);
   const nodeContext = React.useMemo(
     () => ({
       nodeErrors,
@@ -197,9 +253,13 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
     }
   }
 
-  // ⌘S saves; ⌘Z and ⇧⌘Z undo and redo canvas edits. Text fields keep their own undo.
+  // ⌘S saves; ⌘Z and ⇧⌘Z undo and redo canvas edits. Text fields keep their own undo. Escape closes the open panel.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && selectedNodeId && !isTyping(e.target) && !overlayOpen()) {
+        dispatch({ type: "select", id: null });
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       if (!mod) return;
       const key = e.key.toLowerCase();
@@ -219,7 +279,7 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dirty, saving, save]);
+  }, [dirty, saving, save, selectedNodeId]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -365,32 +425,44 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
 
       <p className="shrink-0 border-b bg-yellow-soft px-4 py-2 text-[12px] font-medium md:hidden">Editing works best on a larger screen.</p>
 
-      {/* Body: settings · canvas · inspector */}
-      <div className="flex min-h-0 flex-1 overflow-x-auto">
-        <aside className={cn("scrollbar-thin w-[320px] shrink-0 overflow-y-auto border-r bg-background", canvasOnly && "hidden")}>
-          <TriggerPanel settings={settings} channels={channels} mediaById={mediaById} dispatch={dispatch} />
-        </aside>
-        <div className="relative min-w-[420px] flex-1">
-          <BuilderNodeContext.Provider value={nodeContext}>
-            <ReactFlowProvider>
-              <FlowCanvas
-                nodes={nodes}
-                edges={edges}
-                pipelines={pipelines}
-                platform={platform}
-                dispatch={dispatch}
-                canUndo={history.past.length > 0}
-                canRedo={history.future.length > 0}
-                canvasOnly={canvasOnly}
-                onCanvasOnlyChange={setCanvasOnly}
-              />
-            </ReactFlowProvider>
-          </BuilderNodeContext.Provider>
-        </div>
-        <aside className={cn("scrollbar-thin w-[340px] shrink-0 overflow-y-auto border-l bg-background", canvasOnly && "hidden")}>
+      {/* The canvas fills the window; the trigger's settings and the selected step's float over it. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <BuilderNodeContext.Provider value={nodeContext}>
+          <ReactFlowProvider>
+            <FlowCanvas
+              nodes={nodes}
+              edges={edges}
+              prefill={prefill}
+              platform={platform}
+              dispatch={dispatch}
+              canUndo={history.past.length > 0}
+              canRedo={history.future.length > 0}
+              selectedNodeId={selectedNodeId}
+              panel={panel}
+            />
+          </ReactFlowProvider>
+        </BuilderNodeContext.Provider>
+
+        <SidePanel side="left" open={panel === "left"} label="Trigger settings">
+          <div className={cn("flex shrink-0 items-center gap-3 px-5 py-4", TONES.yellow.solid)}>
+            <StepIcon type="trigger" size={36} className="bg-ink text-yellow" />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-[15px] font-semibold leading-tight">{STEP_INFO.trigger.label}</h2>
+              <p className="truncate text-[12px] leading-tight opacity-70">{STEP_INFO.trigger.hint}</p>
+            </div>
+            <Button variant="ghost" size="icon-sm" aria-label="Close" title="Close (Esc)" className="-mr-1.5 shrink-0 hover:bg-white/60" onClick={closePanel}>
+              <X />
+            </Button>
+          </div>
+          <div data-panel-scroll className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+            <TriggerPanel settings={settings} channels={channels} mediaById={mediaById} dispatch={dispatch} />
+          </div>
+        </SidePanel>
+
+        <SidePanel side="right" open={panel === "right"} label="Step settings">
           <Inspector
-            node={selectedNode}
-            errors={selectedNode ? (nodeErrors.get(selectedNode.id) ?? []) : []}
+            node={inspectorNode}
+            errors={inspectorNode ? (nodeErrors.get(inspectorNode.id) ?? []) : []}
             dispatch={dispatch}
             accountHandle={accountHandle}
             accountAvatarUrl={channel?.avatarUrl ?? null}
@@ -400,8 +472,13 @@ export function AutomationBuilder({ automation, channels, pipelines, agents }: A
             contactLabel={CONTACT_LABEL[settings.triggerType]}
             pipelines={pipelines}
             agents={agents}
+            canManageAi={canManageAi}
+            stepAfter={stepAfter}
+            onAddAfter={onAddAfter}
+            onOpenStep={select}
+            onClose={closePanel}
           />
-        </aside>
+        </SidePanel>
       </div>
 
       <TestDialog

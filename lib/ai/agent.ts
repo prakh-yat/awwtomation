@@ -61,8 +61,14 @@ export type AgentContext = {
   platform: "INSTAGRAM" | "FACEBOOK";
   /** What to call the person, when we know it. */
   contactName?: string | null;
-  /** What set the automation off, when it was a comment or a story reply. */
+  /** Their handle, when we know it. */
+  contactUsername?: string | null;
+  /** What they have already told the business: saved answers and custom fields. */
+  contactFacts?: ReadonlyArray<{ label: string; value: string }>;
+  /** What set the automation off. */
   trigger?: string | null;
+  /** How that first message reached the account. */
+  triggerKind?: "COMMENT" | "DM" | "STORY_REPLY" | null;
 };
 
 function section(title: string, body: string | null | undefined): string {
@@ -70,9 +76,31 @@ function section(title: string, body: string | null | undefined): string {
   return text ? `\n\n## ${title}\n${text}` : "";
 }
 
+/** A flow step's own instruction goes after the agent's prompt and applies to that step only. */
+export function withStepInstruction(agent: AiAgent, instruction: string | null | undefined): AiAgent {
+  const text = instruction?.trim();
+  return text ? { ...agent, systemPrompt: `${agent.systemPrompt}\n\n## For this step only\n${text}` } : agent;
+}
+
+function whoTheyAre(context: AgentContext): string {
+  const name = context.contactName?.trim();
+  const username = context.contactUsername?.trim();
+  if (name) return `The person you are replying to is called ${name}${username && username !== name ? ` (${username})` : ""}.`;
+  if (username) return `You are replying to ${username}. You do not know their name yet.`;
+  return "You do not know the person's name yet.";
+}
+
+function howItStarted(context: AgentContext): string | null {
+  const text = context.trigger?.trim();
+  if (!text) return null;
+  if (context.triggerKind === "COMMENT") return `It started with their comment on one of your posts: ${text}`;
+  if (context.triggerKind === "STORY_REPLY") return `It started with their reply to your story: ${text}`;
+  return `They reached you by saying: ${text}`;
+}
+
 export function buildSystemPrompt(agent: AiAgent, context: AgentContext): string {
   const channel = context.platform === "INSTAGRAM" ? "an Instagram direct message" : "a Facebook Messenger conversation";
-  const person = context.contactName?.trim();
+  const facts = (context.contactFacts ?? []).filter((f) => f.label.trim() && f.value.trim());
   const buttons = readAgentButtons(agent.buttons);
 
   return (
@@ -93,8 +121,10 @@ export function buildSystemPrompt(agent: AiAgent, context: AgentContext): string
       "How this conversation works",
       [
         `You are writing ${channel} as ${context.accountHandle}.`,
-        person ? `The person you are replying to is called ${person}.` : "You do not know the person's name yet.",
-        context.trigger ? `They reached you by saying: ${context.trigger}` : null,
+        whoTheyAre(context),
+        facts.length > 0 ? `They have already told you: ${facts.map((f) => `${f.label}: ${f.value}`).join("; ")}. Do not ask for these again.` : null,
+        howItStarted(context),
+        "The conversation so far follows, oldest first. Answer their latest message with everything said before it in mind. When they sent several messages in a row, answer them together in one reply.",
         `Reply in plain text under ${REPLY_CHAR_BUDGET} characters. No markdown, no headings, no bullet lists.`,
         "Only give links, prices or policies that appear above. If you do not know something, say so.",
         `When you cannot help, or they ask for a human, finish your reply with ${HANDOFF_MARKER}.`,
@@ -163,20 +193,44 @@ export function toOutboundMessage(reply: ParsedReply): OutboundMessage {
   };
 }
 
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+/** Stands in for their message when the step speaks first, so the model is answering rather than continuing its own words. */
+const NO_NEW_MESSAGE = "(no new message yet)";
+
+/**
+ * The conversation as every provider accepts it: one turn per side, opening
+ * and closing with theirs.
+ *
+ * Messages in a row from the same side become one turn, which is exactly what
+ * "hi" followed by "i want to order this" is. Some providers refuse a
+ * conversation that opens with the assistant or has two turns in a row from one
+ * side, and one that ends with the assistant reads as a reply to carry on
+ * writing instead of a message to answer.
+ */
+export function conversationTurns(history: ReadonlyArray<ChatTurn>): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  for (const message of history) {
+    const content = message.content.trim();
+    if (!content) continue;
+    const last = turns[turns.length - 1];
+    if (last && last.role === message.role) last.content = `${last.content}\n${content}`;
+    else turns.push({ role: message.role, content });
+  }
+  while (turns[0]?.role === "assistant") turns.shift();
+  if (turns.length === 0 || turns[turns.length - 1].role === "assistant") turns.push({ role: "user", content: NO_NEW_MESSAGE });
+  return turns;
+}
+
 /**
  * The prompt plus the conversation so far.
  *
  * History arrives oldest first and is cut to the agent's limit, because the
  * workspace pays for every token of it.
  */
-export function buildMessages(
-  agent: AiAgent,
-  context: AgentContext,
-  history: ReadonlyArray<{ role: "user" | "assistant"; content: string }>,
-): ChatMessage[] {
+export function buildMessages(agent: AiAgent, context: AgentContext, history: ReadonlyArray<ChatTurn>): ChatMessage[] {
   const limit = Math.max(2, Math.min(agent.historyLimit, 50));
-  const recent = history.slice(-limit).filter((m) => m.content.trim().length > 0);
-  return [{ role: "system", content: buildSystemPrompt(agent, context) }, ...recent];
+  return [{ role: "system", content: buildSystemPrompt(agent, context) }, ...conversationTurns(history.slice(-limit))];
 }
 
 /** What a contact sees when the model call fails. Never silence. */

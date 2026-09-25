@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 
+import { withStepInstruction } from "@/lib/ai/agent";
 import { PROVIDER_PRESETS, presetById, type ProviderPresetId } from "@/lib/ai/presets";
 import {
   agentCreateSchema,
@@ -242,15 +243,20 @@ export const aiTools = [
         .min(1)
         .max(40)
         .describe("The conversation so far; user is the contact. End with a user message."),
+      instruction: z
+        .string()
+        .max(4000)
+        .optional()
+        .describe("Optional. The instruction of a flow's ai_reply step, to hear the agent as that step."),
     },
     run: async (args, ctx) => {
-      const { agentId: id, messages } = playgroundSchema.parse(args);
+      const { agentId: id, messages, instruction } = playgroundSchema.parse(args);
       const agent = await requireAgent(ctx.workspace.id, id);
       const channels = await listChannelOptions(ctx.workspace.id);
       const channel = channels.find((c) => c.status === "ACTIVE") ?? channels[0];
       const outcome = await runAgent({
         workspaceId: ctx.workspace.id,
-        agent,
+        agent: withStepInstruction(agent, instruction),
         context: {
           accountHandle: channel?.username ? `@${channel.username}` : (channel?.name ?? "this account"),
           platform: channel?.platform === "FACEBOOK" ? "FACEBOOK" : "INSTAGRAM",

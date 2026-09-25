@@ -553,9 +553,20 @@ function AgentSwitcher({
  * left, the words it works from in the middle, and a chat to try it on the
  * right (or on demand, where the window is too narrow for three columns).
  */
-export function AiStudio({ agents, providers, canManage }: { agents: AgentView[]; providers: ProviderView[]; canManage: boolean }) {
+export function AiStudio({
+  agents,
+  providers,
+  canManage,
+  initialAgentId,
+}: {
+  agents: AgentView[];
+  providers: ProviderView[];
+  canManage: boolean;
+  /** The agent to open with, when a link names one. */
+  initialAgentId?: string;
+}) {
   const router = useRouter();
-  const [selectedId, setSelectedId] = React.useState<string | null>(agents[0]?.id ?? null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(agents.find((a) => a.id === initialAgentId)?.id ?? agents[0]?.id ?? null);
   const [creating, setCreating] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);

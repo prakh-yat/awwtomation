@@ -15,8 +15,18 @@ import { STEP_DRAG_TYPE, STEP_GROUPS, STEP_INFO, StepIcon, stepAvailable } from 
  * in between, or anywhere below a step to hang it off that step. A click adds
  * it after the selected step instead.
  */
-export function StepPalette({ platform, onAdd }: { platform: ChannelPlatform | null; onAdd: (type: AddableNodeType) => void }) {
-  const [collapsed, setCollapsed] = React.useState(false);
+export function StepPalette({
+  platform,
+  onAdd,
+  compact = false,
+}: {
+  platform: ChannelPlatform | null;
+  onAdd: (type: AddableNodeType) => void;
+  /** Icons only, whatever the person chose: a settings panel is open beside it. */
+  compact?: boolean;
+}) {
+  const [collapsedByChoice, setCollapsed] = React.useState(false);
+  const collapsed = compact || collapsedByChoice;
 
   function onDragStart(event: React.DragEvent, type: AddableNodeType) {
     event.dataTransfer.setData(STEP_DRAG_TYPE, type);
@@ -30,8 +40,9 @@ export function StepPalette({ platform, onAdd }: { platform: ChannelPlatform | n
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
+          disabled={compact}
           aria-label={collapsed ? "Show step names" : "Hide step names"}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-fog hover:text-ink"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-fog hover:text-ink disabled:pointer-events-none disabled:opacity-40"
         >
           {collapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
         </button>

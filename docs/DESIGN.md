@@ -113,6 +113,10 @@ or on fog panels.
   kept for screen readers inside it cannot stretch the page.
 - Cards carry data, not decoration: no icon in a card's corner, no line under
   a number explaining what it is compared with.
+- An `InfoTip` (`components/ui/info-tip.tsx`) is the (i) beside a name that
+  cannot explain itself, such as the AI step's Done and Needs a human exits and
+  its reply limit. It opens under the pointer and stays open on a click, so it
+  works on touch. One short paragraph; never a substitute for a clear name.
 - AI providers appear with their own logos (`ProviderLogo`, files in
   `public/providers/`) on a white tile, never as coloured monograms.
 - `EmptyState` takes a `tone`; use the section's.

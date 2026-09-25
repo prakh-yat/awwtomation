@@ -6,6 +6,7 @@ import type { ChannelPlatform, MatchMode, TriggerType } from "@prisma/client";
 import { AlertCircle, ExternalLink, ImageIcon, MousePointerClick, Plus } from "lucide-react";
 
 import { StageDot } from "@/components/pipelines/stage-badge";
+import { InfoTip } from "@/components/ui/info-tip";
 import { TONES } from "@/components/ui/tone";
 import { askQuestionFieldLabel, DEFAULT_AI_TURNS, type FlowNodeData } from "@/lib/automation/flow-types";
 import { stageColorClasses } from "@/lib/pipelines/colors";
@@ -280,16 +281,50 @@ export function AskQuestionNode({ id, data, selected }: NodeProps<AskQuestionNod
   );
 }
 
-function BranchFooter({ left, right, leftHandle, rightHandle }: { left: string; right: string; leftHandle: string; rightHandle: string }) {
+function BranchFooter({
+  left,
+  right,
+  leftHandle,
+  rightHandle,
+  leftInfo,
+  rightInfo,
+}: {
+  left: string;
+  right: string;
+  leftHandle: string;
+  rightHandle: string;
+  /** What sends a contact down each side, behind an (i) beside its name. */
+  leftInfo?: React.ReactNode;
+  rightInfo?: React.ReactNode;
+}) {
   return (
     <div className="relative grid grid-cols-2 border-t text-center text-[11px] font-semibold">
-      <span className="border-r py-2 text-green-ink">{left}</span>
-      <span className="py-2 text-orange-ink">{right}</span>
+      <span className="flex items-center justify-center gap-1 border-r py-2 text-green-ink">
+        {left}
+        {leftInfo ? <InfoTip label={`When it takes ${left}`} side="bottom">{leftInfo}</InfoTip> : null}
+      </span>
+      <span className="flex items-center justify-center gap-1 py-2 text-orange-ink">
+        {right}
+        {rightInfo ? <InfoTip label={`When it takes ${right}`} side="bottom">{rightInfo}</InfoTip> : null}
+      </span>
       <Handle type="source" position={Position.Bottom} id={leftHandle} style={{ left: "25%" }} className={SOURCE_HANDLE} />
       <Handle type="source" position={Position.Bottom} id={rightHandle} style={{ left: "75%" }} className={SOURCE_HANDLE} />
     </div>
   );
 }
+
+/** Why an agent cannot reply, as the note on the node says it. */
+export const AGENT_PROBLEM: Record<NonNullable<AgentOption["problem"]>, string> = {
+  no_provider: "No AI provider is connected. Connect one under AI.",
+  invalid_key: "The AI provider refused its key. Update it under AI.",
+  error: "Its last reply failed. Check the provider under AI.",
+};
+
+/** What sends a conversation down each side of an AI step. Shown on the node and in the inspector. */
+export const AI_EXIT_INFO = {
+  next: "The AI finished the conversation, or used all its replies. The flow carries on from here.",
+  handoff: "The AI could not answer, they asked for a person, or the AI could not be reached. The flow carries on from here.",
+} as const;
 
 export function AiReplyNode({ id, data, selected }: NodeProps<AiReplyNodeType>) {
   const { agents } = React.useContext(BuilderNodeContext);
@@ -303,7 +338,8 @@ export function AiReplyNode({ id, data, selected }: NodeProps<AiReplyNodeType>) 
         type="ai_reply"
         selected={selected}
         subtitle={agent ? `${agent.name}, up to ${turns} ${turns === 1 ? "reply" : "replies"}` : "Pick an agent"}
-        footer={<BranchFooter left="Done" right="Needs a human" leftHandle="next" rightHandle="handoff" />}
+        note={agent?.problem ? AGENT_PROBLEM[agent.problem] : null}
+        footer={<BranchFooter left="Done" right="Needs a human" leftHandle="next" rightHandle="handoff" leftInfo={AI_EXIT_INFO.next} rightInfo={AI_EXIT_INFO.handoff} />}
       >
         <Handle type="target" position={Position.Top} className={TARGET_HANDLE} />
         {data.instruction?.trim() ? (

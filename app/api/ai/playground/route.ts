@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { withStepInstruction } from "@/lib/ai/agent";
 import { playgroundSchema, requireAgent, runAgent } from "@/lib/services/ai";
 import { listChannelOptions } from "@/lib/services/automations";
 import { parseBody, withWorkspace } from "@/lib/workspace/api";
@@ -7,14 +8,14 @@ import { parseBody, withWorkspace } from "@/lib/workspace/api";
 export const runtime = "nodejs";
 
 /**
- * POST /api/ai/playground { agentId, messages } -> { reply, handoff, done } or { error }.
+ * POST /api/ai/playground { agentId, messages, instruction? } -> { reply, handoff, done } or { error }.
  *
  * The same call the automation makes, so what you read here is what a contact
  * would get. It runs against the workspace's own key, so every test costs them
  * and nothing else; the reply is not sent to anyone.
  */
 export const POST = withWorkspace(async (req, ctx) => {
-  const { agentId, messages } = await parseBody(req, playgroundSchema);
+  const { agentId, messages, instruction } = await parseBody(req, playgroundSchema);
   const agent = await requireAgent(ctx.workspace.id, agentId);
 
   const channels = await listChannelOptions(ctx.workspace.id);
@@ -22,7 +23,7 @@ export const POST = withWorkspace(async (req, ctx) => {
 
   const outcome = await runAgent({
     workspaceId: ctx.workspace.id,
-    agent,
+    agent: withStepInstruction(agent, instruction),
     context: {
       accountHandle: channel?.username ? `@${channel.username}` : (channel?.name ?? "this account"),
       platform: channel?.platform === "FACEBOOK" ? "FACEBOOK" : "INSTAGRAM",

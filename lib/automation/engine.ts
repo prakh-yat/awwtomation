@@ -32,6 +32,7 @@ import {
   type Job,
 } from "@prisma/client";
 import { z } from "zod";
+import { withStepInstruction, type ChatTurn } from "@/lib/ai/agent";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { getInstagramUserProfile } from "@/lib/meta/instagram";
@@ -68,6 +69,18 @@ import { attachPostbackPayloads, contactTemplateVars, RATE_LIMIT_MAX_DEFER_MS, r
 /** Guard against cycles in a flow graph. */
 const MAX_STEPS_PER_RUN = 50;
 
+/**
+ * An AI step answers this long after the contact's latest message, so "hi"
+ * followed by "i want to order this" gets one reply that reads both.
+ */
+const AI_QUIET_MS = 4_000;
+/** A message that arrives while a reply is being written waits for it, checking this often... */
+const AI_WAIT_STEP_MS = 2_000;
+/** ...this many times, then gives up. */
+const AI_MAX_WAITS = 45;
+/** A reply still "being written" after this long crashed; stop waiting for it. */
+const AI_BUSY_MS = 90_000;
+
 // ───────────────────────── Session context ─────────────────────────
 
 export type FlowSessionContext = {
@@ -85,11 +98,22 @@ export type FlowSessionContext = {
    * Set while an ask_question node waits for a reply. Valid only while
    * `session.currentNodeId === awaiting.nodeId`; `attempts` counts the retry
    * prompts already sent. Cleared when the answer is saved or retries run out.
+   * An ai_reply node parks the same way, with `attempts` counting its replies.
    */
   awaiting?: { nodeId: string; attempts: number };
+  /** When the newest message an AI step has already answered was sent (ISO), so a burst of messages gets one reply. */
+  aiAnsweredAt?: string;
+  /**
+   * Set while an AI step writes and sends a reply. A message that arrives
+   * meanwhile waits for that reply instead of getting a second one written
+   * without it. `messageId` is the message the reply answers, so a retry of
+   * the same job does not wait for itself.
+   */
+  aiBusy?: { at: string; messageId: string | null };
 };
 
-export type FlowAnswer = { text: string; messageId: string };
+/** A contact's message handed to the step waiting for it. `at` is when they sent it (ISO). */
+export type FlowAnswer = { text: string; messageId: string; at?: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -114,8 +138,10 @@ export const executeFlowPayloadSchema = z.object({
   /** When set, the step only runs if the session is still parked on this node (null = fresh session). */
   fromNodeId: z.string().nullable().optional(),
   viaPrivateReplyCommentId: z.string().optional(),
-  /** The contact's reply to a pending ask_question node (`nodeId` is that node). */
-  answer: z.object({ text: z.string().max(4000), messageId: z.string().min(1) }).optional(),
+  /** The contact's reply to a pending ask_question or ai_reply node (`nodeId` is that node). */
+  answer: z.object({ text: z.string().max(4000), messageId: z.string().min(1), at: z.string().max(40).optional() }).optional(),
+  /** How many times an AI turn has already waited for a reply in progress. */
+  aiWaits: z.number().int().min(0).max(1000).optional(),
 });
 export type ExecuteFlowPayload = z.infer<typeof executeFlowPayloadSchema>;
 
@@ -367,39 +393,115 @@ function accountHandleFor(channel: Channel): string {
   return channel.name?.trim() || "this account";
 }
 
+/** What an attachment was, in words: the model cannot see it, but it should know something was sent. */
+function attachmentLabel(attachment: unknown): string {
+  const type = isRecord(attachment) && typeof attachment.type === "string" ? attachment.type : "";
+  switch (type) {
+    case "image":
+      return "sent a photo";
+    case "video":
+      return "sent a video";
+    case "audio":
+      return "sent a voice message";
+    case "file":
+      return "sent a file";
+    case "share":
+    case "ig_reel":
+    case "reel":
+      return "shared a post";
+    case "story_mention":
+      return "mentioned you in their story";
+    default:
+      return "sent an attachment";
+  }
+}
+
+/** A message from the contact as the AI reads it: their words, plus what else came with them. */
+function inboundTurnText(text: string | null, payload: Prisma.JsonValue | null): string {
+  const data = isRecord(payload) ? payload : {};
+  const parts: string[] = [];
+  if (isRecord(data.storyReply)) parts.push("[replying to your story]");
+  if (Array.isArray(data.attachments)) for (const a of data.attachments.slice(0, 3)) parts.push(`[${attachmentLabel(a)}]`);
+  const words = text?.trim();
+  if (words) parts.push(words);
+  return parts.join(" ");
+}
+
+type ConversationForAi = {
+  history: ChatTurn[];
+  /** When the contact's newest message was sent; null when they have not written. */
+  newestInboundAt: Date | null;
+};
+
 /**
  * The conversation so far, oldest first, as chat turns.
  *
  * Read straight from the messages we already store, so an agent picking up a
  * thread mid-way sees what the contact and the account have actually said,
- * including anything a human typed from the Inbox. Attachments have no text and
- * are dropped rather than sent as empty turns.
+ * including anything a human typed from the Inbox and the messages earlier
+ * steps sent. A photo or a story reply becomes a short note instead of
+ * vanishing. A comment is not a conversation message, so the one that started
+ * a comment session is put back in where it happened.
  */
-async function conversationHistory(
-  channel: Channel,
-  contact: Contact,
-  limit: number,
-): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+async function conversationForAi(run: SessionRun, limit: number): Promise<ConversationForAi> {
   const conversation = await prisma.conversation.findUnique({
-    where: { channelId_contactId: { channelId: channel.id, contactId: contact.id } },
+    where: { channelId_contactId: { channelId: run.channel.id, contactId: run.contact.id } },
     select: { id: true },
   });
-  if (!conversation) return [];
+  const [rows, newest] = conversation
+    ? await Promise.all([
+        prisma.message.findMany({
+          where: { conversationId: conversation.id },
+          orderBy: { createdAt: "desc" },
+          take: Math.max(2, Math.min(limit, 50)),
+          select: { direction: true, text: true, payload: true, createdAt: true },
+        }),
+        prisma.message.findFirst({
+          where: { conversationId: conversation.id, direction: MessageDirection.INBOUND },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        }),
+      ])
+    : [[], null];
 
-  const rows = await prisma.message.findMany({
-    where: { conversationId: conversation.id, text: { not: null } },
-    orderBy: { createdAt: "desc" },
-    take: Math.max(2, Math.min(limit, 50)),
-    select: { direction: true, text: true },
-  });
-
-  return rows
+  const turns = rows
     .reverse()
     .map((row) => ({
+      at: row.createdAt,
       role: row.direction === MessageDirection.INBOUND ? ("user" as const) : ("assistant" as const),
-      content: (row.text ?? "").trim(),
+      // Our own image-only sends have no words worth repeating back to the model.
+      content: row.direction === MessageDirection.INBOUND ? inboundTurnText(row.text, row.payload) : (row.text ?? "").trim(),
     }))
-    .filter((m) => m.content.length > 0);
+    .filter((t) => t.content.length > 0);
+
+  const comment = run.context.commentId ? run.context.triggerText?.trim() : undefined;
+  if (comment) {
+    const startedAt = run.session.createdAt;
+    const after = turns.findIndex((t) => t.at > startedAt);
+    turns.splice(after === -1 ? turns.length : after, 0, { at: startedAt, role: "user", content: `[commented on your post] ${comment}` });
+  }
+
+  return { history: turns.map(({ role, content }) => ({ role, content })), newestInboundAt: newest?.createdAt ?? null };
+}
+
+/** Saved answers and custom fields, as the AI should read them. Values that are not plain text or numbers are left out. */
+function contactFacts(contact: Contact): Array<{ label: string; value: string }> {
+  if (!isRecord(contact.customFields)) return [];
+  const facts: Array<{ label: string; value: string }> = [];
+  for (const [key, value] of Object.entries(contact.customFields)) {
+    if (typeof value !== "string" && typeof value !== "number") continue;
+    const text = String(value).trim();
+    if (text) facts.push({ label: key.replace(/_/g, " "), value: text.slice(0, 200) });
+    if (facts.length >= 12) break;
+  }
+  return facts;
+}
+
+function aiBusyFor(context: FlowSessionContext, messageId: string | null): boolean {
+  const busy = context.aiBusy;
+  if (!busy || busy.messageId === messageId) return false;
+  const at = Date.parse(busy.at);
+  return Number.isFinite(at) && Date.now() - at < AI_BUSY_MS;
 }
 
 type ActiveSessionWithFlow = FlowSession & { automation: Automation };
@@ -429,6 +531,31 @@ function answerTextFor(data: AskQuestionData, nodeId: string, event: NormalizedM
     if (title) return title;
   }
   return (event.text ?? "").slice(0, 4000);
+}
+
+/** The session whose AI step is talking with this contact: parked for their reply, or writing one. */
+function aiListener(sessions: ActiveSessionWithFlow[]): { session: ActiveSessionWithFlow; nodeId: string } | null {
+  for (const session of sessions) {
+    if (session.automation.status !== AutomationStatus.ACTIVE || !session.currentNodeId) continue;
+    const flow = parseFlow(session.automation.flow);
+    if (flow && getNode(flow, session.currentNodeId)?.data.type === "ai_reply") return { session, nodeId: session.currentNodeId };
+  }
+  return null;
+}
+
+/**
+ * Hands the contact's message to the AI step talking with them. Held back a
+ * moment so a few messages sent in a row are answered together; the step
+ * itself skips every one but the newest.
+ */
+async function queueAiTurn(channel: Channel, listener: { session: ActiveSessionWithFlow; nodeId: string }, answer: FlowAnswer): Promise<void> {
+  await enqueue({
+    type: JobType.EXECUTE_FLOW,
+    workspaceId: channel.workspaceId,
+    payload: { sessionId: listener.session.id, nodeId: listener.nodeId, fromNodeId: listener.nodeId, answer },
+    runAt: new Date(Date.now() + AI_QUIET_MS),
+    dedupeKey: `flow:${listener.session.id}:${listener.nodeId}:answer:${answer.messageId}`,
+  });
 }
 
 /** Queue the next step for a parked session. Returns false when nothing is wired to that handle. */
@@ -480,21 +607,24 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
 
   const sessions = await activeSessions(channel, contact);
 
-  // A pending question consumes this message as its answer: ahead of quick-reply routing and
-  // keyword triggers, so a reply like "link@example.com" never also starts a "link" automation.
-  const pending = sessions.find((s) => s.automation.status === AutomationStatus.ACTIVE && awaitingNodeId(s) !== null);
-  if (pending) {
-    const nodeId = awaitingNodeId(pending) as string;
-    const flow = parseFlow(pending.automation.flow);
-    const node = flow ? getNode(flow, nodeId) : undefined;
-    if (node?.data.type === "ask_question") {
-      const answer: FlowAnswer = { text: answerTextFor(node.data, nodeId, event), messageId: event.messageId };
+  // A question waiting for its answer, or an AI step in a conversation, takes this message: ahead of
+  // quick-reply routing and keyword triggers, so a reply like "link@example.com" never also starts a "link" automation.
+  for (const session of sessions) {
+    if (session.automation.status !== AutomationStatus.ACTIVE || !session.currentNodeId) continue;
+    const flow = parseFlow(session.automation.flow);
+    const node = flow ? getNode(flow, session.currentNodeId) : undefined;
+    if (node?.data.type === "ask_question" && awaitingNodeId(session) === node.id) {
+      const answer: FlowAnswer = { text: answerTextFor(node.data, node.id, event), messageId: event.messageId };
       await enqueue({
         type: JobType.EXECUTE_FLOW,
         workspaceId: channel.workspaceId,
-        payload: { sessionId: pending.id, nodeId, fromNodeId: nodeId, answer },
-        dedupeKey: `flow:${pending.id}:${nodeId}:answer:${event.messageId}`,
+        payload: { sessionId: session.id, nodeId: node.id, fromNodeId: node.id, answer },
+        dedupeKey: `flow:${session.id}:${node.id}:answer:${event.messageId}`,
       });
+      return;
+    }
+    if (node?.data.type === "ai_reply") {
+      await queueAiTurn(channel, { session, nodeId: node.id }, { text: (event.text ?? "").slice(0, 4000), messageId: event.messageId, at: event.timestamp.toISOString() });
       return;
     }
   }
@@ -567,11 +697,20 @@ async function handlePostbackEvent(channel: Channel, event: NormalizedPostbackEv
   const suffix = event.postbackId ?? String(event.timestamp.getTime());
   const sessions = await activeSessions(channel, contact);
 
+  // A button from an earlier message, tapped while an AI step is talking with them, is something they said: the AI answers it.
+  const toAi = async (): Promise<boolean> => {
+    const listener = aiListener(sessions);
+    if (!listener || !event.title?.trim()) return false;
+    await queueAiTurn(channel, listener, { text: event.title.slice(0, 4000), messageId: `postback:${suffix}`, at: event.timestamp.toISOString() });
+    return true;
+  };
+
   const button = /^btn:(.+):(\d+)$/.exec(event.payload);
   if (button) {
     const [, nodeId, index] = button;
     const session = sessions.find((s) => s.currentNodeId === nodeId);
     if (!session) {
+      if (await toAi()) return;
       logger.info("flow.postback_no_session", { contactId: contact.id, nodeId });
       return;
     }
@@ -600,6 +739,7 @@ async function handlePostbackEvent(channel: Channel, event: NormalizedPostbackEv
     return;
   }
 
+  if (await toAi()) return;
   logger.info("flow.postback_unhandled", { contactId: contact.id, payload: event.payload.slice(0, 64) });
 }
 
@@ -951,16 +1091,35 @@ export async function executeFlowStep(job: Job): Promise<void> {
       case "ai_reply": {
         const data = node.data;
         const maxTurns = data.maxTurns ?? DEFAULT_AI_TURNS;
-        const awaiting = run.context.awaiting;
-        const resuming = Boolean(answer && awaiting?.nodeId === node.id);
-        const turnsUsed = resuming ? (awaiting?.attempts ?? 0) : 0;
+        // The contact's message this job was queued for. Only the step it was queued for may use it.
+        const pending = answer && node.id === payload.nodeId ? answer : undefined;
+        answer = undefined;
+        const parked = run.context.awaiting?.nodeId === node.id ? run.context.awaiting : undefined;
 
-        // Out of turns: the flow carries on without another model call.
-        if (resuming && turnsUsed >= maxTurns) {
-          answer = undefined;
-          run.context = { ...run.context, awaiting: undefined };
-          nodeId = nextNodeId(flow, node.id, "next");
-          continue;
+        if (pending) {
+          // A reply is still being written, or this step has not sent its first one yet:
+          // wait for it, so this message is answered with that reply in view.
+          if (aiBusyFor(run.context, pending.messageId) || !parked) {
+            const waits = payload.aiWaits ?? 0;
+            if (waits >= AI_MAX_WAITS) {
+              logger.warn("flow.ai_turn_gave_up", { sessionId: session.id, nodeId: node.id, messageId: pending.messageId });
+              return;
+            }
+            await enqueue({
+              type: JobType.EXECUTE_FLOW,
+              workspaceId: channel.workspaceId,
+              payload: { sessionId: session.id, nodeId: node.id, fromNodeId: node.id, answer: pending, aiWaits: waits + 1 },
+              runAt: new Date(Date.now() + AI_WAIT_STEP_MS),
+              dedupeKey: `flow:${session.id}:${node.id}:answer:${pending.messageId}:wait:${waits + 1}`,
+            });
+            return;
+          }
+          // Out of turns: the flow carries on without another model call.
+          if (parked.attempts >= maxTurns) {
+            run.context = { ...run.context, awaiting: undefined };
+            nodeId = nextNodeId(flow, node.id, "next");
+            continue;
+          }
         }
 
         const agent = await resolveAgent(channel.workspaceId, data.agentId);
@@ -968,34 +1127,43 @@ export async function executeFlowStep(job: Job): Promise<void> {
           // Nothing configured: say nothing rather than something wrong, and
           // let the handover branch (or the rest of the flow) take over.
           logger.warn("flow.ai_no_agent", { sessionId: session.id, nodeId: node.id, agentId: data.agentId });
-          answer = undefined;
           run.context = { ...run.context, awaiting: undefined, lastError: "ai_no_agent" };
           nodeId = nextNodeId(flow, node.id, "handoff") ?? nextNodeId(flow, node.id, "next");
           continue;
         }
 
-        const history = await conversationHistory(channel, run.contact, agent.historyLimit);
-        // The message that got us here is not in the history yet on the first
-        // visit, because a comment or a story reply is not a conversation message.
-        const latest = resuming ? answer?.text?.trim() : run.context.triggerText?.trim();
-        const turns =
-          latest && history[history.length - 1]?.content !== latest
-            ? [...history, { role: "user" as const, content: latest }]
-            : history;
+        const { history, newestInboundAt } = await conversationForAi(run, agent.historyLimit);
+        if (pending) {
+          const sentAt = pending.at ? Date.parse(pending.at) : NaN;
+          // They wrote again since: that message's turn answers both, a moment later.
+          if (newestInboundAt && Number.isFinite(sentAt) && newestInboundAt.getTime() > sentAt) return;
+          // An earlier reply already had this message in view.
+          const answeredAt = run.context.aiAnsweredAt ? Date.parse(run.context.aiAnsweredAt) : NaN;
+          const latestAt = newestInboundAt?.getTime() ?? sentAt;
+          if (Number.isFinite(answeredAt) && Number.isFinite(latestAt) && latestAt <= answeredAt) return;
+        }
+
+        const turnsUsed = pending ? (parked?.attempts ?? 0) : 0;
+        await setSession(session.id, {
+          currentNodeId: node.id,
+          context: { ...run.context, aiBusy: { at: new Date().toISOString(), messageId: pending?.messageId ?? null } },
+        });
 
         const outcome = await runAgent({
           workspaceId: channel.workspaceId,
-          agent: data.instruction?.trim() ? { ...agent, systemPrompt: `${agent.systemPrompt}\n\n## For this step only\n${data.instruction.trim()}` } : agent,
+          agent: withStepInstruction(agent, data.instruction),
           context: {
             accountHandle: accountHandleFor(channel),
             platform: channel.platform,
             contactName: run.contact.name,
+            contactUsername: run.contact.username ? `@${run.contact.username.replace(/^@/, "")}` : null,
+            contactFacts: contactFacts(run.contact),
             trigger: run.context.triggerText ?? null,
+            triggerKind: automation.triggerType,
           },
-          history: turns.length > 0 ? turns : [{ role: "user", content: "Hello" }],
+          history,
         });
 
-        answer = undefined;
         // A reply with buttons is an ordinary interactive message; a plain one
         // is just text. The agent decides which by naming a button or not.
         const reply: OutboundMessage = outcome.ok ? outcome.message : { text: outcome.fallback };
@@ -1007,8 +1175,9 @@ export async function executeFlowStep(job: Job): Promise<void> {
           automationId: automation.id,
           viaPrivateReplyCommentId: viaPrivateReply,
         });
+        run.context = { ...run.context, aiBusy: undefined };
         if (result.retryable) {
-          await deferForRateLimit(run, node.id, result, viaPrivateReply);
+          await deferForRateLimit(run, node.id, result, viaPrivateReply, pending);
           return;
         }
         viaPrivateReply = undefined;
@@ -1016,6 +1185,7 @@ export async function executeFlowStep(job: Job): Promise<void> {
           await setSession(session.id, { currentNodeId: node.id, status: FlowSessionStatus.EXPIRED, context: { ...run.context, lastError: result.error } });
           return;
         }
+        if (newestInboundAt) run.context = { ...run.context, aiAnsweredAt: newestInboundAt.toISOString() };
 
         // A failed model call is a handover: the contact got the fallback, and
         // a person should see the thread.
