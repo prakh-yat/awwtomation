@@ -27,6 +27,7 @@ const DELIVERY_META: Record<DeliveryStatus, { label: string; variant: BadgeVaria
   SKIPPED_WINDOW: { label: "Over 24 hours", variant: "secondary" },
   SKIPPED_OPTED_OUT: { label: "Opted out", variant: "secondary" },
   SKIPPED_PLAN_LIMIT: { label: "Monthly limit", variant: "yellow" },
+  SKIPPED_CONTACT_LIMIT: { label: "Contact limit", variant: "yellow" },
   SKIPPED_RATE_LIMIT: { label: "Too many at once", variant: "yellow" },
   SKIPPED_SELF: { label: "Own account", variant: "secondary" },
   SKIPPED_DUPLICATE: { label: "Already sent", variant: "secondary" },

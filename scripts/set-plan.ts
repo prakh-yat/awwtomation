@@ -4,8 +4,8 @@
  * the app shows customers their own data only.
  *
  *   npx tsx scripts/set-plan.ts list                        # organizations and their plans
- *   npx tsx scripts/set-plan.ts set <organization> <plan>   # FREE | STARTER | PRO | AGENCY
- *   npx tsx scripts/set-plan.ts clear <organization>        # back to subscription / free
+ *   npx tsx scripts/set-plan.ts set <organization> <plan>   # NONE | STARTER | PRO | AGENCY
+ *   npx tsx scripts/set-plan.ts clear <organization>        # back to subscription / no plan
  *
  * <organization> is an organization id or slug, or the id or slug of any
  * workspace inside it. Reads DATABASE_URL from .env.
@@ -97,13 +97,13 @@ async function clear(ref: string) {
   }
 
   // Drop the override first so the subscription sync is allowed to write the plan.
-  await prisma.organization.update({ where: { id: org.id }, data: { planSource: "DEFAULT", plan: "FREE" } });
+  await prisma.organization.update({ where: { id: org.id }, data: { planSource: "DEFAULT", plan: "NONE" } });
   if (org.billingSubscriptionId) {
     try {
       await syncSubscription(org.billingSubscriptionId);
     } catch (err) {
       console.warn(`Could not reach Dodo (${err instanceof Error ? err.message : String(err)}).`);
-      console.warn("The organization is on FREE until the next billing webhook arrives.");
+      console.warn("The organization has no plan until the next billing webhook arrives.");
     }
   }
 

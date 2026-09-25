@@ -1,6 +1,8 @@
 import type { Job, JobType } from "@prisma/client";
+import { handleBroadcastFanout } from "./broadcast-fanout";
 import { handleBroadcastSend } from "./broadcast-send";
 import { handleExecuteFlow } from "./execute-flow";
+import { handleProcessWebhook } from "./process-webhook";
 import { handlePublicReply } from "./public-reply";
 import { handleReconcileComments } from "./reconcile-comments";
 import { handleRefreshToken } from "./refresh-token";
@@ -16,4 +18,6 @@ export const handlers: Record<JobType, JobHandler> = {
   REFRESH_TOKEN: handleRefreshToken,
   RECONCILE_COMMENTS: handleReconcileComments,
   SYNC_MEDIA: handleSyncMedia,
+  PROCESS_WEBHOOK: handleProcessWebhook,
+  BROADCAST_FANOUT: handleBroadcastFanout,
 };

@@ -1,13 +1,16 @@
 /**
  * The AI page as tools: provider connections (the workspace's own API keys)
- * and agents. Keys go in, never out: every provider comes back as the same
+ * and agents. An agent replies with the built-in model unless it names a
+ * connection. Keys go in, never out: every provider comes back as the same
  * four character hint the page shows.
  */
 import { z } from "zod";
 
 import { withStepInstruction } from "@/lib/ai/agent";
+import { builtInModel } from "@/lib/ai/builtin";
 import { PROVIDER_PRESETS, presetById, type ProviderPresetId } from "@/lib/ai/presets";
 import {
+  assertPlaygroundAllowed,
   agentCreateSchema,
   agentUpdateSchema,
   createAgent,
@@ -55,7 +58,11 @@ function fromPreset(presetId: ProviderPresetId | undefined, given: { kind?: stri
 
 const agentFields = {
   name: z.string().optional().describe("Up to 60 characters."),
-  providerId: z.string().nullable().optional().describe("Which connection it uses. Null uses the default connection."),
+  providerId: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Which connection it replies with. Null uses the built-in model, which needs no key. Left out when creating, the workspace's default connection is used, or the built-in model when there is none."),
   model: z.string().nullable().optional().describe("A model id from list_ai_models. Null uses the connection's default model."),
   systemPrompt: z.string().optional().describe("Who the agent is and how it talks, in the workspace's own words. Used verbatim."),
   knowledge: z.string().nullable().optional().describe("Facts it may use: prices, hours, policies, links."),
@@ -76,10 +83,11 @@ export const aiTools = [
     name: "list_ai_providers",
     title: "List AI connections",
     description:
-      "The workspace's AI provider connections (its own API keys; only the last four characters are ever shown) and the presets that can be connected: OpenAI, Anthropic, Google, OpenRouter, xAI, Mistral, DeepSeek, Groq and more, or a custom endpoint.",
+      "The built-in model every agent can use without a key, the workspace's AI provider connections (its own API keys; only the last four characters are ever shown) and the presets that can be connected: OpenAI, Anthropic, Google, OpenRouter, xAI, Mistral, DeepSeek, Groq and more, or a custom endpoint.",
     annotations: READ,
     input: {},
     run: async (_args, ctx) => ({
+      builtIn: builtInModel(),
       providers: await listProviders(ctx.workspace.id),
       presets: PROVIDER_PRESETS.map((p) => ({ preset: p.id, name: p.name, kind: p.kind, baseUrl: p.baseUrl, getKeyAt: p.keyUrl, suggestedModels: p.models.slice(0, 6) })),
     }),
@@ -110,7 +118,7 @@ export const aiTools = [
     name: "connect_ai_provider",
     title: "Connect an AI provider",
     description:
-      "Save an API key for a model provider so agents can use it. Replies are billed by the provider to the workspace's own account. Pick a preset (it fills kind and endpoint) and a default model from list_ai_models. The first connection becomes the default. Admins and owners.",
+      "Save an API key for a model provider so agents can use it instead of the built-in model. Replies are billed by the provider to the workspace's own account. Pick a preset (it fills kind and endpoint) and a default model from list_ai_models. The first connection becomes the default for new agents. Admins and owners.",
     minRole: "ADMIN",
     annotations: WRITE,
     input: {
@@ -170,7 +178,7 @@ export const aiTools = [
   workspaceTool({
     name: "delete_ai_provider",
     title: "Remove an AI connection",
-    description: "Delete a connection and its key. Agents that used it fall back to the default connection. Admins and owners.",
+    description: "Delete a connection and its key. Agents that used it switch to the built-in model. Admins and owners.",
     minRole: "ADMIN",
     annotations: DESTROY,
     input: { providerId },
@@ -234,7 +242,7 @@ export const aiTools = [
     name: "test_ai_agent",
     title: "Chat with an AI agent",
     description:
-      "Send a practice conversation to an agent and get the reply a contact would get, including any buttons and whether it asked for a person (handoff) or ended the chat (done). Uses the workspace's own key; nothing is sent to anyone.",
+      "Send a practice conversation to an agent and get the reply a contact would get, including any buttons and whether it asked for a person (handoff) or ended the chat (done). Uses the agent's own connection, or the built-in model (rate limited per workspace); nothing is sent to anyone.",
     annotations: { readOnlyHint: true, openWorldHint: true },
     input: {
       agentId,
@@ -252,6 +260,7 @@ export const aiTools = [
     run: async (args, ctx) => {
       const { agentId: id, messages, instruction } = playgroundSchema.parse(args);
       const agent = await requireAgent(ctx.workspace.id, id);
+      await assertPlaygroundAllowed(ctx.workspace.id, agent);
       const channels = await listChannelOptions(ctx.workspace.id);
       const channel = channels.find((c) => c.status === "ACTIVE") ?? channels[0];
       const outcome = await runAgent({

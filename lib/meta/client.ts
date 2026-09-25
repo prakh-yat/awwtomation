@@ -37,6 +37,12 @@ export type MetaFetchInit = RequestInit & {
   /** application/x-www-form-urlencoded body (sets method POST). */
   form?: Record<string, string>;
   timeoutMs?: number;
+  /**
+   * Called with how close this call's response says the app is to a Meta
+   * limit, in percent (the highest value in its usage headers). Only called
+   * when Meta sent one, error responses included.
+   */
+  onUsage?: (percent: number) => void;
 };
 
 // Rate limiting: app (4), user (17), page (32), custom (613), business-use-case (80001..80008)
@@ -96,30 +102,39 @@ export function toMetaError(err: GraphErrorBody | null, status: number): MetaApi
   return generic;
 }
 
+/** Usage at or above this share of a Meta limit is "high": we warn, and comment polling pauses. */
+export const META_USAGE_HIGH_PERCENT = 80;
+
 /**
  * Meta returns throttling telemetry in headers; warn once we cross 80% so an
- * operator sees it before calls start failing with code 4/17/32.
+ * operator sees it before calls start failing with code 4/17/32. Returns the
+ * highest percentage across the headers, or null when there were none.
  */
-function logUsageHeaders(headers: Headers, path: string): void {
+function readUsageHeaders(headers: Headers, path: string): number | null {
+  let peak: number | null = null;
   for (const name of ["x-app-usage", "x-business-use-case-usage", "x-ad-account-usage"]) {
     const raw = headers.get(name);
     if (!raw) continue;
     try {
       const parsed: unknown = JSON.parse(raw);
       const max = maxNumeric(parsed);
-      if (max >= 80) logger.warn("meta.usage_high", { header: name, usage: parsed, path });
+      if (max >= META_USAGE_HIGH_PERCENT) logger.warn("meta.usage_high", { header: name, usage: parsed, path });
+      peak = Math.max(peak ?? 0, max);
     } catch {
       // Not JSON: ignore; this is telemetry only.
     }
   }
+  return peak;
 }
+
+/** Durations in the usage headers (minutes and seconds), not percentages: a high one must not read as a limit. */
+const NOT_PERCENTAGES = new Set(["estimated_time_to_regain_access", "reset_time_duration"]);
 
 function maxNumeric(value: unknown): number {
   if (typeof value === "number") return value;
   if (Array.isArray(value)) return Math.max(0, ...value.map(maxNumeric));
   if (isRecord(value)) {
-    // `estimated_time_to_regain_access` is minutes, not a percentage: skip it.
-    return Math.max(0, ...Object.entries(value).filter(([k]) => k !== "estimated_time_to_regain_access").map(([, v]) => maxNumeric(v)));
+    return Math.max(0, ...Object.entries(value).filter(([k]) => !NOT_PERCENTAGES.has(k)).map(([, v]) => maxNumeric(v)));
   }
   return 0;
 }
@@ -133,10 +148,11 @@ function safePath(url: URL): string {
  * - adds `access_token`
  * - throws `MetaRateLimitError` / `MetaTokenError` / `MetaApiError` from Graph error bodies
  * - throws `MetaNetworkError` for transport failures so the queue retries
+ * - hands the usage headers to `onUsage`, so a poller can slow down before Meta refuses it
  * Never logs the token.
  */
 export async function metaFetch<T>(url: string, init: MetaFetchInit = {}): Promise<T> {
-  const { token, query, json, form, timeoutMs = 20_000, headers, body: rawBody, signal, ...rest } = init;
+  const { token, query, json, form, timeoutMs = 20_000, headers, body: rawBody, signal, onUsage, ...rest } = init;
 
   const target = new URL(url);
   if (query) {
@@ -165,7 +181,9 @@ export async function metaFetch<T>(url: string, init: MetaFetchInit = {}): Promi
     throw new MetaNetworkError(`Network error calling Meta (${method} ${safePath(target)}): ${message}`);
   }
 
-  logUsageHeaders(res.headers, safePath(target));
+  // Read before the body so a caller hears about usage on a refused call too: that is when it matters most.
+  const usage = readUsageHeaders(res.headers, safePath(target));
+  if (usage !== null) onUsage?.(usage);
 
   const text = await res.text();
   let data: unknown = null;

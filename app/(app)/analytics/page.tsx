@@ -161,6 +161,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Se
         automations={automations}
         rangeLabel={rangeLabel}
         today={today}
+        earliest={report.range.earliest}
+        historyDays={report.range.historyDays}
         actions={
           <Button asChild variant="outline" size="sm">
             <a href={`/api/analytics/export.csv?${exportQuery.toString()}`}>

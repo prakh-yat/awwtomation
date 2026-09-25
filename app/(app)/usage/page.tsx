@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PlatformMark } from "@/components/ui/platform-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { historyLabel } from "@/lib/billing/plans";
 import { getOrganizationUsage } from "@/lib/billing/usage";
 import { getUsageHistory } from "@/lib/services/usage-history";
 import { cn, formatNumber } from "@/lib/utils";
@@ -40,6 +41,7 @@ export default async function UsagePage() {
   const multipleWorkspaces = ctx.workspaces.length > 1;
   const period = history.currentPeriod;
   const canUpgrade = canManageBilling(ctx.role) && period.plan !== "AGENCY";
+  const upgradeLabel = period.plan === "NONE" ? "Choose a plan" : "Upgrade";
 
   const level = meterLevel(period.used, period.limit);
   // The last day of the period is the day before it resets.
@@ -47,7 +49,18 @@ export default async function UsagePage() {
 
   const limits: UsageRow[] = [
     { label: "Connected accounts", used: usage.channels.used, limit: usage.channels.limit, tone: "yellow" },
+    { label: "Workspaces", used: usage.workspaces.used, limit: usage.workspaces.limit, tone: "indigo" },
     { label: "Automations", used: usage.automations.used, limit: usage.automations.limit, tone: "purple" },
+    {
+      label: "Contacts",
+      used: usage.contacts.used,
+      limit: usage.contacts.limit,
+      hint: usage.contacts.used > usage.contacts.limit ? "Automations skip the newest contacts past the limit" : undefined,
+      tone: "green",
+    },
+    ...(usage.broadcasts.limit > 0
+      ? [{ label: "Broadcasts this month", used: usage.broadcasts.used, limit: usage.broadcasts.limit, hint: `Resets ${utcDay(period.resetsAt)}`, tone: "orange" as const }]
+      : []),
     { label: "Team seats", used: usage.members.used, limit: usage.members.limit, hint: "Includes pending invites", tone: "indigo" },
   ];
 
@@ -88,7 +101,7 @@ export default async function UsagePage() {
         actions={
           canUpgrade ? (
             <Button asChild variant="highlight" size="sm">
-              <Link href="/settings/billing">Upgrade</Link>
+              <Link href="/settings/billing">{upgradeLabel}</Link>
             </Button>
           ) : null
         }
@@ -108,7 +121,7 @@ export default async function UsagePage() {
             <p className="flex-1">{w.message}</p>
             {canUpgrade ? (
               <Link href="/settings/billing" className="shrink-0 font-semibold underline underline-offset-4 hover:no-underline">
-                Upgrade
+                {upgradeLabel}
               </Link>
             ) : null}
           </div>
@@ -164,6 +177,9 @@ export default async function UsagePage() {
             Plan limits
           </h2>
           <UsageBars rows={limits} className="sm:grid-cols-3" />
+          <p className="mt-5 border-t pt-4 text-[13px] text-muted-foreground">
+            Conversations and delivery logs are kept for {historyLabel(usage.historyDays)}, then deleted. Contacts, automations and monthly totals stay.
+          </p>
         </section>
 
         <div className={cn("grid grid-cols-1 gap-4", multipleWorkspaces ? "lg:grid-cols-3" : "lg:grid-cols-2")}>

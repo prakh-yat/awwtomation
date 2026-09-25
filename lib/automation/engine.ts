@@ -9,6 +9,9 @@
  * An "Ask a question" node parks the same way but marks `context.awaiting`;
  * the contact's next message is then delivered back to that node as
  * `payload.answer` instead of being routed to handles or keyword triggers.
+ * No wait is open-ended: a question or AI step takes replies for a day
+ * (SESSION_REPLY_TTL_MS), and a session idle for a week (SESSION_IDLE_TTL_MS)
+ * can no longer be resumed at all.
  * Every resume is an EXECUTE_FLOW job whose `fromNodeId` is compared
  * atomically against `currentNodeId`, so a double tap can never run a step twice.
  */
@@ -63,6 +66,7 @@ import {
 } from "./flow-types";
 import { resolveAgent, runAgent } from "@/lib/services/ai";
 
+import { automationAllowedFor } from "@/lib/billing/usage";
 import { findMatchingAutomations } from "./matcher";
 import { attachPostbackPayloads, contactTemplateVars, RATE_LIMIT_MAX_DEFER_MS, recordDeliveryLog, sendToContact, type SendToContactResult } from "./send";
 
@@ -70,16 +74,31 @@ import { attachPostbackPayloads, contactTemplateVars, RATE_LIMIT_MAX_DEFER_MS, r
 const MAX_STEPS_PER_RUN = 50;
 
 /**
+ * How long a question or an AI step keeps taking the contact's messages as
+ * replies: Meta's standard messaging window. Someone who writes after that has
+ * moved on, so their message is routed like any other and a keyword still
+ * starts its automation instead of being saved as an answer.
+ */
+const SESSION_REPLY_TTL_MS = 24 * 3600 * 1000;
+/**
+ * How long a parked session can be resumed at all (a button tap, a quick
+ * reply, a plain reply to a message step). Seven days is also the HUMAN_AGENT
+ * window, the longest anyone may still message the contact. Older sessions are
+ * left for housekeeping to expire.
+ */
+const SESSION_IDLE_TTL_MS = 7 * 24 * 3600 * 1000;
+
+/**
  * An AI step answers this long after the contact's latest message, so "hi"
  * followed by "i want to order this" gets one reply that reads both.
  */
-const AI_QUIET_MS = 4_000;
-/** A message that arrives while a reply is being written waits for it, checking this often... */
-const AI_WAIT_STEP_MS = 2_000;
-/** ...this many times, then gives up. */
-const AI_MAX_WAITS = 45;
+const AI_QUIET_MS = 6_000;
 /** A reply still "being written" after this long crashed; stop waiting for it. */
 const AI_BUSY_MS = 90_000;
+/** A message that arrives while a reply is being written waits for it, checking this often... */
+const AI_WAIT_STEP_MS = 5_000;
+/** ...until that reply would count as crashed, then gives up. Every check is a queued job, so they are kept few. */
+const AI_MAX_WAITS = Math.ceil(AI_BUSY_MS / AI_WAIT_STEP_MS);
 
 // ───────────────────────── Session context ─────────────────────────
 
@@ -257,7 +276,11 @@ export type StartFlowInput = {
   dedupeKey?: string;
 };
 
-export type StartFlowResult = { started: boolean; sessionId?: string; reason?: "empty_flow" | "invalid_flow" | "once_per_contact" | "duplicate" };
+export type StartFlowResult = {
+  started: boolean;
+  sessionId?: string;
+  reason?: "empty_flow" | "invalid_flow" | "once_per_contact" | "contact_limit" | "no_plan" | "duplicate";
+};
 
 export async function startFlowForContact(input: StartFlowInput): Promise<StartFlowResult> {
   const { automation, channel, contact } = input;
@@ -274,10 +297,15 @@ export async function startFlowForContact(input: StartFlowInput): Promise<StartF
   const existingJob = await prisma.job.findUnique({ where: { dedupeKey }, select: { id: true } });
   if (existingJob) return { started: false, reason: "duplicate" };
 
+  // Past the plan's contact limit the person is still saved (and shows in the inbox), but nothing replies until an upgrade.
+  // With no paid plan nothing is sent, so nothing starts.
+  const allowed = await automationAllowedFor(contact);
+  if (allowed !== "ok") return { started: false, reason: allowed };
+
   if (automation.oncePerContact) {
     // "Once" means one successful delivery or one in-flight session: a failed attempt may be retried by a new trigger.
     const [sent, active] = await Promise.all([
-      prisma.deliveryLog.findFirst({ where: { automationId: automation.id, contactId: contact.id, status: DeliveryStatus.SENT }, select: { id: true } }),
+      prisma.automationRecipient.findUnique({ where: { automationId_contactId: { automationId: automation.id, contactId: contact.id } }, select: { firstSentAt: true } }),
       prisma.flowSession.findFirst({ where: { automationId: automation.id, contactId: contact.id, status: FlowSessionStatus.ACTIVE }, select: { id: true } }),
     ]);
     if (sent || active) return { started: false, reason: "once_per_contact" };
@@ -318,6 +346,21 @@ export async function startFlowForContact(input: StartFlowInput): Promise<StartF
 
 // ───────────────────────── Incoming events ─────────────────────────
 
+/** The delivery log that explains why a matching trigger started nothing. */
+type NotStartedReason = "once_per_contact" | "contact_limit" | "no_plan";
+
+function isLoggedReason(reason: StartFlowResult["reason"]): reason is NotStartedReason {
+  return reason === "once_per_contact" || reason === "contact_limit" || reason === "no_plan";
+}
+
+function notStartedLog(reason: NotStartedReason): { status: DeliveryStatus; errorMessage: string } {
+  if (reason === "contact_limit") {
+    return { status: DeliveryStatus.SKIPPED_CONTACT_LIMIT, errorMessage: "Contact limit reached: this person joined after the plan's limit" };
+  }
+  if (reason === "no_plan") return { status: DeliveryStatus.SKIPPED_PLAN_LIMIT, errorMessage: "No active plan: choose a plan to send messages" };
+  return { status: DeliveryStatus.SKIPPED_DUPLICATE, errorMessage: "Already sent to this contact (once per contact)" };
+}
+
 async function handleCommentEvent(channel: Channel, event: NormalizedCommentEvent): Promise<void> {
   // The account replying to its own post must never trigger a DM to itself.
   if (event.from.id && event.from.id === channel.externalId) return;
@@ -350,18 +393,17 @@ async function handleCommentEvent(channel: Channel, event: NormalizedCommentEven
     });
 
     if (!result.started) {
-      if (result.reason === "once_per_contact") {
+      if (isLoggedReason(result.reason)) {
         await recordDeliveryLog({
           workspaceId: channel.workspaceId,
           channelId: channel.id,
           automationId: automation.id,
           contactId: contact.id,
           kind: DeliveryKind.PRIVATE_REPLY,
-          status: DeliveryStatus.SKIPPED_DUPLICATE,
+          ...notStartedLog(result.reason),
           commentExternalId: event.commentId,
           recipientExternalId: contact.externalId,
           recipientUsername: contact.username,
-          errorMessage: "Already sent to this contact (once per contact)",
         });
       }
       continue;
@@ -506,13 +548,41 @@ function aiBusyFor(context: FlowSessionContext, messageId: string | null): boole
 
 type ActiveSessionWithFlow = FlowSession & { automation: Automation };
 
+/** The contact's sessions that can still be resumed, newest first. */
 async function activeSessions(channel: Channel, contact: Contact): Promise<ActiveSessionWithFlow[]> {
   return prisma.flowSession.findMany({
-    where: { workspaceId: channel.workspaceId, contactId: contact.id, status: FlowSessionStatus.ACTIVE },
+    where: {
+      workspaceId: channel.workspaceId,
+      contactId: contact.id,
+      status: FlowSessionStatus.ACTIVE,
+      updatedAt: { gte: new Date(Date.now() - SESSION_IDLE_TTL_MS) },
+    },
     include: { automation: true },
     orderBy: { updatedAt: "desc" },
     take: 10,
   });
+}
+
+/**
+ * A question or AI step parked longer than SESSION_REPLY_TTL_MS. Every write
+ * to a session moves `updatedAt`, so this is the time since it last asked,
+ * replied or re-asked.
+ */
+function replyWindowPassed(session: FlowSession): boolean {
+  return Date.now() - session.updatedAt.getTime() > SESSION_REPLY_TTL_MS;
+}
+
+/**
+ * Ends a session whose question or AI step waited past its reply window. Only
+ * while it is still that stale: a job that touched it since has made it live
+ * again, and it is left alone.
+ */
+async function expireLapsedSession(session: FlowSession): Promise<void> {
+  const expired = await prisma.flowSession.updateMany({
+    where: { id: session.id, status: FlowSessionStatus.ACTIVE, updatedAt: { lt: new Date(Date.now() - SESSION_REPLY_TTL_MS) } },
+    data: { status: FlowSessionStatus.EXPIRED, context: contextJson({ ...readSessionContext(session.context), lastError: "reply_window_passed" }) },
+  });
+  if (expired.count > 0) logger.info("flow.reply_window_passed", { sessionId: session.id, automationId: session.automationId, nodeId: session.currentNodeId });
 }
 
 type AskQuestionData = Extract<FlowNodeData, { type: "ask_question" }>;
@@ -596,16 +666,21 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
     preview: inboundPreview(event),
     incrementUnread: true,
   });
-  const created = await recordMessage(conversation.id, {
+  await recordMessage(conversation.id, {
     direction: MessageDirection.INBOUND,
     externalId: event.messageId,
     text: event.text,
     payload: { attachments: event.attachments ?? null, storyReply: event.storyReply ?? null, quickReplyPayload: event.quickReplyPayload ?? null },
     createdAt: event.timestamp,
   });
-  if (!created) return; // redelivered webhook: never re-trigger
+  // No early return when the message was already stored: a redelivered webhook
+  // never reaches here twice (the processor claims each event once and marks it
+  // processed), so an existing row means a retry of an attempt that failed
+  // after storing it. Every step below is idempotent on the message id
+  // (flow, answer and resume jobs all carry it in their dedupe keys).
 
   const sessions = await activeSessions(channel, contact);
+  const lapsed = new Set<string>();
 
   // A question waiting for its answer, or an AI step in a conversation, takes this message: ahead of
   // quick-reply routing and keyword triggers, so a reply like "link@example.com" never also starts a "link" automation.
@@ -613,7 +688,15 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
     if (session.automation.status !== AutomationStatus.ACTIVE || !session.currentNodeId) continue;
     const flow = parseFlow(session.automation.flow);
     const node = flow ? getNode(flow, session.currentNodeId) : undefined;
-    if (node?.data.type === "ask_question" && awaitingNodeId(session) === node.id) {
+    const asking = node?.data.type === "ask_question" && awaitingNodeId(session) === node.id;
+    if (!node || (!asking && node.data.type !== "ai_reply")) continue;
+    if (replyWindowPassed(session)) {
+      // They went quiet a day or more ago: this message is not a reply to it, so it is routed like any other.
+      lapsed.add(session.id);
+      await expireLapsedSession(session);
+      continue;
+    }
+    if (node.data.type === "ask_question") {
       const answer: FlowAnswer = { text: answerTextFor(node.data, node.id, event), messageId: event.messageId };
       await enqueue({
         type: JobType.EXECUTE_FLOW,
@@ -623,23 +706,25 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
       });
       return;
     }
-    if (node?.data.type === "ai_reply") {
-      await queueAiTurn(channel, { session, nodeId: node.id }, { text: (event.text ?? "").slice(0, 4000), messageId: event.messageId, at: event.timestamp.toISOString() });
-      return;
-    }
+    await queueAiTurn(channel, { session, nodeId: node.id }, { text: (event.text ?? "").slice(0, 4000), messageId: event.messageId, at: event.timestamp.toISOString() });
+    return;
   }
+
+  // A session whose automation was switched off cannot run its next step (the job would only expire it),
+  // so it must not take the message away from a keyword trigger either.
+  const routable = sessions.filter((s) => !lapsed.has(s.id) && s.automation.status === AutomationStatus.ACTIVE);
 
   if (event.quickReplyPayload) {
     const match = /^qr:(.+):(\d+)$/.exec(event.quickReplyPayload);
     if (match) {
       const [, nodeId, index] = match;
-      const session = sessions.find((s) => s.currentNodeId === nodeId);
+      const session = routable.find((s) => s.currentNodeId === nodeId);
       if (session && (await resumeSession(channel, session, nodeId, `qr:${index}`, event.messageId))) return;
     }
   }
 
   // A session parked on a message node with a "next" edge is waiting for exactly this reply.
-  for (const session of sessions) {
+  for (const session of routable) {
     if (!session.currentNodeId) continue;
     const flow = parseFlow(session.automation.flow);
     if (!flow) continue;
@@ -660,17 +745,16 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
       context: { messageId: event.messageId, storyId: event.storyReply?.storyId, triggerText: text },
       dedupeKey: `flow:${automation.id}:${event.messageId}`,
     });
-    if (!result.started && result.reason === "once_per_contact") {
+    if (!result.started && isLoggedReason(result.reason)) {
       await recordDeliveryLog({
         workspaceId: channel.workspaceId,
         channelId: channel.id,
         automationId: automation.id,
         contactId: contact.id,
         kind: DeliveryKind.MESSAGE,
-        status: DeliveryStatus.SKIPPED_DUPLICATE,
+        ...notStartedLog(result.reason),
         recipientExternalId: contact.externalId,
         recipientUsername: contact.username,
-        errorMessage: "Already sent to this contact (once per contact)",
       });
     }
   }
@@ -685,22 +769,27 @@ async function handlePostbackEvent(channel: Channel, event: NormalizedPostbackEv
     preview: event.title ?? event.payload,
     incrementUnread: true,
   });
-  const created = await recordMessage(conversation.id, {
+  await recordMessage(conversation.id, {
     direction: MessageDirection.INBOUND,
     externalId: event.postbackId,
     text: event.title,
     payload: { postback: event.payload, title: event.title ?? null },
     createdAt: event.timestamp,
   });
-  if (!created) return;
+  // Same as for messages: an existing row here is a retry, and the jobs below are deduped on the postback id.
 
   const suffix = event.postbackId ?? String(event.timestamp.getTime());
   const sessions = await activeSessions(channel, contact);
 
   // A button from an earlier message, tapped while an AI step is talking with them, is something they said: the AI answers it.
+  // One that has not heard from them within the reply window is no longer talking with them, as with a typed message.
   const toAi = async (): Promise<boolean> => {
     const listener = aiListener(sessions);
     if (!listener || !event.title?.trim()) return false;
+    if (replyWindowPassed(listener.session)) {
+      await expireLapsedSession(listener.session);
+      return false;
+    }
     await queueAiTurn(channel, listener, { text: event.title.slice(0, 4000), messageId: `postback:${suffix}`, at: event.timestamp.toISOString() });
     return true;
   };

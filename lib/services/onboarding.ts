@@ -1,32 +1,27 @@
 /**
- * The welcome questionnaire, stored on the workspace it describes.
+ * The welcome flow's answers, stored on the workspace they describe.
  *
  * Answers are advisory: nothing in the product refuses to work without them,
- * and the flow can be skipped. They exist so the template gallery and the
- * dashboard can lead with what this particular account is trying to do.
+ * and the flow can be skipped. What each account is and what it should do is
+ * asked when the account is connected, and stored on the channel instead
+ * (lib/onboarding/account-questions.ts).
  */
 import { prisma } from "@/lib/db";
 import { sanitizeAnswers, type Answers } from "@/lib/onboarding/questions";
 
 export type OnboardingState = {
   answers: Answers;
-  /** Whether a channel is connected, which is what unlocks the usage questions. */
-  hasChannel: boolean;
   completedAt: Date | null;
 };
 
 export async function getOnboardingState(workspaceId: string): Promise<OnboardingState> {
-  const [workspace, channelCount] = await Promise.all([
-    prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { onboardingAnswers: true, onboardingCompletedAt: true },
-    }),
-    prisma.channel.count({ where: { workspaceId } }),
-  ]);
+  const workspace = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { onboardingAnswers: true, onboardingCompletedAt: true },
+  });
 
   return {
     answers: sanitizeAnswers(workspace?.onboardingAnswers),
-    hasChannel: channelCount > 0,
     completedAt: workspace?.onboardingCompletedAt ?? null,
   };
 }
@@ -46,7 +41,7 @@ export async function saveOnboardingAnswers(workspaceId: string, input: unknown)
   return merged;
 }
 
-/** Marks the questionnaire done, whether it was finished or skipped. */
+/** Marks the welcome flow done, whether it was finished or skipped. */
 export async function completeOnboarding(workspaceId: string): Promise<void> {
   await prisma.workspace.updateMany({
     where: { id: workspaceId, onboardingCompletedAt: null },

@@ -6,7 +6,18 @@ import { AutomationStatus, MatchMode, TriggerType } from "@prisma/client";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/env";
-import { disconnectChannel, getChannelSummary, listChannelMedia, listChannels, purgeChannel, refreshChannel, toChannelView } from "@/lib/services/channels";
+import {
+  accountAnswersSchema,
+  channelSetupSchema,
+  disconnectChannel,
+  getChannelSummary,
+  listChannelMedia,
+  listChannels,
+  purgeChannel,
+  refreshChannel,
+  saveChannelSetup,
+  toChannelView,
+} from "@/lib/services/channels";
 import {
   automationCreateSchema,
   automationUpdateSchema,
@@ -58,12 +69,30 @@ export const accountTools = [
   workspaceTool({
     name: "list_accounts",
     title: "List connected accounts",
-    description: `Instagram accounts and Facebook Pages connected to the workspace, with their health (whether they need reconnecting) and 7-day counts. An account's id is the channelId other tools take. Connecting a new account needs Meta's sign-in in a browser: send the person to ${appUrl("/dashboard?accounts=1")}.`,
+    description: `Instagram accounts and Facebook Pages connected to the workspace, with their health (whether they need reconnecting) and 7-day counts. An account's id is the channelId other tools take. Its setup holds what the person said about it when connecting it (account_type, monetization, goals, as update_account_details takes them) and whether they answered or skipped those questions. Connecting a new account needs Meta's sign-in in a browser: send the person to ${appUrl("/dashboard?accounts=1")}.`,
     annotations: READ,
     input: {},
     run: async (_args, ctx) => {
       const channels = await listChannels(ctx.workspace.id);
       return { accounts: channels.map(toChannelView), connectUrl: appUrl("/dashboard?accounts=1") };
+    },
+  }),
+
+  workspaceTool({
+    name: "update_account_details",
+    title: "Update an account's details",
+    description:
+      "Save what an account is, how it makes money and what it should do first. These are the questions the app asks right after an account is connected, and that Edit details in the account's menu reopens. Answers you leave out keep their saved value; null or an empty list clears one. The goals are the template gallery's goals (list_automation_templates), so use them to pick templates to suggest.",
+    minRole: "ADMIN",
+    annotations: WRITE,
+    input: {
+      channelId,
+      answers: accountAnswersSchema.optional().describe("Only the answers to change."),
+      complete: channelSetupSchema.shape.complete,
+    },
+    run: async (args, ctx) => {
+      const input = channelSetupSchema.parse(compact({ answers: args.answers, complete: args.complete }));
+      return { account: toChannelView(await saveChannelSetup(ctx.workspace.id, args.channelId, input)) };
     },
   }),
 

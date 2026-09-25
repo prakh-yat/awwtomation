@@ -4,11 +4,12 @@
  *
  * The live counter (`Organization.dmsSentThisPeriod`, reserved atomically by
  * lib/billing/usage.ts) is the number the plan limit is enforced against, so
- * the current period always reports it. Past months are rebuilt from
- * DeliveryLog rows with status SENT: the same events that reserve quota:
- * which can differ from the historical counter by a handful of sends that
- * reserved quota and then failed at Meta. Periods are UTC calendar months,
- * matching `currentPeriodStart()`.
+ * the current period always reports it. Past months come from
+ * UsageMonthTotal, written from DeliveryLog before those logs are pruned
+ * (lib/services/retention.ts), or straight from DeliveryLog rows with status
+ * SENT for a month with no total yet. Either can differ from the historical
+ * counter by a handful of sends that reserved quota and then failed at Meta.
+ * Periods are UTC calendar months, matching `currentPeriodStart()`.
  */
 import { type PlanTier, Prisma } from "@prisma/client";
 
@@ -183,9 +184,10 @@ export async function getUsageHistory(organizationId: string, months = USAGE_HIS
   const firstMonth = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() - (span - 1), 1));
   const inOrganization = Prisma.sql`"workspaceId" IN (SELECT "id" FROM "Workspace" WHERE "organizationId" = ${organizationId})`;
 
-  const [usage, workspaces, monthRows, channelRows, automationRows] = await Promise.all([
+  const [usage, workspaces, totals, monthRows, channelRows, automationRows] = await Promise.all([
     getOrganizationUsage(organizationId),
     prisma.workspace.findMany({ where: { organizationId }, select: { id: true, name: true }, orderBy: { createdAt: "asc" } }),
+    prisma.usageMonthTotal.findMany({ where: { organizationId, month: { gte: monthKey(firstMonth) } } }),
     prisma.$queryRaw<MonthRow[]>(Prisma.sql`
       SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
         (COUNT(*) FILTER (WHERE "status" = ${SENT} AND "kind" IN (${DM_KINDS})))::int AS dms_sent,
@@ -213,7 +215,19 @@ export async function getUsageHistory(organizationId: string, months = USAGE_HIS
 
   const limit = usage.dms.limit;
   const currentKey = monthKey(periodStart);
-  const byMonth = new Map(monthRows.map((r) => [r.month, r]));
+  const byMonth = new Map<string, MonthRow>(monthRows.map((r) => [r.month, r]));
+  // A saved total is complete; the logs behind it may already be pruned.
+  for (const t of totals) {
+    if (t.month === currentKey) continue;
+    byMonth.set(t.month, {
+      month: t.month,
+      dms_sent: t.dmsSent,
+      private_replies: t.privateReplies,
+      messages: t.messages,
+      broadcasts: t.broadcasts,
+      public_replies: t.publicReplies,
+    });
+  }
   const monthList: UsageMonth[] = [];
   for (let i = 0; i < span; i++) {
     const date = new Date(Date.UTC(firstMonth.getUTCFullYear(), firstMonth.getUTCMonth() + i, 1));

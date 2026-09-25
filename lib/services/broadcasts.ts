@@ -9,6 +9,12 @@
  * (7 days) is reserved for human replies and is never used here: marketing
  * blasts under that tag are a policy violation.
  *
+ * Sending never loads the whole audience at once. `sendBroadcast` claims the
+ * broadcast and queues a BROADCAST_FANOUT job; that job reads the audience a
+ * page at a time, queues a BROADCAST_SEND per contact inside the window, logs
+ * the rest, and queues the next page. Progress is the counters on the row
+ * (target, sent, failed, skipped), so nothing has to count jobs to report it.
+ *
  * Every function takes `workspaceId` first and scopes each query by it.
  */
 import {
@@ -27,7 +33,7 @@ import { z } from "zod";
 
 import { outboundMessageSchema } from "@/lib/automation/flow-types";
 import { MESSAGING_WINDOW_MS, RATE_LIMIT_MAX_DEFER_MS, recordDeliveryLog, sendToContact } from "@/lib/automation/send";
-import { canUseBroadcasts } from "@/lib/billing/usage";
+import { canUseBroadcasts, checkBroadcastQuota } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { MAX_BUTTON_TEMPLATE_CHARS, MAX_BUTTON_TITLE_CHARS, MAX_BUTTONS, MAX_TEXT_BYTES, messagePreview, utf8Bytes } from "@/lib/meta/messages";
@@ -52,11 +58,15 @@ import { customerReason } from "@/lib/errors/customer-messages";
 export const BROADCAST_DELIVERY_PAGE = 100;
 /** Jobs are staggered so a large audience never slams the per-minute send limit. */
 export const SEND_JOBS_PER_MINUTE = 500;
-/** A SENDING broadcast whose jobs are all gone is finalized after this grace period. */
+/** Contacts one BROADCAST_FANOUT job reads and queues. */
+export const FANOUT_PAGE_SIZE = 1000;
+/** A SENDING broadcast whose counters haven't moved for this long is checked by finalizeStuckBroadcasts. */
 export const STUCK_SENDING_GRACE_MS = 5 * 60_000;
+/** Backoff doubles from a minute, so eight attempts ride out about two hours of database trouble. */
+const FANOUT_MAX_ATTEMPTS = 8;
+const SEND_MAX_ATTEMPTS = 5;
 /** How far in the past a "future" schedule may be (clock skew between browser and server). */
 const SCHEDULE_TOLERANCE_MS = 60_000;
-const DB_CHUNK = 500;
 
 // ───────────────────────── Validation ─────────────────────────
 
@@ -196,9 +206,23 @@ export const broadcastJobPayloadSchema = z.object({
   rateLimitRetries: z.number().int().min(0).optional(),
 });
 
+/** BROADCAST_FANOUT job payload (dedupeKey `broadcast:${broadcastId}:fanout:${cursor ?? "start"}`). */
+export const broadcastFanoutPayloadSchema = z
+  .object({
+    broadcastId: z.string().min(1),
+    /** Id of the last contact on the previous page; null for the first page. */
+    cursor: z.string().min(1).nullable(),
+    /** That contact's createdAt: pages are read in (createdAt, id) order. */
+    cursorCreatedAt: z.string().datetime().nullable(),
+    /** Sends queued by the pages before this one, so the stagger carries on where they left off. */
+    index: z.number().int().min(0),
+  })
+  .refine((p) => (p.cursor === null) === (p.cursorCreatedAt === null), "cursor and cursorCreatedAt go together");
+
 export type CreateBroadcastInput = z.infer<typeof createBroadcastSchema>;
 export type UpdateBroadcastInput = z.infer<typeof updateBroadcastSchema>;
 export type BroadcastJobPayload = z.infer<typeof broadcastJobPayloadSchema>;
+export type BroadcastFanoutPayload = z.infer<typeof broadcastFanoutPayloadSchema>;
 
 // ───────────────────────── Types ─────────────────────────
 
@@ -229,8 +253,13 @@ export type BroadcastStats = {
   /** 0..1 share of the target that has been processed. */
   progress: number;
   byStatus: Partial<Record<DeliveryStatus, number>>;
-  /** BROADCAST_SEND jobs still queued or running for this broadcast. */
-  pendingJobs: number;
+  /**
+   * False while a sending broadcast is still going through its audience:
+   * `target` then counts only the people reached so far, and keeps growing.
+   */
+  audienceComplete: boolean;
+  /** Targeted people still waiting for an outcome while it sends; 0 otherwise. */
+  remaining: number;
 };
 
 export type BroadcastDeliveryEntry = {
@@ -273,13 +302,11 @@ export type BroadcastRow = {
   updatedAt: string;
 };
 
-export type SendBroadcastResult = {
-  broadcast: Broadcast;
-  total: number;
-  eligible: number;
-  skippedWindow: number;
-  enqueued: number;
-};
+/**
+ * The broadcast, now SENDING. Who it reaches is worked out page by page after
+ * this returns, so there are no counts yet: the report fills them in.
+ */
+export type SendBroadcastResult = { broadcast: Broadcast };
 
 export type ProcessDueResult = {
   started: string[];
@@ -348,6 +375,18 @@ async function assertPlanAllowsBroadcasts(workspaceId: string): Promise<void> {
   }
 }
 
+/** One more broadcast this month (sent now, or scheduled for a day this month) must fit the plan. */
+async function assertBroadcastQuota(workspaceId: string, opts: { scheduledFor?: Date; excludeId?: string } = {}): Promise<void> {
+  const quota = await checkBroadcastQuota(workspaceId, opts);
+  if (!quota.ok) {
+    throw new ApiError(
+      402,
+      `Your plan allows ${quota.limit} broadcast${quota.limit === 1 ? "" : "s"} a month and this month's are used. Upgrade, or send it next month.`,
+      "PLAN_LIMIT",
+    );
+  }
+}
+
 async function assertChannel(workspaceId: string, channelId: string): Promise<Pick<Channel, "id" | "status">> {
   const channel = await prisma.channel.findFirst({ where: { id: channelId, workspaceId }, select: { id: true, status: true } });
   if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "CHANNEL_NOT_FOUND");
@@ -404,35 +443,23 @@ export async function estimateAudience(workspaceId: string, channelId: string, a
   return { total, eligible, skippedWindow: total - eligible };
 }
 
-type AudienceContact = { id: string; externalId: string; username: string | null };
+// ───────────────────────── Job keys ─────────────────────────
 
-/** Materialize the audience at send time and split it by the 24h window. */
-async function resolveAudience(
-  workspaceId: string,
-  channel: Pick<Channel, "id" | "externalId">,
-  audience: BroadcastAudience,
-): Promise<{ eligible: AudienceContact[]; outside: AudienceContact[] }> {
-  const now = new Date();
-  const cutoff = windowCutoff(now.getTime()).getTime();
-  const contacts = await prisma.contact.findMany({
-    where: audienceWhere(workspaceId, channel, audience, now),
-    select: {
-      id: true,
-      externalId: true,
-      username: true,
-      conversations: { where: { channelId: channel.id }, select: { lastInboundAt: true }, take: 1 },
-    },
-    orderBy: { lastInteractionAt: "desc" },
-  });
-  const eligible: AudienceContact[] = [];
-  const outside: AudienceContact[] = [];
-  for (const c of contacts) {
-    const last = c.conversations[0]?.lastInboundAt ?? null;
-    const entry = { id: c.id, externalId: c.externalId, username: c.username };
-    if (last && last.getTime() >= cutoff) eligible.push(entry);
-    else outside.push(entry);
-  }
-  return { eligible, outside };
+/** Every BROADCAST_SEND job of a broadcast has a dedupe key starting with this: first sends and rate-limit re-queues alike. */
+function sendJobKeyPrefix(broadcastId: string): string {
+  return `bc:${broadcastId}:`;
+}
+
+function sendJobKey(broadcastId: string, contactId: string): string {
+  return `${sendJobKeyPrefix(broadcastId)}${contactId}`;
+}
+
+function fanoutJobKeyPrefix(broadcastId: string): string {
+  return `broadcast:${broadcastId}:fanout:`;
+}
+
+function fanoutJobKey(broadcastId: string, cursor: string | null): string {
+  return `${fanoutJobKeyPrefix(broadcastId)}${cursor ?? "start"}`;
 }
 
 // ───────────────────────── Reads ─────────────────────────
@@ -464,20 +491,12 @@ export function listBroadcastChannels(workspaceId: string): Promise<BroadcastCha
   });
 }
 
-function broadcastJobsWhere(broadcastId: string, statuses: JobStatus[]): Prisma.JobWhereInput {
-  return {
-    type: JobType.BROADCAST_SEND,
-    status: { in: statuses },
-    payload: { path: ["broadcastId"], equals: broadcastId },
-  };
-}
-
 export async function getBroadcast(workspaceId: string, id: string): Promise<BroadcastDetail | null> {
   const broadcast = await prisma.broadcast.findFirst({ where: { id, workspaceId }, include: { channel: { select: channelSelect } } });
   if (!broadcast) return null;
 
   const logWhere: Prisma.DeliveryLogWhereInput = { broadcastId: id, workspaceId };
-  const [grouped, deliveries, deliveryTotal, pendingJobs] = await Promise.all([
+  const [grouped, deliveries, deliveryTotal] = await Promise.all([
     prisma.deliveryLog.groupBy({ by: ["status"], where: logWhere, _count: { _all: true } }),
     prisma.deliveryLog.findMany({
       where: logWhere,
@@ -493,7 +512,6 @@ export async function getBroadcast(workspaceId: string, id: string): Promise<Bro
       },
     }),
     prisma.deliveryLog.count({ where: logWhere }),
-    prisma.job.count({ where: broadcastJobsWhere(id, [JobStatus.PENDING, JobStatus.PROCESSING]) }),
   ]);
 
   const byStatus: Partial<Record<DeliveryStatus, number>> = {};
@@ -516,7 +534,8 @@ export async function getBroadcast(workspaceId: string, id: string): Promise<Bro
       processed,
       progress: broadcast.targetCount > 0 ? Math.min(1, processed / broadcast.targetCount) : broadcast.status === BroadcastStatus.SENT ? 1 : 0,
       byStatus,
-      pendingJobs,
+      audienceComplete: broadcast.fanoutCompletedAt !== null,
+      remaining: broadcast.status === BroadcastStatus.SENDING ? Math.max(0, broadcast.targetCount - processed) : 0,
     },
     deliveries: deliveries.map(({ errorMessage, ...d }) => ({ ...d, reason: customerReason(d.status, errorMessage) })),
     deliveryTotal,
@@ -528,7 +547,10 @@ export async function getBroadcast(workspaceId: string, id: string): Promise<Bro
 export async function createBroadcast(workspaceId: string, input: CreateBroadcastInput, actorId?: string | null): Promise<Broadcast> {
   await assertPlanAllowsBroadcasts(workspaceId);
   await assertChannel(workspaceId, input.channelId);
-  if (input.scheduledAt) assertFuture(input.scheduledAt);
+  if (input.scheduledAt) {
+    assertFuture(input.scheduledAt);
+    await assertBroadcastQuota(workspaceId, { scheduledFor: input.scheduledAt });
+  }
 
   const broadcast = await prisma.broadcast.create({
     data: {
@@ -553,7 +575,10 @@ export async function updateBroadcast(workspaceId: string, id: string, input: Up
     throw new ApiError(409, `A ${statusLabel(existing.status)} broadcast can't be edited`, "INVALID_STATE");
   }
   if (input.channelId && input.channelId !== existing.channelId) await assertChannel(workspaceId, input.channelId);
-  if (input.scheduledAt) assertFuture(input.scheduledAt);
+  if (input.scheduledAt) {
+    assertFuture(input.scheduledAt);
+    await assertBroadcastQuota(workspaceId, { scheduledFor: input.scheduledAt, excludeId: id });
+  }
 
   const data: Prisma.BroadcastUncheckedUpdateManyInput = {};
   if (input.name !== undefined) data.name = input.name;
@@ -589,7 +614,12 @@ export async function deleteBroadcast(workspaceId: string, id: string, actorId?:
   await recordAudit({ workspaceId, userId: actorId, action: "broadcast.delete", targetType: "broadcast", targetId: id });
 }
 
-/** SCHEDULED/SENDING → CANCELLED. Queued jobs are cancelled; running ones notice the status and skip. */
+/**
+ * SCHEDULED/SENDING → CANCELLED. Queued sends are cancelled; running ones
+ * notice the status and skip, and so does the fan-out at its next page.
+ * `cancelledJobs` only counts sends already queued: people the fan-out had
+ * not reached yet were never queued.
+ */
 export async function cancelBroadcast(workspaceId: string, id: string, actorId?: string | null): Promise<{ broadcast: Broadcast; cancelledJobs: number }> {
   const res = await prisma.broadcast.updateMany({
     where: { id, workspaceId, status: { in: [BroadcastStatus.SCHEDULED, BroadcastStatus.SENDING] } },
@@ -601,7 +631,7 @@ export async function cancelBroadcast(workspaceId: string, id: string, actorId?:
     throw new ApiError(409, `A ${statusLabel(existing.status)} broadcast can't be cancelled`, "INVALID_STATE");
   }
   const jobs = await prisma.job.updateMany({
-    where: { ...broadcastJobsWhere(id, [JobStatus.PENDING]), workspaceId },
+    where: { workspaceId, type: JobType.BROADCAST_SEND, status: JobStatus.PENDING, dedupeKey: { startsWith: sendJobKeyPrefix(id) } },
     data: { status: JobStatus.CANCELLED, lockedAt: null, lockedBy: null },
   });
   const broadcast = await prisma.broadcast.findUniqueOrThrow({ where: { id } });
@@ -614,15 +644,19 @@ export async function cancelBroadcast(workspaceId: string, id: string, actorId?:
 
 type CounterField = "sentCount" | "failedCount" | "skippedCount";
 
-type Counters = Pick<Broadcast, "status" | "targetCount" | "sentCount" | "failedCount" | "skippedCount">;
+const counterSelect = { status: true, targetCount: true, sentCount: true, failedCount: true, skippedCount: true, fanoutCompletedAt: true } as const;
+
+type Counters = Pick<Broadcast, "status" | "targetCount" | "sentCount" | "failedCount" | "skippedCount" | "fanoutCompletedAt">;
 
 /**
- * Flip SENDING → SENT/FAILED once every targeted contact has an outcome. The
+ * Flip SENDING → SENT/FAILED once the whole audience is queued and every
+ * targeted contact has an outcome. Until the fan-out's last page the target
+ * only covers the pages read so far, so it can't be complete yet. The
  * status-guarded updateMany makes this safe to call from every job: exactly
  * one caller wins the transition.
  */
 async function maybeComplete(id: string, counters: Counters): Promise<boolean> {
-  if (counters.status !== BroadcastStatus.SENDING) return false;
+  if (counters.status !== BroadcastStatus.SENDING || !counters.fanoutCompletedAt) return false;
   if (counters.sentCount + counters.failedCount + counters.skippedCount < counters.targetCount) return false;
   const status = counters.sentCount === 0 && counters.failedCount > 0 ? BroadcastStatus.FAILED : BroadcastStatus.SENT;
   const res = await prisma.broadcast.updateMany({ where: { id, status: BroadcastStatus.SENDING }, data: { status, completedAt: new Date() } });
@@ -635,11 +669,7 @@ async function maybeComplete(id: string, counters: Counters): Promise<boolean> {
 async function bumpCounter(id: string, field: CounterField): Promise<void> {
   const data: Prisma.BroadcastUpdateInput =
     field === "sentCount" ? { sentCount: { increment: 1 } } : field === "failedCount" ? { failedCount: { increment: 1 } } : { skippedCount: { increment: 1 } };
-  const updated = await prisma.broadcast.update({
-    where: { id },
-    data,
-    select: { status: true, targetCount: true, sentCount: true, failedCount: true, skippedCount: true },
-  });
+  const updated = await prisma.broadcast.update({ where: { id }, data, select: counterSelect });
   await maybeComplete(id, updated);
 }
 
@@ -649,62 +679,12 @@ function counterFor(status: DeliveryStatus): CounterField {
   return "skippedCount";
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-async function createSkippedWindowLogs(broadcast: Broadcast, channel: Channel, contacts: AudienceContact[], preview: string): Promise<void> {
-  for (const part of chunk(contacts, DB_CHUNK)) {
-    await prisma.deliveryLog.createMany({
-      data: part.map((c) => ({
-        workspaceId: broadcast.workspaceId,
-        channelId: channel.id,
-        broadcastId: broadcast.id,
-        contactId: c.id,
-        kind: DeliveryKind.BROADCAST,
-        status: DeliveryStatus.SKIPPED_WINDOW,
-        recipientExternalId: c.externalId,
-        recipientUsername: c.username,
-        messagePreview: preview,
-        errorMessage: "Outside the 24h messaging window at send time",
-      })),
-    });
-  }
-}
-
-/** One job per eligible contact, staggered at SEND_JOBS_PER_MINUTE. `skipDuplicates` makes a retried send idempotent. */
-async function enqueueSendJobs(broadcast: Broadcast, contacts: AudienceContact[]): Promise<number> {
-  const now = Date.now();
-  let enqueued = 0;
-  let index = 0;
-  for (const part of chunk(contacts, DB_CHUNK)) {
-    const res = await prisma.job.createMany({
-      data: part.map((c) => {
-        const minute = Math.floor(index++ / SEND_JOBS_PER_MINUTE);
-        const payload: BroadcastJobPayload = { broadcastId: broadcast.id, contactId: c.id };
-        return {
-          type: JobType.BROADCAST_SEND,
-          workspaceId: broadcast.workspaceId,
-          payload,
-          runAt: new Date(now + minute * 60_000),
-          dedupeKey: `bc:${broadcast.id}:${c.id}`,
-          maxAttempts: 5,
-        };
-      }),
-      skipDuplicates: true,
-    });
-    enqueued += res.count;
-  }
-  return enqueued;
-}
-
 /**
- * DRAFT/SCHEDULED → SENDING. Freezes the audience: everyone inside the 24h
- * window gets a BROADCAST_SEND job, everyone else a SKIPPED_WINDOW log and a
- * place in `skippedCount`. `targetCount` is the whole audience so the report
- * always adds up (sent + failed + skipped = target).
+ * DRAFT/SCHEDULED → SENDING, and no more: the audience is read by the
+ * BROADCAST_FANOUT job queued here, a page at a time, so a large one never has
+ * to fit in one request. The claim and the job are written together, so a
+ * broadcast is never left SENDING with nothing to send it. Counters start at
+ * zero and grow as the pages are read (see fanOutBroadcast).
  */
 export async function sendBroadcast(workspaceId: string, id: string, actorId: string | null): Promise<SendBroadcastResult> {
   const broadcast = await prisma.broadcast.findFirst({ where: { id, workspaceId } });
@@ -713,56 +693,222 @@ export async function sendBroadcast(workspaceId: string, id: string, actorId: st
     throw new ApiError(409, `This broadcast is already ${statusLabel(broadcast.status)}`, "INVALID_STATE");
   }
   await assertPlanAllowsBroadcasts(workspaceId);
+  await assertBroadcastQuota(workspaceId);
 
-  const channel = await prisma.channel.findFirst({ where: { id: broadcast.channelId, workspaceId } });
+  const channel = await prisma.channel.findFirst({ where: { id: broadcast.channelId, workspaceId }, select: { id: true, status: true } });
   if (!channel) throw new ApiError(409, "The account this broadcast sends from is no longer connected", "CHANNEL_NOT_FOUND");
   if (channel.status !== ChannelStatus.ACTIVE) throw new ApiError(409, "Reconnect the channel before sending", "CHANNEL_INACTIVE");
 
-  const message = parseBroadcastMessage(broadcast.message);
-  if (!message) throw new ApiError(422, "The message is empty. Add text or an image.", "INVALID_MESSAGE");
+  if (!parseBroadcastMessage(broadcast.message)) throw new ApiError(422, "The message is empty. Add text or an image.", "INVALID_MESSAGE");
 
-  const audience = parseBroadcastAudience(broadcast.audience);
-  const { eligible, outside } = await resolveAudience(workspaceId, channel, audience);
+  const payload: BroadcastFanoutPayload = { broadcastId: id, cursor: null, cursorCreatedAt: null, index: 0 };
+  const claimed = await prisma.$transaction(async (tx) => {
+    const res = await tx.broadcast.updateMany({
+      where: { id, workspaceId, status: { in: [BroadcastStatus.DRAFT, BroadcastStatus.SCHEDULED] } },
+      data: {
+        status: BroadcastStatus.SENDING,
+        startedAt: new Date(),
+        completedAt: null,
+        fanoutCompletedAt: null,
+        targetCount: 0,
+        sentCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+      },
+    });
+    if (res.count === 0) return false;
+    await tx.job.create({
+      data: { type: JobType.BROADCAST_FANOUT, workspaceId, payload, dedupeKey: fanoutJobKey(id, null), maxAttempts: FANOUT_MAX_ATTEMPTS },
+    });
+    return true;
+  });
+  if (!claimed) throw new ApiError(409, "This broadcast is already being sent", "INVALID_STATE");
+
+  await recordAudit({ workspaceId, userId: actorId, action: "broadcast.send", targetType: "broadcast", targetId: id });
+  logger.info("broadcast.started", { broadcastId: id, workspaceId, channelId: channel.id, scheduled: actorId === null });
+  return { broadcast: await prisma.broadcast.findUniqueOrThrow({ where: { id } }) };
+}
+
+type AudienceContact = { id: string; externalId: string; username: string | null };
+
+/**
+ * BROADCAST_FANOUT job handler (wired in lib/queue/handlers/broadcast-fanout.ts):
+ * one page of the audience, the contacts after `cursor`. Everyone inside the
+ * 24h window gets a BROADCAST_SEND job in their stagger slot, everyone else a
+ * SKIPPED_WINDOW log, and the target grows by the page. The same transaction
+ * queues the next page, or on the last page sets `fanoutCompletedAt`, which is
+ * what lets the broadcast complete. A broadcast that is no longer SENDING
+ * (cancelled) stops here.
+ *
+ * Pages follow (createdAt, id) rather than id alone: the (workspaceId,
+ * createdAt) index serves that order, so a page reads about a page of rows,
+ * where id order would read through the whole workspace for every page.
+ */
+export async function fanOutBroadcast(job: Job): Promise<void> {
+  const parsed = broadcastFanoutPayloadSchema.safeParse(job.payload);
+  if (!parsed.success) {
+    logger.error("broadcast.fanout_bad_payload", { jobId: job.id, issues: parsed.error.issues });
+    return;
+  }
+  const { broadcastId, cursor, cursorCreatedAt, index } = parsed.data;
+  const after = cursor && cursorCreatedAt ? { id: cursor, createdAt: new Date(cursorCreatedAt) } : null;
+
+  const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  if (!broadcast) {
+    logger.warn("broadcast.fanout_orphaned", { jobId: job.id, broadcastId });
+    return;
+  }
+  if (broadcast.status !== BroadcastStatus.SENDING || broadcast.fanoutCompletedAt) return;
+
+  // Scoped by the broadcast's workspace: never by ids from the payload alone.
+  const channel = await prisma.channel.findFirst({
+    where: { id: broadcast.channelId, workspaceId: broadcast.workspaceId },
+    select: { id: true, externalId: true },
+  });
+  // Removing an account removes its broadcasts, so only a race ends up here.
+  if (!channel) return;
+
+  // Membership is judged as of the moment it started: nobody who arrived since
+  // is added, and "active in the last N days" counts back from then, so every
+  // page answers the question the estimate answered.
+  const startedAt = broadcast.startedAt ?? broadcast.createdAt;
+  const rows = await prisma.contact.findMany({
+    where: {
+      AND: [
+        audienceWhere(broadcast.workspaceId, channel, parseBroadcastAudience(broadcast.audience), startedAt),
+        { createdAt: { lte: startedAt } },
+        // (createdAt, id) > (after.createdAt, after.id), with the first half on its own so the index can range-scan.
+        ...(after ? [{ createdAt: { gte: after.createdAt } }, { OR: [{ createdAt: { gt: after.createdAt } }, { id: { gt: after.id } }] }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      externalId: true,
+      username: true,
+      createdAt: true,
+      conversations: { where: { channelId: channel.id }, select: { lastInboundAt: true }, take: 1 },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: FANOUT_PAGE_SIZE + 1,
+  });
+  const page = rows.slice(0, FANOUT_PAGE_SIZE);
+  const next = rows.length > FANOUT_PAGE_SIZE ? page[page.length - 1] : null;
+
+  // The window is judged as each page is queued, the closer guess of who can
+  // still be reached when their send runs (which checks it again).
+  const cutoff = windowCutoff().getTime();
+  const eligible: AudienceContact[] = [];
+  const outside: AudienceContact[] = [];
+  for (const c of page) {
+    const last = c.conversations[0]?.lastInboundAt ?? null;
+    const entry = { id: c.id, externalId: c.externalId, username: c.username };
+    if (last && last.getTime() >= cutoff) eligible.push(entry);
+    else outside.push(entry);
+  }
+
+  // A page can run twice (retried after its transaction committed), and nobody
+  // may be counted twice. Whoever already has a send queued or an outcome
+  // logged is left out: DeliveryLog has no unique key for skipDuplicates to use.
+  const done = new Set<string>();
+  if (page.length > 0) {
+    const ids = page.map((c) => c.id);
+    const prefix = sendJobKeyPrefix(broadcastId);
+    const [queued, logged] = await Promise.all([
+      prisma.job.findMany({ where: { dedupeKey: { in: ids.map((contactId) => sendJobKey(broadcastId, contactId)) } }, select: { dedupeKey: true } }),
+      prisma.deliveryLog.findMany({ where: { broadcastId, contactId: { in: ids } }, select: { contactId: true } }),
+    ]);
+    for (const j of queued) if (j.dedupeKey) done.add(j.dedupeKey.slice(prefix.length));
+    for (const l of logged) if (l.contactId) done.add(l.contactId);
+  }
+  // Slots follow the position in the page's eligible list, so a rerun puts everyone in the same minute.
+  const sends = eligible.flatMap((contact, i) => (done.has(contact.id) ? [] : [{ contact, slot: index + i }]));
+  const skips = outside.filter((c) => !done.has(c.id));
+
+  const message = parseBroadcastMessage(broadcast.message);
+  const preview = message ? messagePreview(message) : null;
+  const start = startedAt.getTime();
+  const lastPage = next === null;
   const now = new Date();
 
-  const claimed = await prisma.broadcast.updateMany({
-    where: { id, workspaceId, status: { in: [BroadcastStatus.DRAFT, BroadcastStatus.SCHEDULED] } },
-    data: {
-      status: BroadcastStatus.SENDING,
-      startedAt: now,
-      targetCount: eligible.length + outside.length,
-      sentCount: 0,
-      failedCount: 0,
-      skippedCount: outside.length,
+  const written = await prisma.$transaction(
+    async (tx) => {
+      // Goes first because it locks the row: a cancel landing meanwhile either waits for this page or stops it here.
+      const live = await tx.broadcast.updateMany({
+        where: { id: broadcastId, status: BroadcastStatus.SENDING, fanoutCompletedAt: null },
+        data: {
+          targetCount: { increment: sends.length + skips.length },
+          skippedCount: { increment: skips.length },
+          ...(lastPage ? { fanoutCompletedAt: now } : {}),
+        },
+      });
+      if (live.count === 0) return false;
+      if (skips.length > 0) {
+        await tx.deliveryLog.createMany({
+          data: skips.map((c) => ({
+            workspaceId: broadcast.workspaceId,
+            channelId: channel.id,
+            broadcastId,
+            contactId: c.id,
+            kind: DeliveryKind.BROADCAST,
+            status: DeliveryStatus.SKIPPED_WINDOW,
+            recipientExternalId: c.externalId,
+            recipientUsername: c.username,
+            messagePreview: preview,
+            errorMessage: "Outside the 24h messaging window at send time",
+          })),
+        });
+      }
+      if (sends.length > 0) {
+        await tx.job.createMany({
+          data: sends.map(({ contact, slot }) => {
+            const payload: BroadcastJobPayload = { broadcastId, contactId: contact.id };
+            return {
+              type: JobType.BROADCAST_SEND,
+              workspaceId: broadcast.workspaceId,
+              payload,
+              // The stagger counts from the start of the broadcast, across pages. A slot already past just runs now.
+              runAt: new Date(start + Math.floor(slot / SEND_JOBS_PER_MINUTE) * 60_000),
+              dedupeKey: sendJobKey(broadcastId, contact.id),
+              maxAttempts: SEND_MAX_ATTEMPTS,
+            };
+          }),
+          skipDuplicates: true,
+        });
+      }
+      if (next) {
+        const payload: BroadcastFanoutPayload = {
+          broadcastId,
+          cursor: next.id,
+          cursorCreatedAt: next.createdAt.toISOString(),
+          index: index + eligible.length,
+        };
+        await tx.job.createMany({
+          data: [
+            {
+              type: JobType.BROADCAST_FANOUT,
+              workspaceId: broadcast.workspaceId,
+              payload,
+              dedupeKey: fanoutJobKey(broadcastId, next.id),
+              maxAttempts: FANOUT_MAX_ATTEMPTS,
+            },
+          ],
+          skipDuplicates: true,
+        });
+      }
+      return true;
     },
-  });
-  if (claimed.count === 0) throw new ApiError(409, "This broadcast is already being sent", "INVALID_STATE");
+    { maxWait: 10_000, timeout: 30_000 },
+  );
+  if (!written) return;
 
-  const preview = messagePreview(message);
-  await createSkippedWindowLogs(broadcast, channel, outside, preview);
-  const enqueued = await enqueueSendJobs(broadcast, eligible);
+  logger.debug("broadcast.fanout_page", { broadcastId, queued: sends.length, skippedWindow: skips.length, lastPage });
+  if (!lastPage) return;
 
-  // Nothing to send (or the worker already finished everything): close it out now.
-  const fresh = await prisma.broadcast.findUniqueOrThrow({ where: { id } });
-  await maybeComplete(id, fresh);
-
-  await recordAudit({
-    workspaceId,
-    userId: actorId,
-    action: "broadcast.send",
-    targetType: "broadcast",
-    targetId: id,
-    metadata: { total: fresh.targetCount, eligible: eligible.length, skippedWindow: outside.length, enqueued },
-  });
-  logger.info("broadcast.started", { broadcastId: id, workspaceId, channelId: channel.id, total: fresh.targetCount, eligible: eligible.length, skippedWindow: outside.length, enqueued });
-
-  return {
-    broadcast: await prisma.broadcast.findUniqueOrThrow({ where: { id } }),
-    total: fresh.targetCount,
-    eligible: eligible.length,
-    skippedWindow: outside.length,
-    enqueued,
-  };
+  const counters = await prisma.broadcast.findUnique({ where: { id: broadcastId }, select: counterSelect });
+  if (!counters) return;
+  logger.info("broadcast.fanout_done", { broadcastId, target: counters.targetCount });
+  // Everyone may have an outcome already: all outside the window, or the sends finished before the last page.
+  await maybeComplete(broadcastId, counters);
 }
 
 /**
@@ -851,7 +997,8 @@ export async function sendBroadcastMessage(job: Job): Promise<void> {
         workspaceId: broadcast.workspaceId,
         payload,
         runAt,
-        dedupeKey: `bc:${broadcastId}:${contactId}:rl:${next}`,
+        dedupeKey: `${sendJobKey(broadcastId, contactId)}:rl:${next}`,
+        maxAttempts: SEND_MAX_ATTEMPTS,
       });
       logger.info("broadcast.deferred_rate_limit", { broadcastId, contactId, retries: next, runAt: runAt.toISOString() });
       return;
@@ -878,42 +1025,85 @@ export async function sendBroadcastMessage(job: Job): Promise<void> {
 // ───────────────────────── Scheduling ─────────────────────────
 
 /**
- * SENDING broadcasts with no queued/running jobs left (jobs exhausted their
- * attempts) would otherwise never reach SENT. Any gap between processed and
- * target is attributed to `failedCount`: those jobs did fail.
+ * Whether any job of this type whose dedupe key starts with `keyPrefix` is
+ * still waiting or running. Only asked about broadcasts that look stuck, and
+ * it stops at the first match within the live part of the queue.
+ */
+async function hasLiveJob(type: JobType, keyPrefix: string): Promise<boolean> {
+  const job = await prisma.job.findFirst({
+    where: { type, status: { in: [JobStatus.PENDING, JobStatus.PROCESSING] }, dedupeKey: { startsWith: keyPrefix } },
+    select: { id: true },
+  });
+  return job !== null;
+}
+
+/**
+ * The fan-out stopped before its last page and nothing will pick it up again
+ * (its job ran out of attempts). Stop adding people: whoever was queued still
+ * gets it and completes the broadcast. With nobody queued it never went out,
+ * so it is FAILED.
+ */
+async function closeAbandonedFanout(id: string, targetCount: number, now: Date): Promise<boolean> {
+  if (targetCount === 0) {
+    const res = await prisma.broadcast.updateMany({
+      where: { id, status: BroadcastStatus.SENDING, fanoutCompletedAt: null, targetCount: 0 },
+      data: { status: BroadcastStatus.FAILED, fanoutCompletedAt: now, completedAt: now },
+    });
+    if (res.count > 0) logger.error("broadcast.fanout_abandoned", { broadcastId: id, queued: 0 });
+    return res.count > 0;
+  }
+  const res = await prisma.broadcast.updateMany({
+    where: { id, status: BroadcastStatus.SENDING, fanoutCompletedAt: null },
+    data: { fanoutCompletedAt: now },
+  });
+  if (res.count === 0) return false;
+  logger.error("broadcast.fanout_abandoned", { broadcastId: id, queued: targetCount });
+  const counters = await prisma.broadcast.findUnique({ where: { id }, select: counterSelect });
+  return counters ? maybeComplete(id, counters) : false;
+}
+
+/**
+ * The safety net behind maybeComplete, for SENDING broadcasts whose counters
+ * haven't moved for STUCK_SENDING_GRACE_MS. Anything with a job still waiting
+ * is left alone, so after a worker outage the queue carries on where it was.
+ * Otherwise: a fan-out that died is closed out; a broadcast whose contacts
+ * all have an outcome but whose completion was missed is completed; and
+ * contacts still without an outcome once none of the sends is left (they ran
+ * out of attempts) are counted as failed, because they did fail.
  */
 async function finalizeStuckBroadcasts(now: Date): Promise<string[]> {
   const candidates = await prisma.broadcast.findMany({
-    where: { status: BroadcastStatus.SENDING, startedAt: { lt: new Date(now.getTime() - STUCK_SENDING_GRACE_MS) } },
-    select: { id: true, targetCount: true, sentCount: true, failedCount: true, skippedCount: true, status: true },
+    where: { status: BroadcastStatus.SENDING, updatedAt: { lt: new Date(now.getTime() - STUCK_SENDING_GRACE_MS) } },
+    select: { id: true, ...counterSelect },
+    orderBy: { updatedAt: "asc" },
     take: 50,
   });
   const finalized: string[] = [];
   for (const b of candidates) {
-    const remaining = await prisma.job.count({ where: broadcastJobsWhere(b.id, [JobStatus.PENDING, JobStatus.PROCESSING]) });
-    if (remaining > 0) continue;
-    const gap = Math.max(0, b.targetCount - (b.sentCount + b.failedCount + b.skippedCount));
-    const counters: Counters = gap > 0
-      ? await prisma.broadcast.update({
-          where: { id: b.id },
-          data: { failedCount: { increment: gap } },
-          select: { status: true, targetCount: true, sentCount: true, failedCount: true, skippedCount: true },
-        })
-      : b;
+    if (!b.fanoutCompletedAt) {
+      if (await hasLiveJob(JobType.BROADCAST_FANOUT, fanoutJobKeyPrefix(b.id))) continue;
+      if (await closeAbandonedFanout(b.id, b.targetCount, now)) finalized.push(b.id);
+      continue;
+    }
+    const gap = b.targetCount - (b.sentCount + b.failedCount + b.skippedCount);
+    let counters: Counters = b;
+    if (gap > 0) {
+      if (await hasLiveJob(JobType.BROADCAST_SEND, sendJobKeyPrefix(b.id))) continue;
+      counters = await prisma.broadcast.update({ where: { id: b.id }, data: { failedCount: { increment: gap } }, select: counterSelect });
+    }
     if (await maybeComplete(b.id, counters)) {
       finalized.push(b.id);
-      logger.warn("broadcast.finalized_stuck", { broadcastId: b.id, attributedFailures: gap });
+      if (gap > 0) logger.warn("broadcast.finalized_stuck", { broadcastId: b.id, attributedFailures: gap });
     }
   }
   return finalized;
 }
 
 /**
- * Starts every SCHEDULED broadcast whose time has come, then finalizes stuck
- * ones. Idempotent and safe to run concurrently (the SENDING claim is atomic).
- *
- * Call sites: `worker/index.ts` should schedule this every ~30s (foundation-meta
- * lane); until then `POST /api/broadcasts/process-due` (CRON_SECRET) does it.
+ * Starts every SCHEDULED broadcast whose time has come (the same path as
+ * sending one now), then finalizes stuck ones. Idempotent and safe to run
+ * concurrently (the SENDING claim is atomic). The worker runs it every
+ * minute, and so does `/api/cron/tick` for deployments without one.
  */
 export async function processDueBroadcasts(now = new Date()): Promise<ProcessDueResult> {
   const due = await prisma.broadcast.findMany({

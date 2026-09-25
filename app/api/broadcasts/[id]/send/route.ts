@@ -12,11 +12,13 @@ type Params = { id: string };
 const SEND_LIMIT_PER_MINUTE = 10;
 
 /**
- * POST /api/broadcasts/[id]/send → { broadcast, total, eligible, skippedWindow, enqueued }
- * DRAFT/SCHEDULED → SENDING. 402 PLAN_LIMIT, 409 INVALID_STATE / CHANNEL_INACTIVE, 429 RATE_LIMITED.
+ * POST /api/broadcasts/[id]/send → { broadcast } (status SENDING)
+ * DRAFT/SCHEDULED → SENDING. Answers before the audience is counted: the
+ * counts arrive on the broadcast as it goes out (GET /api/broadcasts/[id]).
+ * 402 PLAN_LIMIT, 409 INVALID_STATE / CHANNEL_INACTIVE, 429 RATE_LIMITED.
  */
 export const POST = withWorkspace<Params>(async (_req, ctx, { params }) => {
-  assertRateLimit("broadcast_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+  await assertRateLimit("broadcast_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   const { id } = await params;
   const result = await sendBroadcast(ctx.workspace.id, id, ctx.user.id);
   return NextResponse.json(result);

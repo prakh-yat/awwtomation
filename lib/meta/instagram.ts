@@ -202,35 +202,48 @@ function toComment(raw: RawComment, mediaId: string, parentId?: string): Platfor
   };
 }
 
+/** The comments edge returns at most 50 per call. */
+const COMMENT_PAGE_SIZE = 50;
+const MAX_COMMENT_PAGES = 10;
+
 /**
- * Top-level comments plus their (first page of) replies, flattened. Filtered
- * client-side by `since` because the comments edge has no reliable `since`.
+ * Top-level comments plus their (first page of) replies, flattened, newest
+ * first, none older than `since`.
+ *
+ * The edge can't filter by time, but it returns top-level comments newest
+ * first (Graph API 3.2 and later), so paging stops at the first page whose
+ * last, oldest comment is older than `since`: every page after it is older
+ * still. A reply comes with its parent, so a new reply under a comment on
+ * one of those later pages is left to the webhook.
  */
 export async function getInstagramMediaComments(
   token: string,
   mediaId: string,
-  opts: { since?: Date; limit?: number } = {},
+  opts: { since?: Date; limit?: number; onUsage?: (percent: number) => void } = {},
 ): Promise<PlatformComment[]> {
   const limit = opts.limit ?? 200;
+  const since = opts.since?.getTime();
   const out: PlatformComment[] = [];
   let after: string | undefined;
-  for (let page = 0; page < 10 && out.length < limit * 2; page++) {
+  for (let page = 0; page < MAX_COMMENT_PAGES && out.length < limit * 2; page++) {
     const res = await metaFetch<GraphList<RawComment>>(
       graphUrl(IG, `/${mediaId}/comments`, {
         fields: "id,text,timestamp,from{id,username},replies{id,text,timestamp,from{id,username}}",
-        limit: 50,
+        limit: COMMENT_PAGE_SIZE,
         after,
       }),
-      { token },
+      { token, onUsage: opts.onUsage },
     );
-    for (const c of res.data ?? []) {
+    const data = res.data ?? [];
+    for (const c of data) {
       out.push(toComment(c, mediaId));
       for (const r of c.replies?.data ?? []) out.push(toComment(r, mediaId, String(c.id)));
     }
+    const oldest = parseGraphDate(data[data.length - 1]?.timestamp);
+    if (since !== undefined && oldest && oldest.getTime() < since) break;
     after = res.paging?.next ? res.paging.cursors?.after : undefined;
     if (!after) break;
   }
-  const since = opts.since?.getTime();
   return out
     .filter((c) => since === undefined || c.timestamp.getTime() >= since)
     .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())

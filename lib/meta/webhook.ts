@@ -42,14 +42,31 @@ function idOf(value: unknown): string | undefined {
   return isRec(value) ? str(value.id) : undefined;
 }
 
+/**
+ * Null for a change that is nothing to us: a Page's likes, reactions, shares
+ * and posts, and any edit, removal or hide of a comment, which arrives under
+ * the id of the comment it changes and is not a new comment to reply to.
+ * Fields we do not handle come back as "unknown".
+ */
 function normalizeChange(platform: ChannelPlatform, entryId: string, entryTime: Date, change: unknown): NormalizedEvent | null {
   if (!isRec(change)) return null;
   const field = str(change.field) ?? "";
   const value = change.value;
   const unknown: NormalizedEvent = { kind: "unknown", platform, channelExternalId: entryId, raw: change };
+
+  if (platform === "FACEBOOK" && field === "feed") {
+    // Everything that happens on the Page arrives through `feed`; only a new comment is ours.
+    if (!isRec(value) || value.item !== "comment" || value.verb !== "add") return null;
+    return facebookComment(platform, entryId, entryTime, change, value) ?? unknown;
+  }
+
   if (!isRec(value)) return unknown;
 
   if (platform === "INSTAGRAM" && (field === "comments" || field === "live_comments")) {
+    // Instagram sends a new comment with no verb at all. Should one ever carry a verb, anything but "add" (Facebook's
+    // "edited", "remove", "hide") is a change to a comment already there.
+    const verb = str(value.verb);
+    if (verb && verb !== "add") return null;
     const commentId = str(value.id);
     const mediaId = idOf(value.media);
     const fromId = idOf(value.from);
@@ -68,31 +85,30 @@ function normalizeChange(platform: ChannelPlatform, entryId: string, entryTime: 
     };
   }
 
-  if (platform === "FACEBOOK" && field === "feed") {
-    // Only new comments matter; edits, removals, likes, posts, shares are ignored.
-    if (value.item !== "comment" || value.verb !== "add") return { kind: "unknown", platform, channelExternalId: entryId, raw: change };
-    const commentId = str(value.comment_id);
-    const postId = str(value.post_id);
-    if (!commentId || !postId) return unknown;
-    const parentId = str(value.parent_id);
-    // `from` may be absent (users who haven't authorized the app); the engine handles that.
-    const from = isRec(value.from) ? value.from : undefined;
-    return {
-      kind: "comment",
-      platform,
-      channelExternalId: entryId,
-      commentId,
-      mediaId: postId,
-      // Facebook sets parent_id = post_id for top-level comments.
-      parentCommentId: parentId && parentId !== postId ? parentId : undefined,
-      text: str(value.message) ?? "",
-      from: { id: (from && str(from.id)) ?? "", username: from ? str(from.name) : undefined },
-      timestamp: toDate(value.created_time) ?? entryTime,
-      raw: change,
-    };
-  }
-
   return unknown;
+}
+
+/** A `feed` change already known to be a new comment; null when it lacks the ids a reply needs. */
+function facebookComment(platform: ChannelPlatform, entryId: string, entryTime: Date, change: Rec, value: Rec): NormalizedEvent | null {
+  const commentId = str(value.comment_id);
+  const postId = str(value.post_id);
+  if (!commentId || !postId) return null;
+  const parentId = str(value.parent_id);
+  // `from` may be absent (users who haven't authorized the app); the engine handles that.
+  const from = isRec(value.from) ? value.from : undefined;
+  return {
+    kind: "comment",
+    platform,
+    channelExternalId: entryId,
+    commentId,
+    mediaId: postId,
+    // Facebook sets parent_id = post_id for top-level comments.
+    parentCommentId: parentId && parentId !== postId ? parentId : undefined,
+    text: str(value.message) ?? "",
+    from: { id: (from && str(from.id)) ?? "", username: from ? str(from.name) : undefined },
+    timestamp: toDate(value.created_time) ?? entryTime,
+    raw: change,
+  };
 }
 
 function normalizeMessaging(platform: ChannelPlatform, entryId: string, item: unknown): NormalizedEvent | null {
@@ -106,6 +122,8 @@ function normalizeMessaging(platform: ChannelPlatform, entryId: string, item: un
     const message = item.message;
     const messageId = str(message.mid);
     if (!messageId) return { kind: "unknown", platform, channelExternalId: entryId, raw: item };
+    // An unsent message comes back under its own mid with `is_deleted`: nothing new was said.
+    if (message.is_deleted === true) return null;
     const replyTo = isRec(message.reply_to) ? message.reply_to : undefined;
     const story = replyTo && isRec(replyTo.story) ? replyTo.story : undefined;
     const quickReply = isRec(message.quick_reply) ? str(message.quick_reply.payload) : undefined;

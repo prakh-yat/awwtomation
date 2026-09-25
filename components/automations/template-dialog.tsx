@@ -153,6 +153,9 @@ export interface TemplateDialogProps {
   onOpenChange: (open: boolean) => void;
   /** From /automations?template=<id>, so an old deep link still starts that template. */
   autoTemplateId?: string;
+  /** The goal filter and platform to open on (an account's first goal, after connecting it). */
+  autoGoal?: TemplateGoal;
+  autoPlatform?: TemplatePlatform;
 }
 
 /**
@@ -163,7 +166,7 @@ export interface TemplateDialogProps {
  * or Messenger. Goal and trigger chips narrow it from there, together with the
  * search box.
  */
-export function TemplateDialog({ templates, channels, open, onOpenChange, autoTemplateId }: TemplateDialogProps) {
+export function TemplateDialog({ templates, channels, open, onOpenChange, autoTemplateId, autoGoal, autoPlatform }: TemplateDialogProps) {
   const router = useRouter();
 
   const available = React.useMemo(() => {
@@ -173,9 +176,9 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
   }, [channels]);
 
   const [platform, setPlatform] = React.useState<TemplatePlatform>(() =>
-    channels[0] ? channelPlatform(channels[0]) : "INSTAGRAM",
+    autoPlatform ?? (channels[0] ? channelPlatform(channels[0]) : "INSTAGRAM"),
   );
-  const [goal, setGoal] = React.useState<TemplateGoal | null>(null);
+  const [goal, setGoal] = React.useState<TemplateGoal | null>(autoGoal ?? null);
   const [trigger, setTrigger] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [pending, setPending] = React.useState<string | null>(null);
@@ -183,15 +186,17 @@ export function TemplateDialog({ templates, channels, open, onOpenChange, autoTe
   const [pickFor, setPickFor] = React.useState<string | null>(null);
   const [channelId, setChannelId] = React.useState("");
 
-  // Reopening should not resume someone else's half-finished search.
+  // Reopening should not resume someone else's half-finished search; a link
+  // that names a goal opens on it, on the platform it names.
   React.useEffect(() => {
     if (!open) return;
-    setGoal(null);
+    if (autoPlatform) setPlatform(autoPlatform);
+    setGoal(autoGoal ?? null);
     setTrigger(null);
     setQuery("");
     setPending(null);
     setPickFor(null);
-  }, [open]);
+  }, [open, autoGoal, autoPlatform]);
 
   const forPlatform = React.useMemo(() => templates.filter((t) => t.platform === platform), [templates, platform]);
 

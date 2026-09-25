@@ -9,6 +9,7 @@ import {
   annualSavingsPercent,
   type BillingIntervalId,
   formatUsd,
+  historyLabel,
   intervalSuffix,
   monthlyEquivalentCents,
   PLANS,
@@ -34,8 +35,10 @@ export function OrderSummary({
     `${plan.channels} connected account${plan.channels === 1 ? "" : "s"}`,
     `${formatNumber(plan.automations)} automations`,
     `${formatNumber(plan.dmsPerMonth)} DMs per month`,
+    `${formatNumber(plan.contacts)} contacts`,
     `${plan.members} team seat${plan.members === 1 ? "" : "s"}`,
-    plan.broadcasts ? "Broadcasts to tagged audiences" : null,
+    plan.broadcastsPerMonth > 0 ? `${formatNumber(plan.broadcastsPerMonth)} broadcasts per month` : null,
+    `${historyLabel(plan.historyDays)} of history`,
   ].filter((f): f is string => f !== null);
 
   return (

@@ -23,6 +23,7 @@ import type { ChannelView } from "@/lib/services/channels";
 import { cn, initials } from "@/lib/utils";
 
 import { AccountRow } from "./account-row";
+import { AccountSetupDialog } from "./account-setup-dialog";
 import { channelDisplayName, channelStatusView, connectHref } from "./channel-status";
 import { ConnectButtons, type MetaConfigured } from "./connect-buttons";
 
@@ -137,6 +138,8 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
   const searchParams = useSearchParams();
   const [open, setOpen] = React.useState(false);
   const [focusId, setFocusId] = React.useState<string | null>(null);
+  // Newly connected accounts still to be asked about, first one on screen.
+  const [setupQueue, setSetupQueue] = React.useState<string[]>([]);
   // Strict mode runs effects twice in development; a toast must still fire once.
   const handled = React.useRef<string | null>(null);
 
@@ -168,6 +171,10 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
       const matched = ids.map((id) => channels.find((c) => c.id === id)).filter((c): c is ChannelView => Boolean(c));
       if (matched.length === 1) toast.success(`Connected ${channelDisplayName(matched[0])}`);
       else toast.success(`Connected ${ids.length} account${ids.length === 1 ? "" : "s"}`);
+      // Then a few questions about each account that has not had them, one account at a time.
+      // A reconnected account answered them the first time round.
+      const unasked = matched.filter((c) => !c.setup.complete).map((c) => c.id);
+      if (canManage && unasked.length > 0) setSetupQueue(unasked);
     }
     if (error) toast.error(ERROR_MESSAGES[error] ?? ERROR_MESSAGES.unknown, message ? { description: message } : undefined);
     if (searchParams.get("accounts") === "1" || error) {
@@ -179,7 +186,9 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
     for (const param of CONSUMED_PARAMS) next.delete(param);
     const query = next.toString();
     window.history.replaceState(null, "", query ? `${window.location.pathname}?${query}` : window.location.pathname);
-  }, [searchParams, channels]);
+  }, [searchParams, channels, canManage]);
+
+  const setupChannel = setupQueue.map((id) => channels.find((c) => c.id === id)).find((c): c is ChannelView => Boolean(c)) ?? null;
 
   function openFor(id: string | null) {
     setFocusId(id);
@@ -188,7 +197,7 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div data-tour="accounts" className="flex items-center gap-2">
         {channels.length > 0 ? (
           <div className="flex items-center" role="group" aria-label="Connected accounts">
             {visible.map((channel, i) => {
@@ -285,6 +294,16 @@ export function AccountsBar({ channels, configured, canManage, canPurge, slots, 
           )}
         </DialogContent>
       </Dialog>
+
+      {setupChannel ? (
+        <AccountSetupDialog
+          key={setupChannel.id}
+          channel={setupChannel}
+          mode="connect"
+          open
+          onDone={() => setSetupQueue((queue) => queue.filter((id) => id !== setupChannel.id))}
+        />
+      ) : null}
     </>
   );
 }

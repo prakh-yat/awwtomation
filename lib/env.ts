@@ -58,13 +58,30 @@ const serverSchema = z.object({
   DODO_PRODUCT_AGENCY_ANNUAL: z.string().optional(),
   DODO_ALLOW_TEST_MODE_IN_PRODUCTION: z.string().optional(),
 
+  /** Transactional email (lib/email.ts): account alerts to owners, queue alerts to OPS_ALERT_EMAIL. */
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
+  /** Where "the queue has stopped moving" alerts go. Unset: they are only logged. */
+  OPS_ALERT_EMAIL: emptyAsUndefined(z.string().email()),
+
+  /**
+   * The built-in AI model every workspace can use without a key of its own
+   * (lib/ai/builtin.ts). Any OpenAI-compatible endpoint works; OpenRouter by default.
+   */
+  DEFAULT_AI_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
+  DEFAULT_AI_API_KEY: emptyAsUndefined(z.string().min(8)),
+  DEFAULT_AI_MODEL: z.string().min(1).default("nvidia/nemotron-3-ultra-550b-a55b:free"),
+
+  /** debug | info | warn | error. Info in production keeps one line per event that matters. */
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
   /** Worker tuning */
   WORKER_POLL_INTERVAL_MS: z.coerce.number().default(2000),
+  /** How many jobs one worker runs at once. */
   WORKER_BATCH_SIZE: z.coerce.number().default(10),
-  COMMENT_POLL_INTERVAL_MS: z.coerce.number().default(5 * 60_000),
+  COMMENT_POLL_INTERVAL_MS: z.coerce.number().default(15 * 60_000),
+  /** /api/health/queue answers 503, and OPS_ALERT_EMAIL is emailed, once a due job has waited this long. */
+  QUEUE_ALERT_AFTER_SECONDS: z.coerce.number().default(300),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;

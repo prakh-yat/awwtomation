@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * purpose: in the plan grid it marks the recommended plan, whichever that is.
  */
 export const PLAN_TONE: Record<PlanTier, { tone: Tone; badge: BadgeVariant }> = {
-  FREE: { tone: "fog", badge: "outline" },
+  NONE: { tone: "fog", badge: "outline" },
   STARTER: { tone: "sky", badge: "sky" },
   PRO: { tone: "purple", badge: "purple" },
   AGENCY: { tone: "indigo", badge: "indigo" },

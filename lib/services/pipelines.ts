@@ -10,6 +10,7 @@
 import { Prisma, type PipelineStage } from "@prisma/client";
 import { z } from "zod";
 
+import { checkWorkspaceLimit } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { DEFAULT_STAGES, isStageColor, STAGE_COLORS } from "@/lib/pipelines/colors";
@@ -191,7 +192,11 @@ export async function pipelinesForContact(workspaceId: string, contactId: string
 
 export async function createPipeline(workspaceId: string, input: CreatePipelineInput, actorId?: string | null): Promise<PipelineSummary> {
   const data = createPipelineSchema.parse(input);
-  const count = await prisma.pipeline.count({ where: { workspaceId } });
+  const slots = await checkWorkspaceLimit(workspaceId, "pipelinesPerWorkspace");
+  const count = slots.used;
+  if (!slots.ok) {
+    throw new ApiError(403, `Your plan allows ${slots.limit} pipeline${slots.limit === 1 ? "" : "s"} per workspace. Upgrade to add more.`, "PLAN_LIMIT");
+  }
   if (count >= MAX_PIPELINES_PER_WORKSPACE) {
     throw new ApiError(422, `A workspace can have up to ${MAX_PIPELINES_PER_WORKSPACE} pipelines`, "PIPELINE_LIMIT");
   }

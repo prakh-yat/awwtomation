@@ -19,7 +19,7 @@ export default async function BroadcastsPage() {
   const ctx = await requireWorkspaceContext();
   const plan = limitsFor(effectivePlan(ctx.organization));
 
-  if (!plan.broadcasts) {
+  if (plan.broadcastsPerMonth === 0) {
     return (
       <>
         <PageHeader title="Broadcasts" />

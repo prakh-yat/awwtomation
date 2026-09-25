@@ -66,6 +66,32 @@ export async function claimJobs(workerId: string, limit: number): Promise<Job[]>
   `);
 }
 
+/**
+ * Claim these particular jobs, if they are still waiting and due. Used to run
+ * work straight after the request that queued it (the webhook route does this
+ * once it has answered Meta); anything not claimed here is left for the worker
+ * or the cron tick, which claim the same rows the same way.
+ */
+export async function claimJobsByIds(workerId: string, ids: readonly string[]): Promise<Job[]> {
+  if (ids.length === 0) return [];
+  return prisma.$queryRaw<Job[]>(Prisma.sql`
+    WITH picked AS (
+      SELECT "id" FROM "Job"
+      WHERE "id" = ANY(${[...ids]}::text[]) AND "status" = 'PENDING'::"JobStatus" AND "runAt" <= NOW()
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "Job" AS j
+    SET "status" = 'PROCESSING'::"JobStatus",
+        "lockedAt" = NOW(),
+        "lockedBy" = ${workerId},
+        "attempts" = j."attempts" + 1,
+        "updatedAt" = NOW()
+    FROM picked
+    WHERE j."id" = picked."id"
+    RETURNING j.*
+  `);
+}
+
 export async function completeJob(id: string): Promise<void> {
   await prisma.job.update({
     where: { id },
@@ -108,55 +134,70 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * Claim → dispatch to `handlers[type]` → complete/fail. Jobs in a batch run
- * concurrently; they are independent by construction (dedupe keys + the
- * engine's atomic session transitions).
+ * Run one claimed job to the end: its handler, then complete or fail (with
+ * backoff). Never throws, so a caller can fire it and move on.
+ */
+export async function runJob(job: Job): Promise<"completed" | "failed"> {
+  // Lazy import breaks the handlers → engine → queue import cycle at bundle time.
+  const { handlers } = await import("./handlers");
+  const handler = handlers[job.type];
+  const startedAt = Date.now();
+  try {
+    if (!handler) throw new Error(`No handler registered for job type ${job.type}`);
+    await handler(job);
+    await completeJob(job.id);
+    logger.debug("queue.job_completed", { jobId: job.id, type: job.type, ms: Date.now() - startedAt, attempts: job.attempts });
+    return "completed";
+  } catch (err) {
+    const message = errorMessage(err);
+    logger.error("queue.job_failed", { jobId: job.id, type: job.type, attempts: job.attempts, maxAttempts: job.maxAttempts, error: message });
+    try {
+      await failJob(job.id, message);
+    } catch (failErr) {
+      logger.error("queue.fail_job_error", { jobId: job.id, error: errorMessage(failErr) });
+    }
+    return "failed";
+  }
+}
+
+/**
+ * Claim → run → complete/fail, for callers that work in rounds (the cron
+ * tick). Jobs in a batch run concurrently; they are independent by
+ * construction (dedupe keys + the engine's atomic session transitions).
  */
 export async function processBatch(workerId: string, limit: number): Promise<BatchResult> {
   const jobs = await claimJobs(workerId, limit);
   if (jobs.length === 0) return { processed: 0, failed: 0, claimed: 0 };
-
-  // Lazy import breaks the handlers → engine → queue import cycle at bundle time.
-  const { handlers } = await import("./handlers");
-
-  let processed = 0;
-  let failed = 0;
-  await Promise.all(
-    jobs.map(async (job) => {
-      const handler = handlers[job.type];
-      const startedAt = Date.now();
-      try {
-        if (!handler) throw new Error(`No handler registered for job type ${job.type}`);
-        await handler(job);
-        await completeJob(job.id);
-        processed++;
-        logger.info("queue.job_completed", { jobId: job.id, type: job.type, ms: Date.now() - startedAt, attempts: job.attempts });
-      } catch (err) {
-        failed++;
-        const message = errorMessage(err);
-        logger.error("queue.job_failed", { jobId: job.id, type: job.type, attempts: job.attempts, maxAttempts: job.maxAttempts, error: message });
-        try {
-          await failJob(job.id, message);
-        } catch (failErr) {
-          logger.error("queue.fail_job_error", { jobId: job.id, error: errorMessage(failErr) });
-        }
-      }
-    }),
-  );
-  return { processed, failed, claimed: jobs.length };
+  const outcomes = await Promise.all(jobs.map(runJob));
+  const failed = outcomes.filter((o) => o === "failed").length;
+  return { processed: jobs.length - failed, failed, claimed: jobs.length };
 }
 
-export type QueueStats = Record<JobStatus, number> & { due: number };
+export type QueueStats = {
+  pending: number;
+  processing: number;
+  /** PENDING jobs whose time has come. */
+  due: number;
+  /** How long the oldest due job has been waiting, in seconds; 0 when nothing is due. */
+  oldestDueSeconds: number;
+  /** Jobs that gave up in the last 24 hours. */
+  failedLastDay: number;
+};
 
-/** Counts by status plus how many PENDING jobs are due now: for the worker heartbeat and admin health. */
-export async function getQueueStats(): Promise<QueueStats> {
-  const [grouped, due] = await Promise.all([
-    prisma.job.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.job.count({ where: { status: JobStatus.PENDING, runAt: { lte: new Date() } } }),
+/**
+ * What the heartbeat and /api/health/queue report. Only the live part of the
+ * table is counted (the indexed status + runAt range), never its history.
+ */
+export async function getQueueStats(now = new Date()): Promise<QueueStats> {
+  const [pending, processing, due, oldest, failedLastDay] = await Promise.all([
+    prisma.job.count({ where: { status: JobStatus.PENDING } }),
+    prisma.job.count({ where: { status: JobStatus.PROCESSING } }),
+    prisma.job.count({ where: { status: JobStatus.PENDING, runAt: { lte: now } } }),
+    prisma.job.findFirst({ where: { status: JobStatus.PENDING, runAt: { lte: now } }, orderBy: { runAt: "asc" }, select: { runAt: true } }),
+    prisma.job.count({ where: { status: JobStatus.FAILED, updatedAt: { gte: new Date(now.getTime() - 24 * 3600 * 1000) } } }),
   ]);
-  const stats: QueueStats = { PENDING: 0, PROCESSING: 0, COMPLETED: 0, FAILED: 0, CANCELLED: 0, due };
-  for (const row of grouped) stats[row.status] = row._count._all;
-  return stats;
+  const oldestDueSeconds = oldest ? Math.max(0, Math.round((now.getTime() - oldest.runAt.getTime()) / 1000)) : 0;
+  return { pending, processing, due, oldestDueSeconds, failedLastDay };
 }
 
 /** Admin: put a FAILED/CANCELLED job back in the queue with a fresh attempt budget. */
@@ -181,6 +222,17 @@ export async function cancelJob(id: string): Promise<boolean> {
 export async function pruneCompletedJobs(olderThanMs = 7 * 24 * 3600 * 1000): Promise<number> {
   const res = await prisma.job.deleteMany({
     where: { status: JobStatus.COMPLETED, updatedAt: { lt: new Date(Date.now() - olderThanMs) } },
+  });
+  return res.count;
+}
+
+/**
+ * Housekeeping: drop FAILED and CANCELLED jobs older than `olderThanMs`. They
+ * are never retried; a cancelled broadcast alone can leave one per recipient.
+ */
+export async function pruneFailedJobs(olderThanMs = 15 * 24 * 3600 * 1000): Promise<number> {
+  const res = await prisma.job.deleteMany({
+    where: { status: { in: [JobStatus.FAILED, JobStatus.CANCELLED] }, updatedAt: { lt: new Date(Date.now() - olderThanMs) } },
   });
   return res.count;
 }

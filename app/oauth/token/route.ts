@@ -15,7 +15,7 @@ const TOKEN_LIMIT_PER_MINUTE = 60;
  * - refresh_token: a refresh token is rotated into a fresh pair.
  */
 export async function POST(req: Request) {
-  const limit = checkRateLimit("oauth_token", clientIp(req), TOKEN_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+  const limit = await checkRateLimit("oauth_token", clientIp(req), TOKEN_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   if (!limit.allowed) {
     return oauthErrorJson("slow_down", "Too many token requests. Try again in a minute.", 429, { "Retry-After": String(limit.retryAfterSeconds) });
   }

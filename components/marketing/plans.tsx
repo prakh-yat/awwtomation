@@ -2,7 +2,7 @@ import * as React from "react";
 import type { PlanTier } from "@prisma/client";
 import { Check, Minus } from "lucide-react";
 
-import { PLANS } from "@/lib/billing/plans";
+import { historyLabel, PLANS } from "@/lib/billing/plans";
 import { cn } from "@/lib/utils";
 
 /*
@@ -33,8 +33,13 @@ export function planLines(tier: PlanTier): PlanLine[] {
     { text: plural(plan.channels, "connected account", "connected accounts"), included: true },
     { text: plural(plan.automations, "automation", "automations"), included: true },
     { text: `${count(plan.dmsPerMonth)} DMs a month`, included: true },
+    { text: plural(plan.contacts, "contact", "contacts"), included: true },
     { text: plural(plan.members, "team member", "team members"), included: true },
-    { text: plan.broadcasts ? "Broadcasts" : "No broadcasts", included: plan.broadcasts },
+    {
+      text: plan.broadcastsPerMonth > 0 ? plural(plan.broadcastsPerMonth, "broadcast a month", "broadcasts a month") : "No broadcasts",
+      included: plan.broadcastsPerMonth > 0,
+    },
+    { text: `${historyLabel(plan.historyDays)} of history`, included: true },
     ...(EXTRAS[tier] ?? []).map((text) => ({ text, included: true })),
   ];
 }

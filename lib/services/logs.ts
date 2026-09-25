@@ -33,6 +33,7 @@ export const DELIVERY_STATUSES: readonly DeliveryStatus[] = [
   DeliveryStatus.SKIPPED_NOT_FOLLOWING,
   DeliveryStatus.SKIPPED_WINDOW,
   DeliveryStatus.SKIPPED_PLAN_LIMIT,
+  DeliveryStatus.SKIPPED_CONTACT_LIMIT,
   DeliveryStatus.SKIPPED_OPTED_OUT,
 ] as const;
 

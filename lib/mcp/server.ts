@@ -100,12 +100,12 @@ export async function handleMcpRequest(req: Request): Promise<Response> {
   const token = bearerToken(req);
   const identity = token ? await authenticateAccessToken(token) : null;
   if (!identity) {
-    const limit = checkRateLimit("mcp_anonymous", clientIp(req), ANONYMOUS_PER_MINUTE, ONE_MINUTE_MS);
+    const limit = await checkRateLimit("mcp_anonymous", clientIp(req), ANONYMOUS_PER_MINUTE, ONE_MINUTE_MS);
     if (!limit.allowed) return jsonRpcError(429, "Too many requests. Try again in a minute.", { "Retry-After": String(limit.retryAfterSeconds) });
     return unauthorized(Boolean(token));
   }
 
-  const limit = checkRateLimit("mcp_calls", identity.userId, CALLS_PER_MINUTE, ONE_MINUTE_MS);
+  const limit = await checkRateLimit("mcp_calls", identity.userId, CALLS_PER_MINUTE, ONE_MINUTE_MS);
   if (!limit.allowed) return jsonRpcError(429, "Too many requests. Try again in a minute.", { "Retry-After": String(limit.retryAfterSeconds) });
 
   const [user, client, reachable] = await Promise.all([

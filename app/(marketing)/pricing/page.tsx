@@ -5,12 +5,12 @@ import { type ComparisonGroup, PlanComparison } from "@/components/marketing/pla
 import { PricingPlans } from "@/components/marketing/pricing-plans";
 import { count, RECOMMENDED_PLAN } from "@/components/marketing/plans";
 import { Band, Container, Eyebrow, SectionText, SectionTitle } from "@/components/marketing/section";
-import { annualSavingsPercent, PLAN_ORDER, PLANS, type PlanLimits, PURCHASABLE_PLANS } from "@/lib/billing/plans";
+import { annualSavingsPercent, historyLabel, PLAN_ORDER, PLANS, type PlanLimits, PURCHASABLE_PLANS } from "@/lib/billing/plans";
 import { brand } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: `${brand.name} plans and prices in US dollars. Start free with one Instagram or Facebook account and upgrade when you need more.`,
+  description: `${brand.name} plans and prices in US dollars, from one shop to an agency with fifty accounts.`,
 };
 
 type Row = { label: string; value: (plan: PlanLimits, tier: PlanTier) => string | boolean };
@@ -20,15 +20,20 @@ const comparison: Array<{ group: string; rows: Row[] }> = [
     group: "Limits",
     rows: [
       { label: "Connected Instagram or Facebook accounts", value: (p) => count(p.channels) },
+      { label: "Workspaces", value: (p) => count(p.workspaces) },
       { label: "Automations", value: (p) => count(p.automations) },
       { label: "DMs per month", value: (p) => count(p.dmsPerMonth) },
+      { label: "Contacts", value: (p) => count(p.contacts) },
+      { label: "Broadcasts per month", value: (p) => (p.broadcastsPerMonth > 0 ? count(p.broadcastsPerMonth) : false) },
+      { label: "AI agents per workspace", value: (p) => count(p.aiAgentsPerWorkspace) },
+      { label: "Pipelines per workspace", value: (p) => count(p.pipelinesPerWorkspace) },
+      { label: "Conversation and log history", value: (p) => historyLabel(p.historyDays) },
       { label: "Team members", value: (p) => count(p.members) },
     ],
   },
   {
     group: "Features",
     rows: [
-      { label: "Broadcasts", value: (p) => p.broadcasts },
       { label: "Comment, DM and story-reply triggers", value: () => true },
       { label: "Flow builder", value: () => true },
       { label: "Follow check", value: () => true },
@@ -51,13 +56,15 @@ const comparison: Array<{ group: string; rows: Row[] }> = [
 
 export default function PricingPage() {
   const savings = Math.min(...PURCHASABLE_PLANS.map(annualSavingsPercent));
-  const broadcastsFrom = PLAN_ORDER.find((tier) => PLANS[tier].broadcasts);
 
   const billing = [
     `Prices are in US dollars. Paying yearly costs ${savings}% less than twelve monthly payments.`,
-    "Payments are handled by Dodo Payments, our payment provider, which also takes care of tax and invoices. The Free plan doesn’t need a card.",
+    "Payments are handled by Dodo Payments, our payment provider, which also takes care of tax and invoices.",
+    "You can sign up, connect an account and build automations before you pay. Nothing is sent until you choose a plan.",
     "DM counts reset on the 1st of every month. Automated replies, broadcasts and replies from the inbox all count; public replies under comments don’t.",
     "If you reach your limit, messages stop until the reset or until you upgrade. You are never charged for extra messages.",
+    "Past the contact limit, new people who write in are still saved to your inbox, but automations don’t reply to them until you upgrade.",
+    "Conversations and delivery logs older than your plan’s history are deleted. Contacts, automations and broadcast totals are kept.",
     "Upgrades apply straight away, and you pay the difference for the rest of the billing period.",
     "You can cancel from Settings at any time. Your plan stays active until the end of the period you paid for.",
   ];
@@ -76,12 +83,11 @@ export default function PricingPage() {
           <div className="mx-auto max-w-4xl text-center">
             <Eyebrow className="text-muted-foreground">Pricing</Eyebrow>
             <h1 className="mt-5 text-balance font-display text-[clamp(2.75rem,7vw,5.25rem)] leading-[0.88] tracking-[-0.04em]">
-              Start free. Upgrade when you need more.
+              Every feature on every plan.
             </h1>
             <p className="mx-auto mt-6 max-w-[38rem] text-pretty text-[17px] leading-[1.55] text-muted-foreground sm:text-[19px]">
-              Every plan has the same automations, inbox, contacts, tracked links and analytics. Choose by how many
-              accounts, DMs and teammates you need.
-              {broadcastsFrom ? ` Broadcasts start on ${PLANS[broadcastsFrom].label}.` : null}
+              Every plan has the same automations, AI replies, inbox, contacts, broadcasts, tracked links and
+              analytics. Choose by how many accounts, DMs and teammates you need.
             </p>
           </div>
           <PricingPlans className="mt-12" />

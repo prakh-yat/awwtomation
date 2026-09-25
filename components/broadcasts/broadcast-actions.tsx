@@ -36,10 +36,11 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
   const canCancel = CANCELLABLE.includes(row.status);
   const canDelete = DELETABLE.includes(row.status);
 
-  async function send(_est: AudienceEstimate) {
+  async function send(est: AudienceEstimate) {
     try {
-      const result = await apiFetch<{ eligible: number; skippedWindow: number }>(`/api/broadcasts/${row.id}/send`, { method: "POST" });
-      toast.success(`Sending “${row.name}” to ${formatCount(result.eligible)} ${result.eligible === 1 ? "person" : "people"}`);
+      await apiFetch(`/api/broadcasts/${row.id}/send`, { method: "POST" });
+      // The server counts the audience after it answers, so the toast repeats the estimate that was just confirmed.
+      toast.success(`Sending “${row.name}” to ${formatCount(est.eligible)} ${est.eligible === 1 ? "person" : "people"}`);
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't send the broadcast"));
@@ -49,8 +50,9 @@ function BroadcastActions({ row, variant = "menu" }: BroadcastActionsProps) {
 
   async function cancel() {
     try {
-      const result = await apiFetch<{ cancelledJobs: number }>(`/api/broadcasts/${row.id}/cancel`, { method: "POST" });
-      toast.success(row.status === "SENDING" ? `Stopped. ${formatCount(result.cancelledJobs)} messages were not sent.` : "Schedule cancelled");
+      await apiFetch(`/api/broadcasts/${row.id}/cancel`, { method: "POST" });
+      // No count here: people not reached yet were never queued, so the server can't say how many were spared.
+      toast.success(row.status === "SENDING" ? "Stopped. The rest won't get it." : "Schedule cancelled");
       router.refresh();
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't cancel the broadcast"));

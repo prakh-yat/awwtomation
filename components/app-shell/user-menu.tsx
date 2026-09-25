@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeftRight, Building2, ChevronsUpDown, LifeBuoy, LogOut, Plus, Settings } from "lucide-react";
+import { ArrowLeftRight, Building2, ChevronsUpDown, Compass, LifeBuoy, LogOut, Plus, Settings } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -15,6 +15,7 @@ import {
 import { brand } from "@/lib/brand";
 import { cn, initials } from "@/lib/utils";
 
+import { startTour } from "./tour-events";
 import { planLabel, type ShellOrganization, type ShellUser } from "./types";
 
 export interface UserMenuProps {
@@ -29,6 +30,11 @@ export interface UserMenuProps {
   onNavigate?: () => void;
   /** Told when the menu opens or closes, so the dock can stay out while it is up. */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Starts the product tour once this menu has closed. The drawer passes its
+   * own, which closes the drawer first; without one the tour starts directly.
+   */
+  onStartTour?: () => void;
   className?: string;
 }
 
@@ -45,9 +51,14 @@ export function UserMenu({
   side = "right",
   onNavigate,
   onOpenChange,
+  onStartTour,
   className,
 }: UserMenuProps) {
   const displayName = user.name?.trim() || user.email;
+  // "Take the tour" waits for the menu to finish closing and hand focus back
+  // to its button: the tour then opens on a settled page, and returns focus to
+  // that button when it ends.
+  const tourRequested = React.useRef(false);
 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
@@ -79,7 +90,17 @@ export function UserMenu({
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side={side} align="end" sideOffset={12} className="w-64">
+      <DropdownMenuContent
+        side={side}
+        align="end"
+        sideOffset={12}
+        className="w-64"
+        onCloseAutoFocus={() => {
+          if (!tourRequested.current) return;
+          tourRequested.current = false;
+          (onStartTour ?? startTour)();
+        }}
+      >
         <div className="px-2.5 py-2">
           <span className="block truncate text-[14px] font-semibold text-ink">{displayName}</span>
           <span className="block truncate text-[12px] text-muted-foreground">{user.email}</span>
@@ -96,6 +117,14 @@ export function UserMenu({
             <LifeBuoy />
             Contact support
           </a>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            tourRequested.current = true;
+          }}
+        >
+          <Compass />
+          Take the tour
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <div className="flex items-center gap-2.5 px-2.5 py-2">

@@ -39,7 +39,9 @@ export default async function AppLayout({ children }: Readonly<{ children: React
 
   return (
     <AppFrame
-      user={{ name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
+      user={{ id: ctx.user.id, name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
+      // Per person, not per browser: the tour opens once whichever device they sign in on.
+      hasSeenTour={ctx.user.tourCompletedAt !== null}
       organization={{ id: organization.id, name: organization.name, plan }}
       organizationCount={ctx.organizations.length}
       workspaces={ctx.workspaces.map((w) => ({ id: w.id, name: w.name }))}

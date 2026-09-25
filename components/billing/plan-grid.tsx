@@ -46,9 +46,9 @@ export interface PlanGridProps {
 type Pending = { tier: PlanTier; interval: BillingIntervalId } | null;
 
 /**
- * Four plans × monthly/annual, laid out like the pricing page: fog cards, with
- * the next plan up as the yellow block. Free organizations link straight to
- * /checkout; subscribers switch in place through /api/billing/change-plan
+ * Three plans × monthly/annual, laid out like the pricing page: fog cards, with
+ * the next plan up as the yellow block. Organizations without a plan link
+ * straight to /checkout; subscribers switch in place through /api/billing/change-plan
  * (prorated). Driven entirely by PLANS so the pricing page and this grid never disagree.
  */
 export function PlanGrid({
@@ -87,7 +87,7 @@ export function PlanGrid({
   }
 
   function renderAction(tier: PlanTier) {
-    const isCurrent = tier === currentTier && (!hasSubscription || tier === "FREE" || interval === currentInterval);
+    const isCurrent = tier === currentTier && (!hasSubscription || interval === currentInterval);
     const productMissing = isPurchasablePlan(tier) && unavailablePlans.includes(`${tier}_${interval}`);
     const disabledReason = !canManage
       ? "Only an owner can change billing"
@@ -106,15 +106,6 @@ export function PlanGrid({
       );
     }
 
-    if (tier === "FREE") {
-      // Downgrading to Free is a cancellation, handled from the plan block so the copy explains the period end.
-      return (
-        <Button variant="outline" size="lg" className="w-full" disabled title="Cancel your plan above to move to Free">
-          {hasSubscription ? "Cancel to switch" : "Included"}
-        </Button>
-      );
-    }
-
     const upgrade = comparePlans(currentTier, tier) > 0;
     const sameTier = tier === currentTier;
     const label = hasSubscription
@@ -123,7 +114,9 @@ export function PlanGrid({
         : upgrade
           ? `Upgrade to ${PLANS[tier].label}`
           : `Downgrade to ${PLANS[tier].label}`
-      : `Upgrade to ${PLANS[tier].label}`;
+      : currentTier === "NONE"
+        ? `Choose ${PLANS[tier].label}`
+        : `Upgrade to ${PLANS[tier].label}`;
 
     if (disabledReason) {
       return (
@@ -164,7 +157,7 @@ export function PlanGrid({
         <IntervalToggle value={interval} onChange={setInterval} savingsPercent={annualSavingsPercent("PRO")} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {PLAN_ORDER.map((tier, index) => {
           const plan = PLANS[tier];
           const isCurrent = tier === currentTier;
@@ -190,7 +183,7 @@ export function PlanGrid({
                 <span className="brand-label text-ink/60">/mo</span>
               </p>
               <p className="brand-label mt-2 min-h-[1.2em] text-ink/60">
-                {tier === "FREE" ? "" : interval === "ANNUAL" ? `${formatUsd(planPriceCents(tier, interval))} billed yearly` : "Billed monthly"}
+                {interval === "ANNUAL" ? `${formatUsd(planPriceCents(tier, interval))} billed yearly` : "Billed monthly"}
               </p>
 
               <div className="mt-6">{renderAction(tier)}</div>

@@ -21,7 +21,7 @@ export type PickerOrganization = {
 
 /** Plan badges climb the palette with the tier. */
 const PLAN_BADGE: Record<PlanTier, BadgeVariant> = {
-  FREE: "secondary",
+  NONE: "secondary",
   STARTER: "sky",
   PRO: "purple",
   AGENCY: "indigo",

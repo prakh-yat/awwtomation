@@ -445,34 +445,129 @@ export async function getLinkStats(workspaceId: string, id: string, days = LINK_
 
 // ───────────────────────── Public redirect path (no workspace scoping) ─────────────────────────
 
-/** Destination for a slug, or null. Public: the slug itself is the capability. */
-export async function resolveLink(slug: string): Promise<string | null> {
-  if (!slug || slug.length > 64) return null;
-  const row = await prisma.trackedLink.findUnique({ where: { slug }, select: { destinationUrl: true } });
-  return row?.destinationUrl ?? null;
+/** What the redirect needs to know about a link. */
+export type ResolvedLink = { id: string; workspaceId: string; destinationUrl: string };
+
+/**
+ * A burst of clicks on one link (a broadcast lands, a post takes off) would
+ * otherwise be a database read per click. Each process keeps the links it
+ * resolved in the last minute, so an edited or deleted link can take that
+ * long to change for every visitor. Bounded, oldest out first. A slug that
+ * does not exist is never kept: a link created after someone tried its slug
+ * must work at once.
+ */
+const LINK_CACHE_TTL_MS = 60_000;
+const LINK_CACHE_MAX = 1000;
+const linkCache = new Map<string, { link: ResolvedLink; expiresAt: number }>();
+
+function cachedLink(slug: string, now: number): ResolvedLink | null {
+  const entry = linkCache.get(slug);
+  if (!entry) return null;
+  if (entry.expiresAt > now) return entry.link;
+  linkCache.delete(slug);
+  return null;
 }
+
+function cacheLink(slug: string, link: ResolvedLink, now: number): void {
+  // Delete first so a re-cached slug moves to the back of the insertion order the eviction reads.
+  linkCache.delete(slug);
+  if (linkCache.size >= LINK_CACHE_MAX) {
+    const oldest = linkCache.keys().next();
+    if (!oldest.done) linkCache.delete(oldest.value);
+  }
+  linkCache.set(slug, { link, expiresAt: now + LINK_CACHE_TTL_MS });
+}
+
+/** The link behind a slug, or null. Public: the slug itself is the capability. */
+export async function resolveLink(slug: string): Promise<ResolvedLink | null> {
+  if (!slug || slug.length > 64) return null;
+  const now = Date.now();
+  const cached = cachedLink(slug, now);
+  if (cached) return cached;
+  const row = await prisma.trackedLink.findUnique({ where: { slug }, select: { id: true, workspaceId: true, destinationUrl: true } });
+  if (!row) return null;
+  cacheLink(slug, row, now);
+  return row;
+}
+
+/**
+ * User agents that open a link without a person tapping it: link previews (a
+ * URL sent in a DM is fetched before anyone taps it), search and AI crawlers,
+ * headless browsers and speed tests, HTTP libraries and command line tools,
+ * Office apps checking a link before opening it, and the email security
+ * gateways that open every link to scan it. Matched anywhere, ignoring case.
+ *
+ * `bot` covers Googlebot, Slackbot, Discordbot, TelegramBot, Twitterbot,
+ * LinkedInBot and friends, and `preview` BingPreview and SkypeUriPreview.
+ * `(?<!cu)` spares CUBOT phones. Nothing here may match "Instagram", "FBAN" or
+ * "Messenger": those are in the in-app browsers people click from, which is
+ * also why WhatsApp only counts at the very start, where its preview fetcher
+ * puts it and no browser would.
+ */
+const AUTOMATED_AGENT = new RegExp(
+  [
+    "(?<!cu)bot", "crawl", "spider", "slurp", "preview", "scanner", "headless", "lighthouse",
+    "facebookexternalhit", "meta-external", "^whatsapp/", "googleother", "google-read-aloud", "google-inspectiontool", "embedly", "iframely", "vkshare",
+    "python", "curl", "wget", "go-http-client", "okhttp", "axios", "node-fetch", "undici", "java/", "libwww", "httpclient", "scrapy", "guzzlehttp", "dalvik",
+    "microsoft office", "ms-office", "safelinks", "barracuda", "mimecast", "proofpoint", "cisco", "symantec", "bitdefender", "trendmicro", "forcepoint", "zscaler",
+  ].join("|"),
+  "i",
+);
+
+/** Chrome says `Sec-Purpose: prefetch` (or the older `Purpose`), Safari `X-Purpose: preview`, Firefox `X-Moz: prefetch`. */
+const SPECULATIVE_HEADERS = ["sec-purpose", "purpose", "x-purpose", "x-moz"] as const;
+
+/**
+ * True for a request no person made by tapping the link: an automated agent,
+ * no user agent at all, a prefetch or preview, or a browser fetch that is not
+ * a navigation (an image or a script pointed at the link). Those still
+ * redirect; they are just not clicks.
+ */
+export function isAutomatedVisit(headers: Pick<Headers, "get">): boolean {
+  const userAgent = headers.get("user-agent")?.trim();
+  if (!userAgent || AUTOMATED_AGENT.test(userAgent)) return true;
+  if (SPECULATIVE_HEADERS.some((name) => /prefetch|preview/i.test(headers.get(name) ?? ""))) return true;
+  const mode = headers.get("sec-fetch-mode");
+  return mode !== null && mode !== "navigate";
+}
+
+/** The same address and browser opening the same link again within this window is one click. */
+const CLICK_REPEAT_WINDOW_MS = 30 * 60_000;
 
 export type RecordClickInput = { contactId?: string; userAgent?: string; ip?: string };
 
+/** `repeat`: already counted within the window. `gone`: the link was deleted after it was resolved. */
+export type RecordClickResult = "recorded" | "repeat" | "gone";
+
 /**
- * Increments the counter and writes the LinkClick row in one statement
- * (nested create inside the update), so concurrent clicks never lose counts.
+ * Counts a click: increments the counter and writes the LinkClick row in one
+ * statement (nested create inside the update), so concurrent clicks never lose
+ * counts. A repeat of a click from the same address and browser in the last
+ * half hour is not counted again. Two copies racing each other can both count;
+ * only a double tap does that, which is not worth a lock. Without an address
+ * nothing is treated as a repeat, since every such visitor would look alike.
+ *
  * A contact id is only attached when it belongs to the link's workspace:
  * anyone can append `?c=` to a public URL, so it must not be trusted alone.
- * Returns false when the slug doesn't exist.
  */
-export async function recordClick(slug: string, input: RecordClickInput = {}): Promise<boolean> {
-  const link = await prisma.trackedLink.findUnique({ where: { slug }, select: { id: true, workspaceId: true } });
-  if (!link) return false;
+export async function recordClick(link: Pick<ResolvedLink, "id" | "workspaceId">, input: RecordClickInput = {}): Promise<RecordClickResult> {
+  const userAgent = input.userAgent?.slice(0, MAX_USER_AGENT_LENGTH) || null;
+  const ipHash = input.ip ? hashIp(input.ip) : null;
+
+  if (ipHash) {
+    const since = new Date(Date.now() - CLICK_REPEAT_WINDOW_MS);
+    const earlier = await prisma.linkClick.findFirst({
+      where: { linkId: link.id, ipHash, createdAt: { gte: since }, userAgent },
+      select: { id: true },
+    });
+    if (earlier) return "repeat";
+  }
 
   let contactId: string | null = null;
   if (input.contactId) {
     const contact = await prisma.contact.findFirst({ where: { id: input.contactId, workspaceId: link.workspaceId }, select: { id: true } });
     contactId = contact?.id ?? null;
   }
-
-  const userAgent = input.userAgent?.slice(0, MAX_USER_AGENT_LENGTH) || null;
-  const ipHash = input.ip ? hashIp(input.ip) : null;
 
   try {
     await prisma.trackedLink.update({
@@ -481,9 +576,9 @@ export async function recordClick(slug: string, input: RecordClickInput = {}): P
       select: { id: true },
     });
   } catch (err) {
-    // Deleted between resolve and record: nothing to count.
-    if (isNotFound(err)) return false;
+    // Deleted since it was resolved (the redirect's copy can be a minute old): nothing to count.
+    if (isNotFound(err)) return "gone";
     throw err;
   }
-  return true;
+  return "recorded";
 }

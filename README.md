@@ -17,7 +17,7 @@ Someone comments `LINK` on a reel → they get a DM with your link a second late
 | **Tracked links** | `/l/{slug}` redirects with click attribution to contact + automation. |
 | **Logs** | Every send, skip and failure with a plain-English reason (the raw Meta response stays in the database and server logs). |
 | **Organizations, workspaces & team** | An organization is the billable account: it holds the plan, the team (Owner / Admin / Member) and any number of workspaces (brands or clients). Switch or create organizations from the account menu, switch workspaces from the sidebar. Invite links. |
-| **Plans & usage** | FREE / STARTER / PRO / AGENCY with DM, channel, automation and seat caps enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation): see [docs/BILLING.md](docs/BILLING.md). |
+| **Plans & usage** | STARTER / PRO / AGENCY (no free tier; without a plan an organization can set up but sends nothing) with DM, channel, workspace, automation, contact, broadcast, seat and history limits enforced server-side. **Billing** through Dodo Payments (monthly/annual checkout, portal, plan changes, webhooks, reconciliation): see [docs/BILLING.md](docs/BILLING.md). |
 | **Marketing site** | Landing, pricing, privacy, terms, data-deletion (required for Meta App Review). |
 
 Branding follows the marketing site: ink on paper with flat colour blocks (`docs/DESIGN.md`); the product name lives in `lib/brand.ts`.
@@ -62,7 +62,7 @@ Architecture and code contracts: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)*
 | `META_WEBHOOK_VERIFY_TOKEN` | yes | Any string; paste the same into Meta's webhook config. |
 | `META_GRAPH_API_VERSION` | no | Defaults to `v25.0`. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | no | Invites work as links without email. |
-| `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them every organization stays on FREE. |
+| `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET`, `DODO_PRODUCT_*` | to charge money | Dodo Payments; without them nobody can subscribe, so organizations stay on NONE (set a plan with `scripts/set-plan.ts`). |
 | `DEV_AUTH_EMAIL` | dev only | Sign in as this email without Google. Ignored unless `NODE_ENV=development`. |
 
 `NEXT_PUBLIC_*` values are inlined at build time: change them and rebuild.
@@ -84,8 +84,8 @@ One private reply per comment (7-day limit) · 750 private replies / hour / acco
 
 - **Web**: any Node 20 host (Vercel, Railway, Render, Fly) or the `Dockerfile` (standalone Next.js, non-root, health-checked).
 - **Worker**: `npm run worker` as a background service (Docker target `worker`). No worker? Cron `GET /api/cron/tick` every minute with `Authorization: Bearer $CRON_SECRET` or `?token=`.
-- **Cron safety nets**: `/api/cron/refresh-tokens` daily, `/api/cron/reconcile` every 5 min (`vercel.json` declares all three).
-- **Health**: `GET /api/health` → db latency, worker heartbeat, which integrations are configured; 503 only when the database is down.
+- **Cron safety nets**: `/api/cron/refresh-tokens` daily, `/api/cron/reconcile` every 5 min, `/api/cron/housekeeping` daily to delete old logs and messages (`vercel.json` declares all four).
+- **Health**: `GET /api/health` → db latency, worker heartbeat, which integrations are configured; 503 only when the database is down. `GET /api/health/queue` → 503 when jobs have stopped moving (point an uptime monitor at it; `OPS_ALERT_EMAIL` is also emailed).
 - **Ready-made configs**: `docker-compose.yml` (Postgres + web + worker + optional Caddy HTTPS), `railway.json` / `railway.worker.json`, `render.yaml`, `vercel.json`, `.github/workflows/ci.yml` (typecheck, lint, build, migration drift, Docker build).
 
 Step-by-step: **[docs/DEPLOY.md](docs/DEPLOY.md)**.

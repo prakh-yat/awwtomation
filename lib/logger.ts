@@ -6,9 +6,25 @@
  * hood because that is the only sink shared by the Node runtime, the Edge
  * runtime (middleware) and the worker process. This module is the single
  * sanctioned place where `console` is called from production code.
+ *
+ * `LOG_LEVEL` (debug | info | warn | error, default info) drops everything
+ * below it. Per-job and per-message successes log at debug: at volume they are
+ * most of the bill on a paid log drain and none of the signal.
  */
 
-export type LogLevel = "info" | "warn" | "error";
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+const LEVEL_RANK: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+/** Read straight from process.env: this module runs on the Edge too, where lib/env cannot. */
+function minimumRank(): number {
+  const configured = process.env.LOG_LEVEL?.trim().toLowerCase();
+  return configured && configured in LEVEL_RANK ? LEVEL_RANK[configured as LogLevel] : LEVEL_RANK.info;
+}
+
+function enabled(level: LogLevel): boolean {
+  return LEVEL_RANK[level] >= minimumRank();
+}
 
 type Serializable = Record<string, unknown>;
 
@@ -89,11 +105,14 @@ export function newErrorReference(): string {
 }
 
 export const logger = {
+  debug(event: string, meta?: object): void {
+    if (enabled("debug")) console.log(formatLine("debug", event, meta));
+  },
   info(event: string, meta?: object): void {
-    console.log(formatLine("info", event, meta));
+    if (enabled("info")) console.log(formatLine("info", event, meta));
   },
   warn(event: string, meta?: object): void {
-    console.warn(formatLine("warn", event, meta));
+    if (enabled("warn")) console.warn(formatLine("warn", event, meta));
   },
   error(event: string, meta?: object): void {
     console.error(formatLine("error", event, meta));

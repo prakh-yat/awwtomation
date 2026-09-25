@@ -32,7 +32,8 @@ import {
 } from "@/lib/automation/flow-types";
 import { matchedKeyword, normalizeText } from "@/lib/automation/matcher";
 import { contactTemplateVars, renderMessage } from "@/lib/automation/send";
-import { checkLimit } from "@/lib/billing/usage";
+import { isLivePlan } from "@/lib/billing/plans";
+import { checkLimit, effectivePlanFor, historyDaysFor } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import type { OutboundMessage } from "@/lib/meta/types";
@@ -213,6 +214,7 @@ const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
   SKIPPED_NOT_FOLLOWING: "Not following",
   SKIPPED_WINDOW: "Over 24 hours",
   SKIPPED_PLAN_LIMIT: "Monthly limit",
+  SKIPPED_CONTACT_LIMIT: "Contact limit",
   SKIPPED_OPTED_OUT: "Opted out",
 };
 
@@ -640,6 +642,9 @@ export async function updateAutomation(workspaceId: string, id: string, input: A
 export async function setAutomationStatus(workspaceId: string, id: string, status: "ACTIVE" | "PAUSED", actorUserId?: string): Promise<AutomationDetail> {
   const existing = await requireAutomation(workspaceId, id);
   if (status === "ACTIVE") {
+    if (!isLivePlan(await effectivePlanFor(workspaceId))) {
+      throw new ApiError(402, "Choose a plan to switch automations on. You can keep building until then.", "PLAN_LIMIT");
+    }
     const { flow } = parseStoredFlow(existing.flow);
     const blockers = [
       ...activationBlockers({ triggerType: existing.triggerType, matchMode: existing.matchMode, keywords: existing.keywords, flow }, existing.channel),
@@ -857,12 +862,14 @@ export async function listRecentDeliveries(workspaceId: string, automationId: st
 }
 
 export async function getAutomationAnalytics(workspaceId: string, id: string, days = 30): Promise<AutomationAnalytics> {
-  const [automation, workspace] = await Promise.all([
+  const [automation, workspace, historyDays] = await Promise.all([
     requireAutomation(workspaceId, id),
     prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } }),
+    historyDaysFor(workspaceId),
   ]);
   const tz = safeTimezone(workspace.timezone);
-  const span = Math.min(Math.max(days, 1), 365);
+  // Delivery logs older than the plan's history are deleted, so a longer span would only add empty days.
+  const span = Math.min(Math.max(days, 1), 365, historyDays);
 
   // Calendar days in the workspace timezone, oldest first; today is the last bucket.
   const now = new Date();

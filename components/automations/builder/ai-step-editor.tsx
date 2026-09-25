@@ -7,7 +7,7 @@ import type { ChannelPlatform } from "@prisma/client";
 import { BotMessageSquare, Check, ChevronRight, ChevronsUpDown, Minus, Plus, Star } from "lucide-react";
 
 import { ConnectProviderDialog } from "@/components/ai/connect-provider-dialog";
-import { ProviderLogo } from "@/components/ai/provider-logo";
+import { BuiltInLogo, ProviderLogo } from "@/components/ai/provider-logo";
 import { apiFetch, errorMessage } from "@/components/automations/api";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -32,9 +32,10 @@ export type StepTarget = { id: string; name: string; type: FlowNodeType };
 
 /** Why the picked agent cannot reply, as the inspector says it next to the fix. */
 const PROBLEM: Record<NonNullable<AgentOption["problem"]>, string> = {
-  no_provider: "It has no AI provider to reply with yet.",
+  no_provider: "The AI connection it used has been removed.",
   invalid_key: "Its AI provider refused the key.",
   error: "Its last reply failed.",
+  builtin_unavailable: "The built-in AI is not set up on this server.",
 };
 
 /** Ready-made jobs for the step, so the first instruction is a click instead of a blank box. */
@@ -47,6 +48,7 @@ const STARTERS: ReadonlyArray<{ label: string; text: string }> = [
 ];
 
 function AgentMark({ agent, size = 32 }: { agent: AgentOption; size?: number }) {
+  if (agent.builtIn) return <BuiltInLogo size={size} />;
   if (agent.presetId) return <ProviderLogo preset={presetById(agent.presetId)} size={size} />;
   return (
     <span aria-hidden className="flex shrink-0 items-center justify-center bg-ink text-white" style={{ width: size, height: size, borderRadius: Math.round(size * 0.28) }}>

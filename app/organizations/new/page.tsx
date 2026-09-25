@@ -32,7 +32,7 @@ export default async function NewOrganizationPage() {
       }
     >
       <h1 className="font-display text-[32px] leading-none">New organization</h1>
-      <p className="mt-3 text-[14px] text-muted-foreground">Starts on the Free plan, with its own team and billing.</p>
+      <p className="mt-3 text-[14px] text-muted-foreground">It has its own team and billing. You choose its plan once it exists.</p>
       <div className="mt-7">
         {atLimit ? (
           <p className="rounded-2xl bg-fog px-4 py-3.5 text-[14px]">

@@ -51,8 +51,8 @@ is the default tone for that section's empty states.
 | Inbox | magenta | | Settings, Usage | indigo |
 
 **Plans.** Each plan has a colour (`PLAN_TONE` in `components/billing/plan-badge.tsx`):
-Free fog, Starter sky, Pro purple, Agency indigo. The current-plan block on
-Billing and the plan tile on General settings wear it; Free keeps ink.
+No plan fog, Starter sky, Pro purple, Agency indigo. The current-plan block on
+Billing and the plan tile on General settings wear it; no plan keeps ink.
 
 **MCP tools.** A tool is green when it only reads, orange when it changes
 something and red when it can't be undone. Its access pill is green when every
@@ -143,3 +143,23 @@ the selected edge animates. Everything respects `prefers-reduced-motion`.
 - No marketing voice in product copy: no "seamlessly", "powerful", "unlock",
   "supercharge", no exclamation marks.
 - Buttons are verbs: "Save", "Connect account", "New broadcast".
+
+## Product tour
+
+The tour (`components/app-shell/product-tour.tsx`) is the one place where the
+product explains itself; everywhere else the "no how it works boxes" rule
+above holds. It opens by itself once for every new person and replays from
+"Take the tour" in the account menu.
+
+- A step is a short title and one or two plain sentences: what the thing is
+  and what you do there. No promotional words, no exclamation marks, no lists
+  of features.
+- Steps point at stable parts of the shell through `data-tour` attributes:
+  the dock, its section tiles and account slot, the menu button on a phone,
+  the accounts bar on the dashboard. Never at page content that depends on
+  data or moves around. A step whose anchor is not on the page is skipped.
+- It uses the app's own pieces: the dimmer is the dialog overlay's ink, the
+  ring round the target is the magenta focus ring, the card is a white card
+  with a dialog's corners and `shadow-pop`, the brand mark leads the first and
+  last steps, and everything moves with `ease-soft` and respects
+  `prefers-reduced-motion`.

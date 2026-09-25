@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { STARTER_GUARDRAILS, STARTER_PROMPT, type AgentButton } from "@/lib/ai/agent";
+import type { BuiltInModel } from "@/lib/ai/builtin";
 import { presetFor, type ProviderPresetId } from "@/lib/ai/presets";
 import { MAX_BUTTONS, MAX_BUTTON_TITLE_CHARS } from "@/lib/meta/messages";
 import type { AgentView, ProviderView } from "@/lib/services/ai";
@@ -71,9 +72,9 @@ function sameDraft(a: Draft, b: Draft): boolean {
   return (Object.keys(a) as Array<keyof Draft>).every((key) => (key === "buttons" ? JSON.stringify(a.buttons) === JSON.stringify(b.buttons) : a[key] === b[key]));
 }
 
-/** The provider an agent actually uses: its own, or the workspace default. */
-function effectiveProvider(providerId: string | null, providers: ProviderView[]): ProviderView | null {
-  return (providerId ? providers.find((p) => p.id === providerId) : null) ?? providers.find((p) => p.isDefault) ?? providers[0] ?? null;
+/** The connection an agent replies with; null when it uses the built-in model. */
+function connectionOf(providerId: string | null, providers: ProviderView[]): ProviderView | null {
+  return providerId ? (providers.find((p) => p.id === providerId) ?? null) : null;
 }
 
 /** A labelled block of the settings column. */
@@ -182,12 +183,14 @@ function ButtonsEditor({ buttons, onChange, disabled }: { buttons: AgentButton[]
 function AgentEditor({
   agent,
   providers,
+  builtIn,
   canManage,
   onDirtyChange,
   onDeleted,
 }: {
   agent: AgentView;
   providers: ProviderView[];
+  builtIn: BuiltInModel;
   canManage: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onDeleted: (id: string) => void;
@@ -207,7 +210,7 @@ function AgentEditor({
   const dirty = !sameDraft(draft, saved);
   React.useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
-  const provider = effectiveProvider(draft.providerId, providers);
+  const provider = connectionOf(draft.providerId, providers);
   const preset = provider ? presetFor(provider) : null;
   const models = useProviderModels(provider?.id ?? null, canManage && Boolean(preset?.listsModels));
   const readOnly = !canManage;
@@ -334,12 +337,21 @@ function AgentEditor({
           <ProviderPicker
             id="agent-provider"
             providers={providers}
+            builtIn={builtIn}
             value={provider}
-            onChange={(next) => setDraft((prev) => (prev.providerId === next.id ? prev : { ...prev, providerId: next.id, model: null }))}
+            onChange={(next) => setDraft((prev) => (prev.providerId === (next?.id ?? null) ? prev : { ...prev, providerId: next?.id ?? null, model: null }))}
             canManage={canManage}
             onConnect={(presetId) => setConnect({ open: true, preset: presetId })}
             onManage={setManage}
+            disabled={readOnly}
           />
+          {!provider ? (
+            <p className={cn("px-1 text-[12px] leading-relaxed", builtIn.available ? "text-muted-foreground" : "text-destructive")}>
+              {builtIn.available
+                ? "Replies come from the built-in model, with no key to manage. Connect your own key to choose the model."
+                : "The built-in model is not set up on this server. Connect a provider to reply."}
+            </p>
+          ) : null}
           {provider ? (
             <ModelPicker
               id="agent-model"
@@ -489,6 +501,7 @@ function AgentEditor({
 function AgentSwitcher({
   agents,
   providers,
+  builtIn,
   selected,
   onSelect,
   onCreate,
@@ -497,6 +510,7 @@ function AgentSwitcher({
 }: {
   agents: AgentView[];
   providers: ProviderView[];
+  builtIn: BuiltInModel;
   selected: AgentView;
   onSelect: (id: string) => void;
   onCreate: () => void;
@@ -520,7 +534,7 @@ function AgentSwitcher({
       <DropdownMenuContent align="end" className="w-72">
         <p className="brand-label px-2.5 pb-1 pt-2 text-muted-foreground">Agents</p>
         {agents.map((agent) => {
-          const provider = effectiveProvider(agent.providerId, providers);
+          const provider = connectionOf(agent.providerId, providers);
           const active = agent.id === selected.id;
           return (
             <DropdownMenuItem key={agent.id} onSelect={() => onSelect(agent.id)} className="items-start gap-2.5 py-2">
@@ -529,7 +543,7 @@ function AgentSwitcher({
                   <span className="truncate font-semibold">{agent.name}</span>
                   {agent.isDefault ? <Star className="h-3 w-3 shrink-0 fill-ink text-ink" aria-label="Default" /> : null}
                 </span>
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">{agent.model ?? provider?.model ?? "No model"}</span>
+                <span className="block truncate font-mono text-[11px] text-muted-foreground">{provider ? (agent.model ?? provider.model) : builtIn.model}</span>
               </span>
               {active ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-purple" strokeWidth={2.5} /> : null}
             </DropdownMenuItem>
@@ -556,11 +570,14 @@ function AgentSwitcher({
 export function AiStudio({
   agents,
   providers,
+  builtIn,
   canManage,
   initialAgentId,
 }: {
   agents: AgentView[];
   providers: ProviderView[];
+  /** The model agents use when they name no connection of their own. */
+  builtIn: BuiltInModel;
   canManage: boolean;
   /** The agent to open with, when a link names one. */
   initialAgentId?: string;
@@ -612,7 +629,7 @@ export function AiStudio({
           tone="ink"
           icon={BotMessageSquare}
           title="No agents yet"
-          description="An agent answers DMs in your words, with your model."
+          description="An agent answers DMs in your words. It works without an API key."
           className="lg:flex-1"
           action={
             canManage ? (
@@ -636,6 +653,7 @@ export function AiStudio({
             <AgentSwitcher
               agents={agents}
               providers={providers}
+              builtIn={builtIn}
               selected={selected}
               onSelect={select}
               onCreate={requestCreate}
@@ -654,6 +672,7 @@ export function AiStudio({
           key={selected.id}
           agent={selected}
           providers={providers}
+          builtIn={builtIn}
           canManage={canManage}
           onDirtyChange={setDirty}
           onDeleted={(id) => {

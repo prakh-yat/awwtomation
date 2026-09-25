@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { withStepInstruction } from "@/lib/ai/agent";
-import { playgroundSchema, requireAgent, runAgent } from "@/lib/services/ai";
+import { assertPlaygroundAllowed, playgroundSchema, requireAgent, runAgent } from "@/lib/services/ai";
 import { listChannelOptions } from "@/lib/services/automations";
 import { parseBody, withWorkspace } from "@/lib/workspace/api";
 
@@ -11,12 +11,13 @@ export const runtime = "nodejs";
  * POST /api/ai/playground { agentId, messages, instruction? } -> { reply, handoff, done } or { error }.
  *
  * The same call the automation makes, so what you read here is what a contact
- * would get. It runs against the workspace's own key, so every test costs them
- * and nothing else; the reply is not sent to anyone.
+ * would get. The reply is not sent to anyone. On a workspace's own key every
+ * test costs them; on the built-in model it costs us, so it is rate limited.
  */
 export const POST = withWorkspace(async (req, ctx) => {
   const { agentId, messages, instruction } = await parseBody(req, playgroundSchema);
   const agent = await requireAgent(ctx.workspace.id, agentId);
+  await assertPlaygroundAllowed(ctx.workspace.id, agent);
 
   const channels = await listChannelOptions(ctx.workspace.id);
   const channel = channels.find((c) => c.status === "ACTIVE") ?? channels[0];

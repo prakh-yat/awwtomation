@@ -184,7 +184,7 @@ export default async function AutomationReportPage({ params, searchParams }: { p
         )}
       </div>
 
-      <AnalyticsFrame rangeLabel={rangeLabel} today={today}>
+      <AnalyticsFrame rangeLabel={rangeLabel} today={today} earliest={report.range.earliest} historyDays={report.range.historyDays}>
         <div className="space-y-6">
           <KpiStrip items={metrics} highlight="sent" tone="purple" />
 

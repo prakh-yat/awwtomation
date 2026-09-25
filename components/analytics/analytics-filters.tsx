@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { historyLabel } from "@/lib/billing/plans";
 import { cn } from "@/lib/utils";
 
 export type FilterChannel = {
@@ -45,6 +46,8 @@ export function AnalyticsFrame({
   automations,
   rangeLabel,
   today,
+  earliest,
+  historyDays,
   children,
   actions,
 }: {
@@ -56,6 +59,10 @@ export function AnalyticsFrame({
   rangeLabel: string;
   /** YYYY-MM-DD in the workspace time zone; the latest selectable day. */
   today: string;
+  /** YYYY-MM-DD; the earliest selectable day, where the plan's history begins. */
+  earliest: string;
+  /** Days of history the plan keeps: presets longer than this are left out. */
+  historyDays: number;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -92,7 +99,7 @@ export function AnalyticsFrame({
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <div className="scrollbar-none inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-fog p-1" role="group" aria-label="Date range">
-            {PRESETS.map((preset) => (
+            {PRESETS.filter((preset) => Number(preset.days) <= historyDays).map((preset) => (
               <button
                 key={preset.days}
                 type="button"
@@ -134,14 +141,14 @@ export function AnalyticsFrame({
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
                       <Label htmlFor="range-from">From</Label>
-                      <Input id="range-from" type="date" value={draftFrom} max={today} onChange={(e) => setDraftFrom(e.target.value)} required />
+                      <Input id="range-from" type="date" value={draftFrom} min={earliest} max={today} onChange={(e) => setDraftFrom(e.target.value)} required />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="range-to">To</Label>
-                      <Input id="range-to" type="date" value={draftTo} max={today} onChange={(e) => setDraftTo(e.target.value)} required />
+                      <Input id="range-to" type="date" value={draftTo} min={earliest} max={today} onChange={(e) => setDraftTo(e.target.value)} required />
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">Up to a year.</p>
+                  <p className="text-xs text-muted-foreground">Your plan keeps {historyLabel(historyDays)} of history.</p>
                   <Button type="submit" size="sm" className="w-full">
                     Apply range
                   </Button>

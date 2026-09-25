@@ -14,7 +14,7 @@ export async function saveAnswers(answers: unknown): Promise<void> {
   await saveOnboardingAnswers(ctx.workspace.id, answers);
 }
 
-/** Finishes the questionnaire, whether the last question was answered or skipped. */
+/** Finishes the welcome flow, whether it was completed, skipped or the plan left for later. */
 export async function finishOnboarding(answers: unknown): Promise<void> {
   const ctx = await requireWorkspaceContext();
   await saveOnboardingAnswers(ctx.workspace.id, answers);

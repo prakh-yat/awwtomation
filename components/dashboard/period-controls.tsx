@@ -5,7 +5,7 @@ import { useTransition } from "react";
 import type { ChannelPlatform } from "@prisma/client";
 
 import { PlatformMark } from "@/components/ui/platform-badge";
-import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
+import { Segmented } from "@/components/ui/segmented";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AnalyticsPeriod } from "@/lib/services/analytics";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,6 @@ const PERIODS: readonly AnalyticsPeriod[] = [7, 30, 90];
 const DEFAULT_PERIOD: AnalyticsPeriod = 7;
 const ALL_CHANNELS = "all";
 
-const PERIOD_OPTIONS: SegmentedOption<`${AnalyticsPeriod}`>[] = PERIODS.map((p) => ({ value: `${p}`, label: `${p}d` }));
 
 export type PeriodChannelOption = {
   id: string;
@@ -26,6 +25,8 @@ export type PeriodChannelOption = {
 
 export interface PeriodControlsProps {
   days: AnalyticsPeriod;
+  /** The periods the plan's history covers; longer ones are left out. */
+  periods?: readonly AnalyticsPeriod[];
   channelId: string | null;
   channels: PeriodChannelOption[];
 }
@@ -47,7 +48,7 @@ function channelLabel(c: PeriodChannelOption): string {
  * Period segmented control + channel filter. Both live in the URL so the
  * server page re-renders with fresh data and the view is shareable.
  */
-export function PeriodControls({ days, channelId, channels }: PeriodControlsProps) {
+export function PeriodControls({ days, periods = PERIODS, channelId, channels }: PeriodControlsProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -79,8 +80,8 @@ export function PeriodControls({ days, channelId, channels }: PeriodControlsProp
       <Segmented
         aria-label="Period"
         value={`${days}`}
-        onChange={(v) => navigate(PERIODS.find((p) => `${p}` === v) ?? DEFAULT_PERIOD, channelId)}
-        options={PERIOD_OPTIONS}
+        onChange={(v) => navigate(periods.find((p) => `${p}` === v) ?? DEFAULT_PERIOD, channelId)}
+        options={periods.map((p) => ({ value: `${p}` as const, label: `${p}d` }))}
         className="ml-auto w-auto shrink-0 tabular-nums sm:ml-0"
       />
     </div>

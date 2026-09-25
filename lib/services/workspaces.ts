@@ -4,6 +4,7 @@ import type { Organization, Workspace, WorkspaceRole } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import { checkOrganizationLimit } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { recordAudit } from "@/lib/services/audit";
@@ -85,6 +86,10 @@ export async function assertMembership(workspaceId: string, userId: string, minR
 export async function createWorkspace(organizationId: string, actorId: string, name: string): Promise<Workspace> {
   await assertOrganizationMembership(organizationId, actorId, "ADMIN");
   const cleanName = workspaceNameSchema.parse(name);
+  const slots = await checkOrganizationLimit(organizationId, "workspaces");
+  if (!slots.ok) {
+    throw new ApiError(403, `Your plan allows ${slots.limit} workspace${slots.limit === 1 ? "" : "s"}. Upgrade to add more.`, "PLAN_LIMIT");
+  }
   const base = slugify(cleanName);
 
   for (let attempt = 0; attempt < 5; attempt++) {

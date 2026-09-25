@@ -10,6 +10,7 @@ export const STATUS_ORDER: readonly DeliveryStatus[] = [
   "SKIPPED_NOT_FOLLOWING",
   "SKIPPED_WINDOW",
   "SKIPPED_PLAN_LIMIT",
+  "SKIPPED_CONTACT_LIMIT",
   "SKIPPED_OPTED_OUT",
 ];
 
@@ -25,6 +26,7 @@ export const STATUS_SHORT_LABELS: Record<DeliveryStatus, string> = {
   SKIPPED_NOT_FOLLOWING: "Not following",
   SKIPPED_WINDOW: "Over 24 hours",
   SKIPPED_PLAN_LIMIT: "Monthly limit",
+  SKIPPED_CONTACT_LIMIT: "Contact limit",
   SKIPPED_OPTED_OUT: "Opted out",
 };
 
@@ -38,6 +40,7 @@ export const STATUS_LABELS: Record<DeliveryStatus, string> = {
   SKIPPED_NOT_FOLLOWING: "Not sent: not following",
   SKIPPED_WINDOW: "Not sent: over 24 hours since their last message",
   SKIPPED_PLAN_LIMIT: "Not sent: monthly limit reached",
+  SKIPPED_CONTACT_LIMIT: "Not sent: contact limit reached",
   SKIPPED_OPTED_OUT: "Not sent: opted out",
 };
 
@@ -51,6 +54,7 @@ export const STATUS_HELP: Record<DeliveryStatus, string> = {
   SKIPPED_NOT_FOLLOWING: "They weren't following yet, so they got the follow prompt instead.",
   SKIPPED_WINDOW: "You can only message someone within 24 hours of their last message.",
   SKIPPED_PLAN_LIMIT: "You've used this month's DMs. Upgrade to keep sending.",
+  SKIPPED_CONTACT_LIMIT: "This person arrived after your plan's contact limit. They're saved, but automations wait until you upgrade.",
   SKIPPED_OPTED_OUT: "They asked not to get messages.",
 };
 
@@ -68,7 +72,7 @@ export type StatusBadgeVariant = "success" | "destructive" | "secondary" | "yell
 export function statusVariant(status: DeliveryStatus): StatusBadgeVariant {
   if (status === "SENT") return "success";
   if (status === "FAILED") return "destructive";
-  if (status === "SKIPPED_PLAN_LIMIT") return "yellow";
+  if (status === "SKIPPED_PLAN_LIMIT" || status === "SKIPPED_CONTACT_LIMIT") return "yellow";
   return "secondary";
 }
 

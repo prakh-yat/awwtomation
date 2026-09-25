@@ -1131,7 +1131,7 @@ async function main() {
   });
 
   // ── Kathmandu Fitness Club: just created, nothing connected ──
-  const kfcOrg = await createOrganization({ name: "Kathmandu Fitness Club", slug: "kathmandu-fitness-club", plan: "FREE", createdDaysAgo: 1, owner: bikash, team: [{ id: sara.id, role: "ADMIN" }] });
+  const kfcOrg = await createOrganization({ name: "Kathmandu Fitness Club", slug: "kathmandu-fitness-club", plan: "NONE", createdDaysAgo: 1, owner: bikash, team: [{ id: sara.id, role: "ADMIN" }] });
   const kfc = await prisma.workspace.create({
     data: { organizationId: kfcOrg.id, name: "Kathmandu Fitness Club", slug: "kathmandu-fitness-club", timezone: "Asia/Kathmandu", createdAt: nptTime(1, 16) },
   });

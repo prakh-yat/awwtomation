@@ -46,7 +46,7 @@ export function inGracePeriod(ws: BillingFields, now = new Date()): boolean {
 /**
  * The plan whose limits apply. Admin overrides win outright; subscriptions
  * grant their tier while paying (plus a short grace after a failed renewal);
- * everything else falls back to the stored `plan` (FREE for new organizations).
+ * everything else falls back to the stored `plan` (NONE for new organizations).
  */
 export function effectivePlan(ws: BillingFields, now = new Date()): PlanTier {
   if (ws.planSource === "ADMIN_OVERRIDE") return ws.plan;
@@ -59,21 +59,36 @@ export function effectivePlan(ws: BillingFields, now = new Date()): PlanTier {
         return tier;
       case "PAST_DUE":
       case "ON_HOLD":
-        return inGracePeriod(ws, now) ? tier : "FREE";
+        return inGracePeriod(ws, now) ? tier : "NONE";
       default:
         // NONE (pending first payment), CANCELLED, EXPIRED: nothing is granted.
-        return "FREE";
+        return "NONE";
     }
   }
 
   return ws.plan;
 }
 
-export type ServiceState = "free" | "active" | "trialing" | "grace" | "lapsed" | "cancelling";
+/** How long after a subscription lapses or ends its history is still kept at the paid plan's length. */
+export const HISTORY_GRACE_DAYS = 30;
+
+/**
+ * The plan whose history window applies. Deleting data cannot be undone, so a
+ * failed card or a cancellation keeps the paid plan's window for
+ * HISTORY_GRACE_DAYS after the period ends before shrinking to the no-plan window.
+ */
+export function historyPlan(ws: BillingFields, now = new Date()): PlanTier {
+  const effective = effectivePlan(ws, now);
+  if (ws.planSource !== "SUBSCRIPTION" || !ws.subscribedPlan || !ws.currentPeriodEnd) return effective;
+  if (now.getTime() - ws.currentPeriodEnd.getTime() > HISTORY_GRACE_DAYS * DAY_MS) return effective;
+  return PLANS[ws.subscribedPlan].historyDays > PLANS[effective].historyDays ? ws.subscribedPlan : effective;
+}
+
+export type ServiceState = "none" | "active" | "trialing" | "grace" | "lapsed" | "cancelling";
 
 /** Human-readable summary of the service state for badges and copy. */
 export function serviceState(ws: BillingFields, now = new Date()): ServiceState {
-  if (ws.planSource === "ADMIN_OVERRIDE") return isPaidPlan(ws.plan) ? "active" : "free";
+  if (ws.planSource === "ADMIN_OVERRIDE") return isPaidPlan(ws.plan) ? "active" : "none";
 
   if (ws.planSource === "SUBSCRIPTION") {
     switch (ws.billingStatus) {
@@ -85,11 +100,11 @@ export function serviceState(ws: BillingFields, now = new Date()): ServiceState 
       case "ON_HOLD":
         return inGracePeriod(ws, now) ? "grace" : "lapsed";
       default:
-        return "free";
+        return "none";
     }
   }
 
-  return isPaidPlan(ws.plan) ? "active" : "free";
+  return isPaidPlan(ws.plan) ? "active" : "none";
 }
 
 export type ServiceTone = "neutral" | "success" | "warning" | "destructive";
@@ -139,7 +154,7 @@ export function serviceStateInfo(ws: BillingFields, now = new Date()): ServiceSt
         state,
         label: `Cancels on ${shortDate(ws.currentPeriodEnd)}`,
         tone: "warning",
-        description: `The ${plan} plan stays active until ${shortDate(ws.currentPeriodEnd)}, then the organization moves to Free. You can resume any time before then.`,
+        description: `The ${plan} plan stays active until ${shortDate(ws.currentPeriodEnd)}, then nothing is sent until you choose a plan again. You can resume any time before then.`,
       };
     case "grace":
       return {
@@ -153,18 +168,18 @@ export function serviceStateInfo(ws: BillingFields, now = new Date()): ServiceSt
         state,
         label: "Payment failed",
         tone: "destructive",
-        description: `The ${subscribed} subscription is unpaid and the grace period has ended, so Free limits apply. Update your payment method to restore it.`,
+        description: `The ${subscribed} subscription is unpaid and the grace period has ended, so nothing is being sent. Update your payment method to restore it.`,
       };
-    case "free":
+    case "none":
     default:
       return {
-        state: "free",
-        label: "Free",
-        tone: "neutral",
+        state: "none",
+        label: "No plan",
+        tone: "warning",
         description:
           ws.billingStatus === "CANCELLED" || ws.billingStatus === "EXPIRED"
-            ? `Your ${subscribed} subscription has ended. Pick a plan below to upgrade again.`
-            : "You're on the Free plan. Upgrade for more accounts, automations and DMs.",
+            ? `Your ${subscribed} subscription has ended, so nothing is being sent. Choose a plan below to start again.`
+            : "You can connect an account and build automations now. Choose a plan below to start sending.",
       };
   }
 }

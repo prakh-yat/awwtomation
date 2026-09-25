@@ -1,7 +1,8 @@
 /**
  * Channels service: connected Instagram professional accounts and Facebook
  * Pages. Owns the OAuth completion, token storage, webhook subscription,
- * media cache (post picker) and the Meta deauthorize / data-deletion hooks.
+ * media cache (post picker), the answers to the questions asked about each
+ * account when it is connected, and the Meta deauthorize / data-deletion hooks.
  *
  * Every read/write of tenant data is scoped by `workspaceId`; the only
  * unscoped entry points are `syncChannelMedia` (worker job keyed by channel
@@ -17,6 +18,7 @@ import {
   type Channel,
   type Media,
 } from "@prisma/client";
+import { z } from "zod";
 
 import { checkLimit } from "@/lib/billing/usage";
 import { categorise } from "@/lib/errors/customer-messages";
@@ -42,6 +44,8 @@ import {
 } from "@/lib/meta/instagram";
 import { getChannelToken, markChannelTokenExpired } from "@/lib/meta/tokens";
 import { MetaApiError, MetaTokenError, type FacebookPageInfo } from "@/lib/meta/types";
+import { ACCOUNT_TYPE, accountTypeFromInstagram, GOALS, MONETIZATION, sanitizeAccountAnswers } from "@/lib/onboarding/account-questions";
+import type { Answers, QuestionShape } from "@/lib/onboarding/questions";
 import { enqueue } from "@/lib/queue";
 import { recordAudit } from "@/lib/services/workspaces";
 import { ApiError } from "@/lib/workspace/api";
@@ -72,6 +76,14 @@ export type ChannelHealth = {
 
 export type ChannelCounts = { automations: number; contacts: number; dms7d: number };
 
+/** What the person told us about the account when it was connected (lib/onboarding/account-questions.ts). */
+export type ChannelSetup = {
+  /** Keyed by question id: account_type, monetization, goals. */
+  answers: Answers;
+  /** Answered or skipped. The questions are only asked while this is false. */
+  complete: boolean;
+};
+
 /**
  * Client-safe channel projection. Dates are ISO strings so the same shape
  * works as server-component props and as API JSON. Never carries the token.
@@ -97,6 +109,7 @@ export type ChannelSummary = {
   updatedAt: string;
   counts: ChannelCounts;
   health: ChannelHealth;
+  setup: ChannelSetup;
 };
 
 /** Shape returned by GET /api/channels/[id]/media: consumed by the automations post picker. */
@@ -145,6 +158,7 @@ export type ChannelView = {
   lastSyncedAt: string | null;
   counts: ChannelCounts;
   health: { state: ChannelHealthState; daysLeft: number | null; problem: string | null };
+  setup: ChannelSetup;
 };
 
 export function toChannelView(summary: ChannelSummary): ChannelView {
@@ -170,6 +184,7 @@ export function toChannelView(summary: ChannelSummary): ChannelView {
       daysLeft: state === "expiring" ? days : null,
       problem: summary.lastError && state !== "ok" && state !== "disconnected" ? categorise(summary.lastError).description : null,
     },
+    setup: summary.setup,
   };
 }
 
@@ -212,6 +227,7 @@ function toSummary(channel: Channel, counts: ChannelCounts): ChannelSummary {
     updatedAt: channel.updatedAt.toISOString(),
     counts,
     health: getChannelHealth(channel),
+    setup: { answers: sanitizeAccountAnswers(channel.setupAnswers), complete: channel.setupCompletedAt !== null },
   };
 }
 
@@ -420,6 +436,17 @@ async function queueMediaSync(channel: Pick<Channel, "id" | "workspaceId">): Pro
 
 // ───────────────────────── Instagram ─────────────────────────
 
+/**
+ * Instagram tells us whether an account is a business or a creator, so a new
+ * account's setup questions open with that answer already picked. The person
+ * still sees the question and can change it; the questions stay unanswered
+ * (`setupCompletedAt` null) until they finish or skip them.
+ */
+function suggestedSetup(accountType: string | undefined): { setupAnswers?: { account_type: string } } {
+  const value = accountTypeFromInstagram(accountType);
+  return value ? { setupAnswers: { account_type: value } } : {};
+}
+
 export async function connectInstagramAccount(input: {
   workspaceId: string;
   userId: string;
@@ -446,11 +473,14 @@ export async function connectInstagramAccount(input: {
     scopes: short.permissions.length > 0 ? short.permissions : [...INSTAGRAM_SCOPES],
     status: ChannelStatus.ACTIVE,
     lastError: null,
+    // Reconnected: if it breaks again, that is a new incident and the owners hear about it again.
+    alertSentAt: null,
     connectedById: userId,
   };
   const channel = await prisma.channel.upsert({
     where: { platform_externalId: { platform: ChannelPlatform.INSTAGRAM, externalId: me.id } },
-    create: { workspaceId, platform: ChannelPlatform.INSTAGRAM, externalId: me.id, ...data },
+    // Only a new row gets the suggestion: a reconnect keeps whatever was answered before.
+    create: { workspaceId, platform: ChannelPlatform.INSTAGRAM, externalId: me.id, ...data, ...suggestedSetup(me.accountType) },
     update: data,
   });
 
@@ -578,6 +608,8 @@ export async function completeFacebookConnect(input: {
       scopes: [...FACEBOOK_SCOPES],
       status: ChannelStatus.ACTIVE,
       lastError: null,
+      // Reconnected: if it breaks again, that is a new incident and the owners hear about it again.
+      alertSentAt: null,
       connectedById: userId,
     };
     const channel = await prisma.channel.upsert({
@@ -603,6 +635,72 @@ export async function completeFacebookConnect(input: {
 
   const summaries = await listChannels(workspaceId);
   return ids.map((id) => summaries.find((s) => s.id === id)).filter((s): s is ChannelSummary => Boolean(s));
+}
+
+// ───────────────────────── Setup questions ─────────────────────────
+
+/** A question's option ids as the tuple `z.enum` wants; every question has options. */
+function optionEnum(question: QuestionShape) {
+  return z.enum(question.options.map((o) => o.value) as [string, ...string[]]);
+}
+
+/** "business (a business or brand), creator (...)": the choices, for the MCP tool's field descriptions. */
+function optionList(question: QuestionShape): string {
+  return question.options.map((o) => `${o.value} (${o.label.charAt(0).toLowerCase()}${o.label.slice(1)})`).join(", ");
+}
+
+/**
+ * The answers as PATCH /api/channels/[id]/setup and the update_account_details
+ * tool take them. A field left out keeps its saved answer; null or an empty
+ * list clears it.
+ */
+export const accountAnswersSchema = z.object({
+  account_type: optionEnum(ACCOUNT_TYPE).nullable().optional().describe(`What the account is: ${optionList(ACCOUNT_TYPE)}.`),
+  monetization: z
+    .array(optionEnum(MONETIZATION))
+    .max(MONETIZATION.options.length)
+    .optional()
+    .describe(`How it makes money, any of: ${optionList(MONETIZATION)}. none cannot be combined with the others.`),
+  goals: z
+    .array(optionEnum(GOALS))
+    .max(GOALS.options.length)
+    .optional()
+    .describe(`What it should do first, any of: ${optionList(GOALS)}. These are the template gallery's goals.`),
+});
+
+export const channelSetupSchema = z.object({
+  answers: accountAnswersSchema.optional(),
+  complete: z
+    .boolean()
+    .optional()
+    .describe("true marks the questions answered, so the app does not ask them again when the account is reconnected. Leaving it out saves the answers only."),
+});
+
+export type ChannelSetupInput = z.infer<typeof channelSetupSchema>;
+
+/**
+ * Saves the answers to the questions asked when an account is connected.
+ * Answers left out keep their saved value, so the dialog and an MCP client can
+ * both send only what changed. `complete` records that the questions were
+ * answered or skipped; editing them later keeps the first date.
+ */
+export async function saveChannelSetup(workspaceId: string, id: string, input: ChannelSetupInput): Promise<ChannelSummary> {
+  const channel = await requireChannel(workspaceId, id);
+  const answers = sanitizeAccountAnswers(channel.setupAnswers);
+  for (const [key, value] of Object.entries(input.answers ?? {})) {
+    if (value === undefined) continue;
+    if (value === null || (Array.isArray(value) && value.length === 0)) delete answers[key];
+    else answers[key] = value;
+  }
+  await prisma.channel.update({
+    where: { id: channel.id },
+    data: {
+      // Cleaned again after the merge: it drops an exclusive option picked alongside others.
+      setupAnswers: sanitizeAccountAnswers(answers),
+      ...(input.complete && !channel.setupCompletedAt ? { setupCompletedAt: new Date() } : {}),
+    },
+  });
+  return requireSummary(workspaceId, id);
 }
 
 // ───────────────────────── Disconnect ─────────────────────────
@@ -802,9 +900,15 @@ async function fetchFacebookPostRows(token: string, pageId: string): Promise<Med
 
 /**
  * Refreshes the cached Media rows for the post picker. Called by the
- * SYNC_MEDIA job handler (unscoped: the job carries a trusted channel id)
- * and inline by refresh/`?refresh=1`. Token errors flag the channel and
- * return; anything else propagates so the queue retries with backoff.
+ * SYNC_MEDIA job handler (unscoped: the job carries a trusted channel id),
+ * inline by refresh/`?refresh=1`, and by comment polling. Token errors flag
+ * the channel and return; anything else propagates so the queue retries with
+ * backoff.
+ *
+ * `Channel.lastSyncedAt` is written here and nowhere else, so it always means
+ * "when this cache was last filled from Meta": `listChannelMedia` syncs
+ * inline while it is null, and comment polling (lib/automation/reconcile.ts)
+ * refreshes the cache once it is six hours old.
  */
 export async function syncChannelMedia(channelId: string): Promise<void> {
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
@@ -941,7 +1045,8 @@ export async function refreshChannel(workspaceId: string, id: string): Promise<C
       channel.platform === ChannelPlatform.INSTAGRAM
         ? await fetchInstagramProfile(token)
         : await fetchFacebookPageProfile(token, channel.externalId);
-    await prisma.channel.update({ where: { id }, data: { ...profile, status: ChannelStatus.ACTIVE, lastError: null } });
+    // The token works, so any earlier incident is over; a later one gets its own reconnect email.
+    await prisma.channel.update({ where: { id }, data: { ...profile, status: ChannelStatus.ACTIVE, lastError: null, alertSentAt: null } });
   } catch (err) {
     if (err instanceof MetaTokenError) {
       await markChannelTokenExpired(id, err.message);

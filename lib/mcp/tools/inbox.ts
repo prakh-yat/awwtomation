@@ -106,7 +106,7 @@ export const inboxTools = [
       humanAgent: z.boolean().optional().describe("Mark it as a person's reply, allowed up to 7 days after the contact's last message."),
     },
     run: async (args, ctx) => {
-      assertRateLimit("inbox_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+      await assertRateLimit("inbox_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
       const message = await sendReply(ctx.workspace.id, args.conversationId, ctx.user.id, outboundMessageSchema.parse(toOutboundMessage(args.message)), { humanAgent: args.humanAgent });
       return { message };
     },

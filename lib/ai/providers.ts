@@ -19,6 +19,8 @@
  */
 import { lookup } from "node:dns/promises";
 
+import { brand } from "@/lib/brand";
+
 import { PROVIDER_INFO, type ChatFailure, type ChatRequest, type ChatResult } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -163,9 +165,21 @@ type Tuning = {
   noThinking: boolean;
   /** Extra tokens for models that think before they answer. */
   headroom: number;
+  /**
+   * OpenRouter's own reasoning switch: think briefly and leave the thinking out
+   * of the reply. Models that do not reason ignore it.
+   */
+  openRouterReasoning: boolean;
 };
 
 const THINKING_HEADROOM = 2048;
+/** OpenRouter routes to reasoning models too; low effort needs far less than a full budget. */
+const OPENROUTER_HEADROOM = 1024;
+
+function isOpenRouter(base: string): boolean {
+  const host = hostOf(base);
+  return host === "openrouter.ai" || host.endsWith(".openrouter.ai");
+}
 
 function hostOf(base: string): string {
   try {
@@ -187,7 +201,7 @@ function isOpenAiReasoning(model: string): boolean {
 }
 
 function tuningFor(request: ChatRequest): Tuning {
-  const base: Tuning = { temperature: true, tokenParam: "max_tokens", lowEffort: false, noThinking: false, headroom: 0 };
+  const base: Tuning = { temperature: true, tokenParam: "max_tokens", lowEffort: false, noThinking: false, headroom: 0, openRouterReasoning: false };
 
   if (request.kind === "ANTHROPIC") {
     return isNewClaude(request.model) ? { ...base, temperature: false, lowEffort: true, headroom: THINKING_HEADROOM } : base;
@@ -199,6 +213,8 @@ function tuningFor(request: ChatRequest): Tuning {
     if (/gemini-(2\.5|[3-9])/.test(model)) return { ...base, headroom: THINKING_HEADROOM };
     return base;
   }
+
+  if (isOpenRouter(baseFor(request))) return { ...base, openRouterReasoning: true, headroom: OPENROUTER_HEADROOM };
 
   const direct = hostOf(baseFor(request)) === "api.openai.com";
   const reasoning = direct && isOpenAiReasoning(request.model);
@@ -223,6 +239,7 @@ function retune(tuning: Tuning, message: string): Tuning | null {
   if (tuning.tokenParam === "max_tokens" && text.includes("max_completion_tokens")) return { ...tuning, tokenParam: "max_completion_tokens" };
   if (tuning.tokenParam === "max_completion_tokens" && text.includes("max_completion_tokens")) return { ...tuning, tokenParam: "max_tokens" };
   if (tuning.lowEffort && /(effort|output_config|reasoning)/.test(text)) return { ...tuning, lowEffort: false };
+  if (tuning.openRouterReasoning && /reasoning/.test(text)) return { ...tuning, openRouterReasoning: false };
   if (tuning.noThinking && /(thinking)/.test(text)) return { ...tuning, noThinking: false, headroom: THINKING_HEADROOM };
   return null;
 }
@@ -284,15 +301,25 @@ function prepare(request: ChatRequest, tuning: Tuning): Prepared {
 
   return {
     url: `${base}/chat/completions`,
-    headers: { authorization: `Bearer ${request.apiKey}`, "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${request.apiKey}`,
+      "content-type": "application/json",
+      // OpenRouter's attribution headers; every other endpoint ignores them.
+      ...(isOpenRouter(base) ? { "HTTP-Referer": appOrigin(), "X-Title": brand.name } : {}),
+    },
     body: {
       model: request.model,
       messages: request.messages,
       ...(tuning.temperature ? { temperature: request.temperature } : {}),
       [tuning.tokenParam]: maxTokens,
       ...(tuning.lowEffort ? { reasoning_effort: "low" } : {}),
+      ...(tuning.openRouterReasoning ? { reasoning: { effort: "low", exclude: true } } : {}),
     },
   };
+}
+
+function appOrigin(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
 function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; promptTokens: number; completionTokens: number } {

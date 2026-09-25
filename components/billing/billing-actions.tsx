@@ -214,8 +214,8 @@ function CancelDialog({
           <DialogTitle>Cancel the {planLabel} plan?</DialogTitle>
           <DialogDescription>
             {endDate
-              ? `You keep ${planLabel} until ${endDate}, then the organization moves to Free. Nothing is refunded, and you can resume any time before then.`
-              : "The organization moves to Free at the end of the current period. You can resume any time before then."}
+              ? `You keep ${planLabel} until ${endDate}, then nothing is sent until you choose a plan again. Nothing is refunded, and you can resume any time before then.`
+              : "Sending stops at the end of the current period. Your automations, contacts and conversations stay, and you can resume any time before then."}
           </DialogDescription>
         </DialogHeader>
 

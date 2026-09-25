@@ -3,14 +3,12 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { PlanTier } from "@prisma/client";
-import { ArrowRight, ArrowUpRight, Check, ChevronLeft } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft } from "lucide-react";
 
-import type { MetaConfigured } from "@/components/channels/connect-buttons";
+import { PlanSwatch } from "@/components/billing/plan-badge";
 import { GridLines } from "@/components/layout/grid-block";
 import { Button } from "@/components/ui/button";
 import { LogoMark, Wordmark } from "@/components/ui/logo";
-import { PLATFORM_TONE } from "@/components/ui/platform-badge";
-import { PlatformIcon, type PlatformIconPlatform } from "@/components/ui/platform-icon";
 import { Segmented } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/sonner";
 import { TONES, type Tone } from "@/components/ui/tone";
@@ -18,54 +16,40 @@ import {
   annualSavingsPercent,
   formatUsd,
   intervalSuffix,
+  monthlyEquivalentCents,
   PLAN_ORDER,
   PLANS,
   planPriceCents,
-  PURCHASABLE_PLANS,
   type BillingIntervalId,
 } from "@/lib/billing/plans";
-import { isAnswered, PROFILE_QUESTIONS, USAGE_QUESTIONS, type Answers, type Question } from "@/lib/onboarding/questions";
+import { isAnswered, toggleAnswer, WORKSPACE_QUESTIONS, type Answers, type Question } from "@/lib/onboarding/questions";
 import { cn } from "@/lib/utils";
 
 import { finishOnboarding, saveAnswers } from "./actions";
 import { WelcomeArt, type ArtName } from "./welcome-art";
 
-type Step = { kind: "question"; question: Question } | { kind: "connect" } | { kind: "plan" };
+type Step = { kind: "question"; question: Question } | { kind: "plan" };
 
-const CONNECT_STEP: Step = { kind: "connect" };
 const PLAN_STEP: Step = { kind: "plan" };
 
 function buildSteps(withPlan: boolean): Step[] {
-  return [
-    ...PROFILE_QUESTIONS.map((question) => ({ kind: "question" as const, question })),
-    CONNECT_STEP,
-    ...USAGE_QUESTIONS.map((question) => ({ kind: "question" as const, question })),
-    ...(withPlan ? [PLAN_STEP] : []),
-  ];
+  return [...WORKSPACE_QUESTIONS.map((question) => ({ kind: "question" as const, question })), ...(withPlan ? [PLAN_STEP] : [])];
 }
 
 /**
- * The four parts of the flow. Each has a colour: the left panel fills with it
- * and a chosen option is tinted with it, so the part you are in is always clear.
+ * The two parts of the flow. Each has a colour and a mark: the left panel fills
+ * with the colour and a chosen option is tinted with it, so the part you are in
+ * is always clear.
  */
-type StageId = "profile" | "connect" | "usage" | "plan";
+type StageId = "workspace" | "plan";
 
-const STAGES: Record<StageId, { label: string; tone: Tone }> = {
-  profile: { label: "About you", tone: "yellow" },
-  connect: { label: "Connect", tone: "ink" },
-  usage: { label: "Your account", tone: "purple" },
-  plan: { label: "Your plan", tone: "lavender" },
+const STAGES: Record<StageId, { label: string; tone: Tone; art: ArtName }> = {
+  workspace: { label: "Your workspace", tone: "yellow", art: "start" },
+  plan: { label: "Your plan", tone: "lavender", art: "finish" },
 };
 
 function stageOf(step: Step): StageId {
-  return step.kind === "question" ? step.question.stage : step.kind;
-}
-
-function artFor(step: Step, index: number, total: number): ArtName {
-  if (step.kind === "connect") return "connect";
-  if (step.kind === "plan") return "finish";
-  if (index >= total - 1) return "finish";
-  return step.question.stage === "profile" ? "start" : "strategy";
+  return step.kind === "plan" ? "plan" : "workspace";
 }
 
 /** A chosen card: an ink edge (drawn inside, so nothing shifts) on the stage's soft tint. */
@@ -191,85 +175,6 @@ function QuestionStep({
   );
 }
 
-const CONNECT_TILES: ReadonlyArray<{ platform: PlatformIconPlatform; name: string; detail: string; action: string }> = [
-  { platform: "INSTAGRAM", name: "Instagram", detail: "Comments, DMs and story replies", action: "Connect Instagram" },
-  { platform: "FACEBOOK", name: "Messenger", detail: "Facebook Page comments and Messenger", action: "Connect Facebook Page" },
-];
-
-function ConnectStep({
-  configured,
-  connectHrefs,
-  hasChannel,
-  connectedLabel,
-  headingRef,
-}: {
-  configured: MetaConfigured;
-  connectHrefs: { instagram: string; facebook: string };
-  hasChannel: boolean;
-  connectedLabel: string | null;
-  headingRef: React.Ref<HTMLHeadingElement>;
-}) {
-  return (
-    <>
-      <StepHeading headingRef={headingRef}>Connect an account</StepHeading>
-      <p className="mt-4 text-[15px] text-muted-foreground">Instagram needs a professional account.</p>
-
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        {CONNECT_TILES.map((tile) => {
-          const instagram = tile.platform === "INSTAGRAM";
-          const enabled = instagram ? configured.instagram : configured.facebook;
-          const shell = cn("group flex min-h-[208px] flex-col rounded-3xl p-5 sm:min-h-[236px]", PLATFORM_TONE[tile.platform].tile);
-          const body = (
-            <>
-              <span className="flex items-start justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
-                  <PlatformIcon platform={tile.platform} size={24} />
-                </span>
-                {enabled ? (
-                  <ArrowUpRight
-                    aria-hidden
-                    className="h-5 w-5 opacity-70 transition-[transform,opacity] duration-200 ease-soft group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:opacity-100 motion-reduce:transition-none"
-                  />
-                ) : null}
-              </span>
-              <span className="mt-auto block pt-8">
-                <span className="block font-display text-[30px] leading-none">{tile.name}</span>
-                <span className="mt-2 block text-[13px] opacity-85">{tile.detail}</span>
-              </span>
-              <span className="mt-5 flex h-10 items-center justify-center rounded-full bg-white px-4 text-[14px] font-semibold text-ink">
-                {enabled ? tile.action : "Unavailable right now"}
-              </span>
-            </>
-          );
-          // Plain anchors: the targets are route handlers that redirect to Meta.
-          return enabled ? (
-            <a
-              key={tile.platform}
-              href={instagram ? connectHrefs.instagram : connectHrefs.facebook}
-              className={cn(shell, "lift outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2")}
-            >
-              {body}
-            </a>
-          ) : (
-            <div key={tile.platform} aria-disabled="true" className={cn(shell, "opacity-45")}>
-              {body}
-            </div>
-          );
-        })}
-      </div>
-
-      {hasChannel ? (
-        <p className="mt-6 flex items-center gap-2.5 text-[14px] font-semibold">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green text-white">
-            <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
-          </span>
-          {connectedLabel ? `${connectedLabel} is connected` : "Your account is connected"}
-        </p>
-      ) : null}
-    </>
-  );
-}
-
 function PlanStep({
   plan,
   interval,
@@ -279,7 +184,7 @@ function PlanStep({
   onInterval,
   headingRef,
 }: {
-  plan: PlanTier | null;
+  plan: PlanTier;
   interval: BillingIntervalId;
   billingConfigured: boolean;
   tone: Tone;
@@ -287,7 +192,7 @@ function PlanStep({
   onInterval: (next: BillingIntervalId) => void;
   headingRef: React.Ref<HTMLHeadingElement>;
 }) {
-  const savings = Math.min(...PURCHASABLE_PLANS.map(annualSavingsPercent));
+  const savings = Math.min(...PLAN_ORDER.map(annualSavingsPercent));
 
   return (
     <>
@@ -306,25 +211,25 @@ function PlanStep({
         />
       </div>
 
+      <p className="mt-4 text-[15px] text-muted-foreground">Set everything up now. Nothing is sent until you pick a plan.</p>
+
       {!billingConfigured ? (
         <p className="mt-5 rounded-2xl bg-orange-soft px-4 py-3 text-[13px] text-orange-ink">
-          Card payments are off for now, so only Free can be started here.
+          Card payments aren&apos;t available right now. You can pick a plan later in Settings.
         </p>
       ) : null}
 
-      <div role="radiogroup" aria-label="Plans" className="mt-6 grid gap-2.5 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Plans" className="mt-6 grid gap-2.5 sm:grid-cols-3">
         {PLAN_ORDER.map((tier) => {
           const limits = PLANS[tier];
-          const selected = plan === tier;
-          const disabled = tier !== "FREE" && !billingConfigured;
-          const cents = planPriceCents(tier, interval);
+          const selected = billingConfigured && plan === tier;
           return (
             <button
               key={tier}
               type="button"
               role="radio"
               aria-checked={selected}
-              disabled={disabled}
+              disabled={!billingConfigured}
               onClick={() => onPlan(tier)}
               className={cn(
                 cardBase,
@@ -332,20 +237,25 @@ function PlanStep({
                 selected ? selectedCard(tone) : "border-border bg-background text-ink enabled:hover:border-ink/35",
               )}
             >
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold">{limits.label}</span>
-                  <span className="mt-0.5 block text-[13px] text-muted-foreground">{limits.description}</span>
+              <span className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <PlanSwatch plan={tier} />
+                  <span className="truncate text-[15px] font-semibold">{limits.label}</span>
                 </span>
                 <ChoiceMark selected={selected} multi={false} />
               </span>
+              <span className="mt-1 block text-[13px] text-muted-foreground">{limits.description}</span>
 
-              <span className="mt-5 block font-display text-[32px] leading-none">
-                {cents === 0 ? "Free" : formatUsd(cents)}
-                {cents === 0 ? null : (
-                  <span className="ml-1 font-sans text-[13px] font-medium tracking-normal text-muted-foreground">{intervalSuffix(interval)}</span>
-                )}
+              {/* Priced as on the pricing page: what is charged, and for a year what that is a month. */}
+              <span className="mt-5 flex flex-wrap items-baseline gap-x-1">
+                <span className="font-display text-[32px] leading-none tabular-nums">{formatUsd(planPriceCents(tier, interval))}</span>
+                <span className="text-[13px] font-medium text-muted-foreground">{intervalSuffix(interval)}</span>
               </span>
+              {interval === "ANNUAL" ? (
+                <span className="mt-1.5 block text-[12px] text-muted-foreground">
+                  {formatUsd(monthlyEquivalentCents(tier, interval))} a month, billed yearly
+                </span>
+              ) : null}
 
               <span className="mt-4 block space-y-1.5 text-[13px] text-muted-foreground">
                 {limits.features.slice(0, 4).map((feature) => (
@@ -395,8 +305,8 @@ function Progress({ index, total }: { index: number; total: number }) {
 }
 
 /** The colour block on the left from `lg` up: the part of the flow you are in, and its mark. */
-function StagePanel({ stage, art, connectedLabel }: { stage: StageId; art: ArtName; connectedLabel: string | null }) {
-  const { label, tone } = STAGES[stage];
+function StagePanel({ stage }: { stage: StageId }) {
+  const { label, tone, art } = STAGES[stage];
   return (
     <aside
       className={cn(
@@ -415,75 +325,46 @@ function StagePanel({ stage, art, connectedLabel }: { stage: StageId; art: ArtNa
         <WelcomeArt name={art} />
       </div>
 
-      <div key={stage} className="animate-fade-in motion-reduce:animate-none">
-        <p className="font-display text-[clamp(3rem,5vw,4.5rem)] leading-[0.9]">{label}</p>
-        {stage === "usage" && connectedLabel ? (
-          <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-white/15 py-1.5 pl-1.5 pr-3.5 text-[13px] font-semibold">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-ink">
-              <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
-            </span>
-            {connectedLabel} connected
-          </p>
-        ) : null}
-      </div>
+      <p key={stage} className="animate-fade-in font-display text-[clamp(3rem,5vw,4.5rem)] leading-[0.9] motion-reduce:animate-none">
+        {label}
+      </p>
     </aside>
   );
 }
 
 export interface WelcomeFlowProps {
   initialAnswers: Answers;
-  hasChannel: boolean;
-  /** Handle or name of the connected account, for the copy after the connect step. */
-  connectedLabel: string | null;
-  configured: MetaConfigured;
-  /** Where the connect buttons point, keyed by platform. */
-  connectHrefs: { instagram: string; facebook: string };
   /**
-   * Whether to end on the plan step. Owners without a subscription choose the
-   * organization's plan here; an invited member has no business doing that.
+   * Whether to end on the plan step. Only an owner whose organization has no
+   * plan and no subscription chooses one here; everyone else has nothing to decide.
    */
   showPlanStep: boolean;
-  /** False when card payments are not configured, which disables the paid cards. */
+  /** False when card payments are not configured: the plans are shown but only the dashboard is offered. */
   billingConfigured: boolean;
 }
 
 /**
- * The welcome questionnaire.
- *
- * Profile questions come first because they are about the person and the brand
- * and need nothing connected. The channel is connected in the middle, and the
- * usage questions follow it, because every one of them asks about "this
- * account" or "the channel you connected" and would be guesswork before then.
+ * The welcome flow: who the workspace is for, then, for an owner who has not
+ * subscribed, the plan. Connecting an account is not part of it: that happens
+ * on the dashboard, which asks about each account as it is connected.
  */
-export function WelcomeFlow({
-  initialAnswers,
-  hasChannel,
-  connectedLabel,
-  configured,
-  connectHrefs,
-  showPlanStep,
-  billingConfigured,
-}: WelcomeFlowProps) {
+export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }: WelcomeFlowProps) {
   const router = useRouter();
   const steps = React.useMemo(() => buildSteps(showPlanStep), [showPlanStep]);
-  const connectIndex = steps.findIndex((s) => s.kind === "connect");
 
   const [answers, setAnswers] = React.useState<Answers>(initialAnswers);
-  const [plan, setPlan] = React.useState<PlanTier | null>(null);
+  const [plan, setPlan] = React.useState<PlanTier>(PLAN_ORDER[0]);
   const [interval, setInterval] = React.useState<BillingIntervalId>("MONTHLY");
   const [pending, startTransition] = React.useTransition();
+  // Which way out is on its way, so only that button spins.
+  const [leaving, setLeaving] = React.useState<"next" | "later" | "skip" | null>(null);
   // Which way the next step slides in from.
   const [direction, setDirection] = React.useState<"forward" | "back">("forward");
 
-  // Resume where the flow actually is: at the connect step until a channel
-  // exists, then at the first usage question that has no answer yet.
+  // Resume at the first question without an answer, or at the end when all have one.
   const [index, setIndex] = React.useState(() => {
-    if (!hasChannel) {
-      const firstUnanswered = PROFILE_QUESTIONS.findIndex((q) => !isAnswered(q, initialAnswers));
-      return firstUnanswered === -1 ? connectIndex : firstUnanswered;
-    }
-    const firstUnanswered = USAGE_QUESTIONS.findIndex((q) => !isAnswered(q, initialAnswers));
-    return connectIndex + 1 + (firstUnanswered === -1 ? USAGE_QUESTIONS.length - 1 : firstUnanswered);
+    const firstUnanswered = steps.findIndex((s) => s.kind === "question" && !isAnswered(s.question, initialAnswers));
+    return firstUnanswered === -1 ? steps.length - 1 : firstUnanswered;
   });
 
   const step = steps[index];
@@ -491,9 +372,9 @@ export function WelcomeFlow({
   const isLast = index === total - 1;
   const stage = stageOf(step);
   const tone = STAGES[stage].tone;
+  const offerCheckout = step.kind === "plan" && billingConfigured;
 
-  const canAdvance =
-    step.kind === "connect" ? hasChannel : step.kind === "plan" ? plan !== null : isAnswered(step.question, answers);
+  const canAdvance = step.kind === "plan" ? true : isAnswered(step.question, answers);
 
   // A new step moves focus to its question, so keyboard and screen reader users
   // start there, and puts the page back at the top on small screens.
@@ -507,38 +388,33 @@ export function WelcomeFlow({
   }, [index]);
 
   function toggle(question: Question, value: string) {
-    setAnswers((prev) => {
-      if (question.kind === "single") return { ...prev, [question.id]: value };
-      const current = Array.isArray(prev[question.id]) ? (prev[question.id] as string[]) : [];
-      const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
-      return { ...prev, [question.id]: next };
+    setAnswers((prev) => toggleAnswer(question, prev, value));
+  }
+
+  /** Finishes the flow (skipped or not) and leaves for `target`. */
+  function finish(target: string, way: "next" | "later" | "skip") {
+    const snapshot = answers;
+    setLeaving(way);
+    startTransition(async () => {
+      try {
+        await finishOnboarding(snapshot);
+        router.replace(target);
+      } catch {
+        setLeaving(null);
+        toast.error(way === "skip" ? "Couldn’t skip right now. Try again." : "Couldn’t save your answers. Try again.");
+      }
     });
   }
 
-  /** Where finishing lands: checkout for a paid plan, the dashboard otherwise. */
-  function destination(): string {
-    if (!showPlanStep || plan === null || plan === "FREE") return "/dashboard";
-    return `/checkout?tier=${plan.toLowerCase()}&interval=${interval.toLowerCase()}`;
-  }
-
   function goNext() {
-    const snapshot = answers;
     if (isLast) {
-      const target = destination();
-      startTransition(async () => {
-        try {
-          await finishOnboarding(snapshot);
-          router.replace(target);
-        } catch {
-          toast.error("Couldn’t save your answers. Try again.");
-        }
-      });
+      finish(offerCheckout ? `/checkout?tier=${plan.toLowerCase()}&interval=${interval.toLowerCase()}` : "/dashboard", "next");
       return;
     }
     setDirection("forward");
     setIndex((i) => Math.min(i + 1, total - 1));
-    // Saved in the background: a slow round trip should never hold up the next question.
-    void saveAnswers(snapshot).catch(() => undefined);
+    // Saved in the background: a slow round trip should never hold up the next step.
+    void saveAnswers(answers).catch(() => undefined);
   }
 
   function goBack() {
@@ -546,23 +422,11 @@ export function WelcomeFlow({
     setIndex((i) => Math.max(i - 1, 0));
   }
 
-  function skip() {
-    const snapshot = answers;
-    startTransition(async () => {
-      try {
-        await finishOnboarding(snapshot);
-        router.replace("/dashboard");
-      } catch {
-        toast.error("Couldn’t skip right now. Try again.");
-      }
-    });
-  }
-
-  const nextLabel = !isLast ? "Continue" : destination().startsWith("/checkout") ? "Continue to checkout" : "Go to dashboard";
+  const nextLabel = !isLast ? "Continue" : offerCheckout ? "Continue to checkout" : "Go to dashboard";
 
   return (
     <main className="min-h-dvh bg-background lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      <StagePanel stage={stage} art={artFor(step, index, total)} connectedLabel={connectedLabel} />
+      <StagePanel stage={stage} />
 
       <section className="flex min-h-dvh min-w-0 flex-col">
         <header className="flex flex-wrap items-center gap-x-5 gap-y-4 px-5 pt-5 sm:px-10 lg:px-14 lg:pt-9">
@@ -570,12 +434,24 @@ export function WelcomeFlow({
             <LogoMark size={24} />
             <Wordmark height={11} />
           </span>
-          <div className="order-last flex w-full sm:order-none sm:w-auto sm:flex-1">
-            <Progress index={index} total={total} />
-          </div>
-          <Button variant="ghost" size="sm" onClick={skip} disabled={pending} className="-mr-2 ml-auto text-muted-foreground hover:text-ink">
-            Skip for now
-          </Button>
+          {total > 1 ? (
+            <div className="order-last flex w-full sm:order-none sm:w-auto sm:flex-1">
+              <Progress index={index} total={total} />
+            </div>
+          ) : null}
+          {/* The plan step has its own way out ("Decide later"), so it does not need this one too. */}
+          {step.kind === "plan" ? null : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => finish("/dashboard", "skip")}
+              disabled={pending}
+              loading={leaving === "skip"}
+              className="-mr-2 ml-auto text-muted-foreground hover:text-ink"
+            >
+              Skip for now
+            </Button>
+          )}
         </header>
 
         {/* `clip` rather than `hidden`, so the sliding step never adds a scrollbar and the footer can still stick. */}
@@ -592,15 +468,7 @@ export function WelcomeFlow({
               {STAGES[stage].label}
             </span>
 
-            {step.kind === "connect" ? (
-              <ConnectStep
-                configured={configured}
-                connectHrefs={connectHrefs}
-                hasChannel={hasChannel}
-                connectedLabel={connectedLabel}
-                headingRef={headingRef}
-              />
-            ) : step.kind === "plan" ? (
+            {step.kind === "plan" ? (
               <PlanStep
                 plan={plan}
                 interval={interval}
@@ -617,18 +485,28 @@ export function WelcomeFlow({
         </div>
 
         <footer className="sticky bottom-0 z-10 border-t bg-background/90 px-5 py-3.5 backdrop-blur-md sm:px-10 lg:border-t-0 lg:px-14 lg:py-7">
-          <div className="mx-auto flex w-full max-w-[46rem] items-center justify-between gap-3">
+          {/* With two ways forward, a phone puts the main one on its own row. */}
+          <div className="mx-auto flex w-full max-w-[46rem] flex-wrap items-center gap-x-3 gap-y-2.5">
             {index > 0 ? (
               <Button variant="ghost" onClick={goBack} disabled={pending} className="-ml-3">
                 <ChevronLeft />
                 Back
               </Button>
-            ) : (
-              <span />
-            )}
-            <Button size="lg" onClick={goNext} disabled={!canAdvance} loading={pending}>
+            ) : null}
+            {offerCheckout ? (
+              <Button variant="outline" size="lg" onClick={() => finish("/dashboard", "later")} disabled={pending} loading={leaving === "later"} className="ml-auto">
+                Decide later
+              </Button>
+            ) : null}
+            <Button
+              size="lg"
+              onClick={goNext}
+              disabled={!canAdvance || pending}
+              loading={leaving === "next"}
+              className={offerCheckout ? "max-sm:w-full" : "ml-auto"}
+            >
               {nextLabel}
-              {isLast || pending ? null : <ArrowRight />}
+              {isLast || leaving === "next" ? null : <ArrowRight />}
             </Button>
           </div>
         </footer>

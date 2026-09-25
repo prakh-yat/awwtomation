@@ -285,6 +285,12 @@ const STATUS_COPY: Record<Exclude<DeliveryStatus, "FAILED">, StatusCopy> = {
     description: COPY.plan_limit.description,
     category: "plan_limit",
   },
+  SKIPPED_CONTACT_LIMIT: {
+    label: "Contact limit",
+    title: "Contact limit reached",
+    description: "This person arrived after your plan's contact limit. They're saved, but automations wait until you upgrade.",
+    category: "plan_limit",
+  },
   SKIPPED_OPTED_OUT: {
     label: "Opted out",
     title: "Opted out",

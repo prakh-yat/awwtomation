@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronsUpDown, KeyRound, MoreHorizontal, Plus, Search, SlidersHorizontal, Star, Trash2, Zap } from "lucide-react";
+import { Check, ChevronsUpDown, KeyRound, MoreHorizontal, Search, SlidersHorizontal, Star, Trash2, Zap } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -12,19 +12,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { BuiltInModel } from "@/lib/ai/builtin";
 import { PROVIDER_PRESETS, presetFor, type ProviderPresetId } from "@/lib/ai/presets";
 import type { ProviderView } from "@/lib/services/ai";
 import { cn } from "@/lib/utils";
 
 import { makeDefaultProvider, testProvider, type ProviderTarget } from "./provider-dialogs";
-import { ProviderLogo } from "./provider-logo";
+import { BuiltInLogo, ProviderLogo } from "./provider-logo";
 
 export type ProviderPickerProps = {
   id?: string;
   providers: ProviderView[];
-  /** The connection the agent replies with: its own, or the workspace default. */
+  /** The model that needs no key: what an agent with no connection replies with. */
+  builtIn: BuiltInModel;
+  /** The connection the agent replies with; null is the built-in model. */
   value: ProviderView | null;
-  onChange: (provider: ProviderView) => void;
+  onChange: (provider: ProviderView | null) => void;
   canManage: boolean;
   /** Picking a provider that is not connected yet asks for its key. */
   onConnect: (preset: ProviderPresetId) => void;
@@ -39,11 +42,12 @@ function matches(query: string, ...fields: string[]): boolean {
 }
 
 /**
- * Every provider in one list: the connections this workspace already has, then
- * everything it can connect, each under its own logo. Choosing a connection
- * uses it; choosing a provider opens its key form.
+ * Every model source in one list: the built-in model first (no key needed),
+ * then the connections this workspace already has, then everything it can
+ * connect, each under its own logo. Choosing the built-in model or a
+ * connection uses it; choosing a provider opens its key form.
  */
-export function ProviderPicker({ id, providers, value, onChange, canManage, onConnect, onManage, disabled }: ProviderPickerProps) {
+export function ProviderPicker({ id, providers, builtIn, value, onChange, canManage, onConnect, onManage, disabled }: ProviderPickerProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -51,6 +55,7 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
   const listId = React.useId();
 
   const q = query.trim().toLowerCase();
+  const showBuiltIn = matches(q, builtIn.label, "built-in", "included", builtIn.model);
   const connected = providers.filter((p) => matches(q, p.label, presetFor(p).name, p.model));
   const available = canManage ? PROVIDER_PRESETS.filter((p) => matches(q, p.name, p.id)) : [];
 
@@ -74,7 +79,7 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
     move(target.hasAttribute("data-option") ? target : null, event.key === "ArrowDown" ? 1 : -1);
   }
 
-  function pickConnected(provider: ProviderView) {
+  function pickConnected(provider: ProviderView | null) {
     onChange(provider);
     setOpen(false);
   }
@@ -96,12 +101,11 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
           role="combobox"
           aria-expanded={open}
           aria-controls={listId}
-          disabled={disabled || (!canManage && providers.length === 0)}
+          disabled={disabled}
           className={cn(
             "flex h-11 w-full items-center gap-2.5 rounded-xl border border-input bg-background pl-1.5 pr-3 text-left text-sm transition-[border-color,box-shadow]",
             "hover:border-ink/30 focus-visible:border-ink focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/15 data-[state=open]:border-ink",
             "disabled:cursor-not-allowed disabled:opacity-50",
-            !value && canManage && "border-dashed",
           )}
         >
           {value && preset ? (
@@ -114,10 +118,13 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
             </>
           ) : (
             <>
-              <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-yellow text-ink">
-                <Plus className="h-4 w-4" strokeWidth={2.5} />
+              <BuiltInLogo size={30} />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block truncate font-semibold">{builtIn.label}</span>
+                <span className={cn("block truncate text-[11px] font-medium", builtIn.available ? "text-muted-foreground" : "text-destructive")}>
+                  {builtIn.available ? "No key needed" : "Not set up on this server"}
+                </span>
               </span>
-              <span className="min-w-0 flex-1 truncate font-semibold">{canManage ? "Connect a provider" : "No provider"}</span>
             </>
           )}
           <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -147,8 +154,30 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
         </div>
 
         <div ref={listRef} id={listId} onKeyDown={onListKeyDown} className="scrollbar-thin max-h-[min(26rem,60vh)] overflow-y-auto p-1.5">
+          {showBuiltIn ? (
+            <div role="group" aria-label="Included">
+              <p className="brand-label px-2.5 pb-1 pt-2 text-muted-foreground">Included</p>
+              <button
+                type="button"
+                data-option=""
+                aria-pressed={value === null}
+                onClick={() => pickConnected(null)}
+                className="flex w-full min-w-0 items-center gap-2.5 rounded-xl px-2 py-2 text-left outline-none transition-colors hover:bg-fog focus-visible:bg-fog"
+              >
+                <BuiltInLogo size={30} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{builtIn.label}</span>
+                  <span className={cn("block truncate text-[11px]", builtIn.available ? "font-mono text-muted-foreground" : "font-medium text-destructive")}>
+                    {builtIn.available ? builtIn.model : "Not set up on this server"}
+                  </span>
+                </span>
+                {value === null ? <Check className="h-4 w-4 shrink-0 text-purple" strokeWidth={2.5} /> : null}
+              </button>
+            </div>
+          ) : null}
+
           {connected.length > 0 ? (
-            <div role="group" aria-label="Connected">
+            <div role="group" aria-label="Connected" className={cn(showBuiltIn && "mt-1 border-t pt-1")}>
               <p className="brand-label px-2.5 pb-1 pt-2 text-muted-foreground">Connected</p>
               {connected.map((provider) => {
                 const itemPreset = presetFor(provider);
@@ -239,8 +268,8 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
           ) : null}
 
           {available.length > 0 ? (
-            <div role="group" aria-label="Connect a provider" className={cn(connected.length > 0 && "mt-1 border-t pt-1")}>
-              <p className="brand-label px-2.5 pb-1 pt-2 text-muted-foreground">{providers.length > 0 ? "Connect another" : "Connect a provider"}</p>
+            <div role="group" aria-label="Connect your own key" className={cn((connected.length > 0 || showBuiltIn) && "mt-1 border-t pt-1")}>
+              <p className="brand-label px-2.5 pb-1 pt-2 text-muted-foreground">{providers.length > 0 ? "Connect another key" : "Use your own key"}</p>
               <div className="grid grid-cols-2 gap-0.5">
                 {available.map((item) => (
                   <button
@@ -258,8 +287,8 @@ export function ProviderPicker({ id, providers, value, onChange, canManage, onCo
             </div>
           ) : null}
 
-          {connected.length === 0 && available.length === 0 ? (
-            <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">{q ? "No provider matches." : "Ask an admin to connect a provider."}</p>
+          {!showBuiltIn && connected.length === 0 && available.length === 0 ? (
+            <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">No provider matches.</p>
           ) : null}
         </div>
       </PopoverContent>

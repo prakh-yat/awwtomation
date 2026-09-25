@@ -20,7 +20,7 @@ import {
   type DeliveryStatus as DeliveryStatusType,
 } from "@prisma/client";
 
-import { getUsage, type OrganizationUsage } from "@/lib/billing/usage";
+import { getUsage, historyCutoff, historyDaysFor, type OrganizationUsage } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/workspace/api";
 import { customerReason } from "@/lib/errors/customer-messages";
@@ -144,6 +144,17 @@ export function isAnalyticsPeriod(value: unknown): value is AnalyticsPeriod {
 export function parseAnalyticsPeriod(value: unknown): AnalyticsPeriod {
   const n = typeof value === "string" ? Number(value) : value;
   return isAnalyticsPeriod(n) ? n : DEFAULT_ANALYTICS_PERIOD;
+}
+
+/** The periods a plan's history covers (7 days always is). */
+export function periodsWithin(historyDays: number): AnalyticsPeriod[] {
+  return ANALYTICS_PERIODS.filter((p) => p <= historyDays || p === ANALYTICS_PERIODS[0]);
+}
+
+/** `days`, or the longest period the history covers when it reaches further back. */
+export function clampPeriod(days: AnalyticsPeriod, historyDays: number): AnalyticsPeriod {
+  const allowed = periodsWithin(historyDays);
+  return allowed.includes(days) ? days : allowed[allowed.length - 1];
 }
 
 type LocalDate = { y: number; m: number; d: number };
@@ -470,7 +481,7 @@ async function loadRecentActivity(workspaceId: string, channelId?: string): Prom
 // ───────────────────────── Public API ─────────────────────────
 
 export async function getOverview(workspaceId: string, input: OverviewInput): Promise<Overview> {
-  const days = isAnalyticsPeriod(input.days) ? input.days : DEFAULT_ANALYTICS_PERIOD;
+  const days = clampPeriod(isAnalyticsPeriod(input.days) ? input.days : DEFAULT_ANALYTICS_PERIOD, await historyDaysFor(workspaceId));
   const channelId = input.channelId || undefined;
   if (channelId) await assertChannelInWorkspace(workspaceId, channelId);
 
@@ -491,13 +502,16 @@ export async function getOverview(workspaceId: string, input: OverviewInput): Pr
       getUsage(workspaceId),
       prisma.automation.count({ where: { workspaceId, status: AutomationStatus.ACTIVE, ...(channelId ? { channelId } : {}) } }),
       prisma.channel.count({ where: { workspaceId, status: { not: ChannelStatus.DISCONNECTED } } }),
-      prisma.deliveryLog.findFirst({
-        where: { workspaceId, status: DeliveryStatus.SENT, kind: { not: DeliveryKind.PUBLIC_REPLY } },
-        select: { id: true },
-      }),
+      // Delivery logs are pruned; an automation's recipients and a broadcast's totals are not.
+      prisma.automationRecipient
+        .findFirst({ where: { automation: { workspaceId } }, select: { firstSentAt: true } })
+        .then(async (reached): Promise<boolean> => Boolean(reached) || (await prisma.broadcast.count({ where: { workspaceId, sentCount: { gt: 0 } }, take: 1 })) > 0),
     ]);
 
   const { series, previousSeries, current, previous } = buildSeries(range, { delivery, triggers, contacts, clicks });
+  // The previous period's delivery logs may already be deleted; a delta against them would read as a collapse.
+  const comparable = range.previousStart >= historyCutoff(usage.historyDays);
+  const delta = (now: number, before: number) => (comparable ? ratio(now, before) : null);
 
   return {
     period: { days, start: range.currentStart, previousStart: range.previousStart, timezone: range.timezone },
@@ -505,13 +519,13 @@ export async function getOverview(workspaceId: string, input: OverviewInput): Pr
     totals: { ...current, activeAutomations, channels },
     previous,
     deltas: {
-      dmsSent: ratio(current.dmsSent, previous.dmsSent),
-      triggered: ratio(current.triggered, previous.triggered),
-      publicReplies: ratio(current.publicReplies, previous.publicReplies),
-      failed: ratio(current.failed, previous.failed),
-      newContacts: ratio(current.newContacts, previous.newContacts),
-      linkClicks: ratio(current.linkClicks, previous.linkClicks),
-      ctr: ratio(current.ctr, previous.ctr),
+      dmsSent: delta(current.dmsSent, previous.dmsSent),
+      triggered: delta(current.triggered, previous.triggered),
+      publicReplies: delta(current.publicReplies, previous.publicReplies),
+      failed: delta(current.failed, previous.failed),
+      newContacts: delta(current.newContacts, previous.newContacts),
+      linkClicks: delta(current.linkClicks, previous.linkClicks),
+      ctr: delta(current.ctr, previous.ctr),
     },
     series,
     previousSeries,
@@ -523,14 +537,14 @@ export async function getOverview(workspaceId: string, input: OverviewInput): Pr
       hasChannel: channels > 0,
       hasAutomation: usage.automations.used > 0,
       hasActiveAutomation: activeAutomations > 0,
-      hasSentDm: anySent !== null,
+      hasSentDm: anySent,
     },
   };
 }
 
 /** Per-channel sent / triggered / contacts for the period. Disconnected channels are listed too so history stays visible. */
 export async function getChannelBreakdown(workspaceId: string, days: AnalyticsPeriod, timezone?: string): Promise<ChannelBreakdownRow[]> {
-  const period = isAnalyticsPeriod(days) ? days : DEFAULT_ANALYTICS_PERIOD;
+  const period = clampPeriod(isAnalyticsPeriod(days) ? days : DEFAULT_ANALYTICS_PERIOD, await historyDaysFor(workspaceId));
   const tz =
     timezone ?? (await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } })).timezone;
   const since = resolveRange(period, tz).currentStart;
@@ -715,6 +729,9 @@ export type AnalyticsReport = {
     previousFrom: string;
     previousTo: string;
     timezone: string;
+    /** First local day the plan's history still covers; nothing before it can be picked. */
+    earliest: string;
+    historyDays: number;
     /** UTC instants bounding the current window (ISO). */
     start: string;
     end: string;
@@ -760,6 +777,17 @@ function parseLocalDate(value: string | undefined): LocalDate | null {
 }
 
 /** Whole days from `a` to `b` (negative when `b` is earlier). */
+/** The first local day a history of `historyDays` covers, today included. */
+function historyStart(today: LocalDate, historyDays: number): LocalDate {
+  return shiftLocalDate(today, -(Math.min(historyDays, ANALYTICS_MAX_RANGE_DAYS) - 1));
+}
+
+/** YYYY-MM-DD of the first day a plan's history covers, for date pickers. */
+export function historyStartKey(timezone: string, historyDays: number, now = new Date()): string {
+  const tz = isValidTimeZone(timezone) ? timezone : "UTC";
+  return formatLocalDate(historyStart(localDateOf(now, tz), historyDays));
+}
+
 function daysBetween(a: LocalDate, b: LocalDate): number {
   return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86_400_000);
 }
@@ -783,10 +811,16 @@ export type AnalyticsRange = {
 
 /**
  * Normalises `from`/`to` into a bounded window: never in the future, never
- * longer than ANALYTICS_MAX_RANGE_DAYS, swapped when reversed. Pure, so the
+ * longer than ANALYTICS_MAX_RANGE_DAYS, never before the plan's history (whose
+ * delivery logs and messages are deleted), swapped when reversed. Pure, so the
  * page, the API and the CSV export all agree on what a preset means.
  */
-export function resolveAnalyticsRange(input: Pick<AnalyticsInput, "from" | "to">, timezone: string, now = new Date()): AnalyticsRange {
+export function resolveAnalyticsRange(
+  input: Pick<AnalyticsInput, "from" | "to">,
+  timezone: string,
+  now = new Date(),
+  historyDays = ANALYTICS_MAX_RANGE_DAYS,
+): AnalyticsRange {
   const tz = isValidTimeZone(timezone) ? timezone : "UTC";
   const today = localDateOf(now, tz);
 
@@ -796,6 +830,9 @@ export function resolveAnalyticsRange(input: Pick<AnalyticsInput, "from" | "to">
   if (daysBetween(today, from) > 0) from = today;
   if (daysBetween(from, to) < 0) [from, to] = [to, from];
   if (daysBetween(from, to) + 1 > ANALYTICS_MAX_RANGE_DAYS) from = shiftLocalDate(to, -(ANALYTICS_MAX_RANGE_DAYS - 1));
+  const earliest = historyStart(today, historyDays);
+  if (daysBetween(earliest, from) < 0) from = earliest;
+  if (daysBetween(earliest, to) < 0) to = earliest;
 
   const days = daysBetween(from, to) + 1;
   const previousFrom = shiftLocalDate(from, -days);
@@ -1449,8 +1486,12 @@ async function workspaceSettings(workspaceId: string, timezone?: string): Promis
 // ───────────────────────── Public API ─────────────────────────
 
 export async function getAnalytics(workspaceId: string, input: AnalyticsInput = {}): Promise<AnalyticsReport> {
-  const [scope, settings] = await Promise.all([resolveScope(workspaceId, input), workspaceSettings(workspaceId, input.timezone)]);
-  const range = resolveAnalyticsRange(input, settings.timezone);
+  const [scope, settings, historyDays] = await Promise.all([
+    resolveScope(workspaceId, input),
+    workspaceSettings(workspaceId, input.timezone),
+    historyDaysFor(workspaceId),
+  ]);
+  const range = resolveAnalyticsRange(input, settings.timezone, new Date(), historyDays);
 
   const [delivery, triggers, contacts, clicks, inbound, leadsAudit, leadsContacts, byChannel, byAutomation, topKeywords, skipReasons, heatmap, inbox, pipelines, anySession, anyDelivery] =
     await Promise.all([
@@ -1484,15 +1525,18 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
   });
   const funnel = await loadFunnel(scope, range);
 
+  // The window before this one may be past the plan's history, its logs and messages deleted: no comparison then.
+  const comparable = range.start >= historyCutoff(historyDays);
+  const delta = (now: number, before: number) => (comparable ? ratio(now, before) : null);
   const deltas: AnalyticsDeltas = {
-    comments: ratio(current.comments, previous.comments),
-    dmsSent: ratio(current.dmsSent, previous.dmsSent),
-    publicReplies: ratio(current.publicReplies, previous.publicReplies),
-    clicks: ratio(current.clicks, previous.clicks),
-    newContacts: ratio(current.newContacts, previous.newContacts),
-    leads: ratio(current.leads, previous.leads),
-    conversations: ratio(current.conversations, previous.conversations),
-    ctr: ratio(current.ctr, previous.ctr),
+    comments: delta(current.comments, previous.comments),
+    dmsSent: delta(current.dmsSent, previous.dmsSent),
+    publicReplies: delta(current.publicReplies, previous.publicReplies),
+    clicks: delta(current.clicks, previous.clicks),
+    newContacts: delta(current.newContacts, previous.newContacts),
+    leads: delta(current.leads, previous.leads),
+    conversations: delta(current.conversations, previous.conversations),
+    ctr: delta(current.ctr, previous.ctr),
   };
 
   return {
@@ -1503,6 +1547,8 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
       previousFrom: range.previousFrom,
       previousTo: range.previousTo,
       timezone: range.timezone,
+      earliest: historyStartKey(range.timezone, historyDays),
+      historyDays,
       start: range.currentStart.toISOString(),
       end: range.end.toISOString(),
     },
@@ -1527,8 +1573,12 @@ export async function getAnalytics(workspaceId: string, input: AnalyticsInput = 
 
 /** Just the funnel for the dashboard card: four small queries instead of the whole report. */
 export async function getAnalyticsFunnel(workspaceId: string, input: AnalyticsInput = {}): Promise<AnalyticsFunnel & { range: Pick<AnalyticsRange, "from" | "to" | "days"> }> {
-  const [scope, settings] = await Promise.all([resolveScope(workspaceId, input), workspaceSettings(workspaceId, input.timezone)]);
-  const range = resolveAnalyticsRange(input, settings.timezone);
+  const [scope, settings, historyDays] = await Promise.all([
+    resolveScope(workspaceId, input),
+    workspaceSettings(workspaceId, input.timezone),
+    historyDaysFor(workspaceId),
+  ]);
+  const range = resolveAnalyticsRange(input, settings.timezone, new Date(), historyDays);
   const funnel = await loadFunnel(scope, range);
   return { ...funnel, range: { from: range.from, to: range.to, days: range.days } };
 }

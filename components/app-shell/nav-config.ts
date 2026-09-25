@@ -49,6 +49,11 @@ export const PRIMARY_NAV: readonly NavItem[] = [
 
 export const SETTINGS_NAV: NavItem = { label: "Settings", href: "/settings", icon: Settings, tone: "indigo" };
 
+/** The `data-tour` anchor on a section's dock tile (`nav-automations`), which the product tour points at. */
+export function navTourId(item: NavItem): string {
+  return `nav-${item.href.replace(/^\//, "")}`;
+}
+
 /**
  * The section a pathname belongs to, for the tile next to a page title. Usage
  * sits with Settings, and the Facebook Page picker with the dashboard, where

@@ -7,7 +7,8 @@ import { LogoMark } from "@/components/ui/logo";
 import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
-import { isActivePath, PRIMARY_NAV } from "./nav-config";
+import { isActivePath, navTourId, PRIMARY_NAV } from "./nav-config";
+import { TOUR_DOCK_EVENT, type TourDockDetail } from "./tour-events";
 import type { ShellProps } from "./types";
 import { UsageMeter } from "./usage-meter";
 import { UserMenu } from "./user-menu";
@@ -52,6 +53,8 @@ type Slot =
       node: React.ReactNode;
       /** Decorative: does not magnify and gets no label bubble. */
       fixed?: boolean;
+      /** The product tour's anchor on this slot. */
+      tour?: string;
     };
 
 /** Smooth falloff: MAX_SCALE under the pointer, easing back to 1 at RADIUS. */
@@ -140,12 +143,17 @@ export function Dock(props: ShellProps) {
   const [pointerY, setPointerY] = React.useState<number | null>(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  // The product tour is pointing at something in here.
+  const [tourOpen, setTourOpen] = React.useState(false);
 
+  const dockRef = React.useRef<HTMLDivElement>(null);
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const hovering = React.useRef(false);
 
-  // A menu or the workspace panel has to outlive the pointer leaving the dock.
-  const pinned = switcherOpen || menuOpen;
+  // A menu, the workspace panel or a tour step has to outlive the pointer
+  // leaving the dock. The tour's click-blocker covers the dock, so to the dock
+  // the pointer has always left.
+  const pinned = switcherOpen || menuOpen || tourOpen;
   const pinnedRef = React.useRef(pinned);
   React.useEffect(() => {
     pinnedRef.current = pinned;
@@ -196,11 +204,28 @@ export function Dock(props: ShellProps) {
   }, [open, show]);
 
   // Opening a menu keeps the dock out; closing it lets the dock go if the
-  // pointer has moved on.
+  // pointer has moved on and focus is not inside it (a tour that ends hands
+  // focus back to the account button it was started from).
   React.useEffect(() => {
     if (pinned) show();
-    else if (!hovering.current) hide();
+    else if (!hovering.current && !dockRef.current?.contains(document.activeElement)) hide();
   }, [pinned, show, hide]);
+
+  // The product tour opens the dock for the steps that point into it and lets
+  // go after them. It holds the dock at rest, without magnification, so every
+  // tile stays where the tour measured it.
+  React.useEffect(() => {
+    const onTourDock = (event: CustomEvent<TourDockDetail>) => {
+      const hold = event.detail.open;
+      setTourOpen(hold);
+      if (hold) {
+        setPointerY(null);
+        show();
+      }
+    };
+    window.addEventListener(TOUR_DOCK_EVENT, onTourDock);
+    return () => window.removeEventListener(TOUR_DOCK_EVENT, onTourDock);
+  }, [show]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -243,6 +268,7 @@ export function Dock(props: ShellProps) {
         kind: "item",
         key: item.href,
         label: item.label,
+        tour: navTourId(item),
         node: (
           <Link
             href={item.href}
@@ -280,6 +306,7 @@ export function Dock(props: ShellProps) {
       kind: "item",
       key: "account",
       label: user.name?.trim() || user.email,
+      tour: "account",
       node: (
         <UserMenu
           user={user}
@@ -377,6 +404,7 @@ export function Dock(props: ShellProps) {
       </div>
 
       <div
+        ref={dockRef}
         data-state={open ? "open" : "closed"}
         data-tracking={tracking ? "" : undefined}
         onMouseEnter={() => {
@@ -412,7 +440,7 @@ export function Dock(props: ShellProps) {
           open ? "opacity-100 [transform:scale(var(--dock-fit))]" : "pointer-events-none opacity-0 [transform:translateX(calc(-100%-1.5rem))_scale(var(--dock-fit))]",
         )}
       >
-        <nav aria-label="Main" className="relative h-full w-full">
+        <nav aria-label="Main" data-tour="dock" className="relative h-full w-full">
           {slots.map((slot, i) => {
             const top = frame.starts[i];
             if (slot.kind === "divider") {
@@ -430,6 +458,7 @@ export function Dock(props: ShellProps) {
             return (
               <div
                 key={slot.key}
+                data-tour={slot.tour}
                 className="absolute [container-type:size] transition-[top,width,height] duration-300 ease-soft group-data-[tracking]/dock:duration-150 motion-reduce:transition-none"
                 // Slots hang from the dock's inner edge and grow away from the screen's;
                 // the smaller brand mark is centred over them.

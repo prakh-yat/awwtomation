@@ -42,8 +42,9 @@ export const emailSchema = z.string().trim().toLowerCase().email("Enter a valid 
 export const workspaceRoleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 
 /**
- * Every new organization starts on Free, so without a cap this would hand out
- * unlimited free accounts. Invited memberships don't count, only owned ones.
+ * Every new organization starts with no plan, which still holds a connected
+ * account, automations and contacts; without a cap one person could keep
+ * unlimited of them. Invited memberships don't count, only owned ones.
  */
 export const MAX_OWNED_ORGANIZATIONS = 10;
 

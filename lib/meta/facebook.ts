@@ -205,13 +205,16 @@ type RawFbComment = {
 };
 
 /**
- * `filter=stream` returns top-level comments and replies flat; reverse
- * chronological lets us stop paging as soon as we're past `since`.
+ * `filter=stream` returns top-level comments and replies flat, and
+ * `order=reverse_chronological` newest first, so paging stops at the first
+ * page whose last, oldest comment is older than `since`: every page after it
+ * is older still. The page's last comment decides rather than the first old
+ * one, so one comment out of place (a pinned one) can't end paging early.
  */
 export async function getFacebookPostComments(
   pageToken: string,
   postId: string,
-  opts: { since?: Date; limit?: number } = {},
+  opts: { since?: Date; limit?: number; onUsage?: (percent: number) => void } = {},
 ): Promise<PlatformComment[]> {
   const limit = opts.limit ?? 200;
   const since = opts.since?.getTime();
@@ -223,14 +226,11 @@ export async function getFacebookPostComments(
     limit: 50,
   });
   for (let page = 0; url && page < 10 && out.length < limit; page++) {
-    const res: GraphList<RawFbComment> = await metaFetch(url, { token: pageToken });
-    let pastSince = false;
-    for (const c of res.data ?? []) {
+    const res: GraphList<RawFbComment> = await metaFetch(url, { token: pageToken, onUsage: opts.onUsage });
+    const data = res.data ?? [];
+    for (const c of data) {
       const timestamp = parseGraphDate(c.created_time) ?? new Date(0);
-      if (since !== undefined && timestamp.getTime() < since) {
-        pastSince = true;
-        continue;
-      }
+      if (since !== undefined && timestamp.getTime() < since) continue;
       out.push({
         id: String(c.id),
         text: c.message ?? "",
@@ -241,7 +241,8 @@ export async function getFacebookPostComments(
         mediaId: postId,
       });
     }
-    if (pastSince) break;
+    const oldest = parseGraphDate(data[data.length - 1]?.created_time);
+    if (since !== undefined && oldest && oldest.getTime() < since) break;
     url = res.paging?.next;
   }
   return out.slice(0, limit);

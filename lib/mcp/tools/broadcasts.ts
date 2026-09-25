@@ -91,14 +91,15 @@ export const broadcastTools = [
     input: {},
     run: async (_args, ctx) => ({
       broadcasts: (await listBroadcasts(ctx.workspace.id)).map(toBroadcastRow),
-      plan: { broadcasts: limitsFor(effectivePlan(ctx.organization)).broadcasts },
+      plan: { broadcasts: limitsFor(effectivePlan(ctx.organization)).broadcastsPerMonth > 0 },
     }),
   }),
 
   workspaceTool({
     name: "get_broadcast",
     title: "Get a broadcast",
-    description: "One broadcast with its message, audience, delivery stats and the first page of deliveries.",
+    description:
+      "One broadcast with its message, audience, delivery stats and the first page of deliveries. While it is SENDING, stats.target keeps growing until stats.audienceComplete is true, and stats.remaining is how many are still to go.",
     annotations: READ,
     input: { broadcastId },
     run: async (args, ctx) => {
@@ -160,11 +161,11 @@ export const broadcastTools = [
     name: "send_broadcast",
     title: "Send a broadcast now",
     description:
-      "Start sending a draft or scheduled broadcast now. It goes to everyone in the audience inside the reply window and counts toward the plan's monthly DMs. This messages real people: confirm the message and the estimate with the user first.",
+      "Start sending a draft or scheduled broadcast now. It goes to everyone in the audience inside the reply window and counts toward the plan's monthly DMs. This messages real people: confirm the message and the estimate with the user first. Returns the broadcast as SENDING before anyone is counted; follow its progress with get_broadcast.",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     input: { broadcastId },
     run: async (args, ctx) => {
-      assertRateLimit("broadcast_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+      await assertRateLimit("broadcast_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
       return sendBroadcast(ctx.workspace.id, args.broadcastId, ctx.user.id);
     },
   }),
@@ -172,7 +173,8 @@ export const broadcastTools = [
   workspaceTool({
     name: "cancel_broadcast",
     title: "Cancel a broadcast",
-    description: "Stop a scheduled broadcast, or the rest of one that is sending.",
+    description:
+      "Stop a scheduled broadcast, or the rest of one that is sending. cancelledJobs counts only messages already queued: people it had not reached yet are not counted.",
     annotations: DESTROY,
     input: { broadcastId },
     run: async (args, ctx) => cancelBroadcast(ctx.workspace.id, args.broadcastId, ctx.user.id),

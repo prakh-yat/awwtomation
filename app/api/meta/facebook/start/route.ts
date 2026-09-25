@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Kicks off Facebook Login for Pages. Register `${NEXT_PUBLIC_APP_URL}/api/meta/facebook/callback` as the OAuth redirect URI. */
 export const GET = withWorkspace(async (req, ctx) => {
-  const limited = enforceIpRateLimit(req, "oauth_start", OAUTH_START_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+  const limited = await enforceIpRateLimit(req, "oauth_start", OAUTH_START_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   if (limited) return limited;
   return startOAuth(ctx, "FACEBOOK");
 });

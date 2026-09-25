@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { KpiStrip } from "@/components/analytics/kpi-strip";
@@ -14,14 +13,13 @@ import { RecentConversations } from "@/components/dashboard/recent-conversations
 import { TopAutomations } from "@/components/dashboard/top-automations";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { effectivePlan } from "@/lib/billing/entitlements";
+import { effectivePlan, historyPlan } from "@/lib/billing/entitlements";
 import { limitsFor } from "@/lib/billing/plans";
 import { checkLimit } from "@/lib/billing/usage";
 import { isMetaConfigured } from "@/lib/env";
-import { getAnalyticsFilterOptions, getOverview, parseAnalyticsPeriod } from "@/lib/services/analytics";
+import { clampPeriod, getAnalyticsFilterOptions, getOverview, parseAnalyticsPeriod, periodsWithin } from "@/lib/services/analytics";
 import { listChannels, toChannelView } from "@/lib/services/channels";
 import { getAttentionItems, getRecentConversations } from "@/lib/services/dashboard";
-import { getOnboardingState } from "@/lib/services/onboarding";
 import { formatNumber } from "@/lib/utils";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
 import { canManageBilling, canManageChannels } from "@/lib/workspace/permissions";
@@ -47,14 +45,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
   const ctx = await requireWorkspaceContext();
   const params = await searchParams;
 
-  // Meta lands every new connection here with `?connected=`. When the welcome
-  // flow is still waiting for that connection, hand the person straight back to it.
-  if (first(params.connected)) {
-    const onboarding = await getOnboardingState(ctx.workspace.id);
-    if (!onboarding.completedAt) redirect("/welcome");
-  }
-
-  const days = parseAnalyticsPeriod(first(params.days));
+  // A period longer than the plan's history would chart deleted days as zeros.
+  const historyDays = limitsFor(historyPlan(ctx.organization)).historyDays;
+  const days = clampPeriod(parseAnalyticsPeriod(first(params.days)), historyDays);
 
   const [{ channels }, summaries, slots] = await Promise.all([
     getAnalyticsFilterOptions(ctx.workspace.id),
@@ -137,7 +130,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
           <>
             {accounts}
             <span aria-hidden className="mx-1 hidden h-6 w-px bg-border sm:block" />
-            <PeriodControls days={days} channelId={channel?.id ?? null} channels={channels} />
+            <PeriodControls days={days} periods={periodsWithin(historyDays)} channelId={channel?.id ?? null} channels={channels} />
           </>
         }
       />

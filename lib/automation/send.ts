@@ -197,7 +197,11 @@ async function persistOutbound(input: SendToContactInput, message: OutboundMessa
   }
 
   if (input.automationId) {
-    await prisma.automation.update({ where: { id: input.automationId }, data: { sentCount: { increment: 1 } } });
+    await Promise.all([
+      prisma.automation.update({ where: { id: input.automationId }, data: { sentCount: { increment: 1 } } }),
+      // The lasting record behind "once per contact": delivery logs are pruned, this is not.
+      prisma.automationRecipient.createMany({ data: [{ automationId: input.automationId, contactId: contact.id }], skipDuplicates: true }),
+    ]);
   }
 }
 

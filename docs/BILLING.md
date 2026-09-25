@@ -148,16 +148,16 @@ first (members only), so paying from one tab while another tab switched organiza
 |---|---|---|
 | ADMIN_OVERRIDE | any | `plan` |
 | SUBSCRIPTION | ACTIVE, TRIALING | `subscribedPlan` |
-| SUBSCRIPTION | PAST_DUE, ON_HOLD | `subscribedPlan` for 7 days after `currentPeriodEnd` (grace), then FREE |
-| SUBSCRIPTION | NONE, CANCELLED, EXPIRED | FREE |
-| DEFAULT |: | `plan` (FREE for new organizations) |
+| SUBSCRIPTION | PAST_DUE, ON_HOLD | `subscribedPlan` for 7 days after `currentPeriodEnd` (grace), then NONE |
+| SUBSCRIPTION | NONE, CANCELLED, EXPIRED | NONE (no plan: nothing is sent) |
+| DEFAULT |: | `plan` (NONE for new organizations) |
 
 `lib/billing/usage.ts` (`reserveDmQuota`, `getOrganizationUsage`, `getUsage`, `checkOrganizationLimit`,
 `checkLimit`, `canAdd*`, `canUseBroadcasts`) reads limits through `effectivePlan`, so quota
 enforcement follows the subscription automatically. Limits are shared by every workspace in the
 organization: DMs, accounts and automations are counted across all of them, seats are organization
 members. Functions that take a `workspaceId` look up its organization first.
-`serviceState(organization)` → `free | active | trialing | grace | lapsed | cancelling` feeds the
+`serviceState(organization)` → `none | active | trialing | grace | lapsed | cancelling` feeds the
 badge and copy on the billing page; `serviceStateInfo` returns the label/description/tone.
 
 Dodo status mapping: `active → ACTIVE` (or `TRIALING` while inside `trial_period_days`),
@@ -165,14 +165,14 @@ Dodo status mapping: `active → ACTIVE` (or `TRIALING` while inside `trial_peri
 `expired`/`failed → EXPIRED`, `pending → NONE` (never grants access).
 
 `syncSubscription` keeps the stored `plan` column consistent as well (tier while ACTIVE/TRIALING/
-PAST_DUE/ON_HOLD, FREE once CANCELLED/EXPIRED) unless an admin override is active, so code that
+PAST_DUE/ON_HOLD, NONE once CANCELLED/EXPIRED) unless an admin override is active, so code that
 still reads `organization.plan` directly sees the right tier outside the grace-expiry edge case.
 
 ### Cancel / resume / change plan
 
 - **Cancel** (`POST /api/billing/cancel`): sets `cancel_at_next_billing_date` on Dodo; the plan
   keeps working until `currentPeriodEnd` (state `cancelling`), then Dodo emits
-  `subscription.cancelled` → FREE. `immediately: true` cancels on the spot.
+  `subscription.cancelled` → NONE. `immediately: true` cancels on the spot.
 - **Resume** (`POST /api/billing/resume`): clears `cancel_at_next_billing_date`.
 - **Change plan** (`POST /api/billing/change-plan`): `subscriptions.changePlan` with
   `prorated_immediately` + `on_payment_failure: prevent_change`. Upgrades charge the prorated
@@ -189,7 +189,7 @@ any workspace in it). From then on webhooks keep recording billing columns but l
 so a comped or extended organization can't be downgraded by a renewal event.
 
 `npx tsx scripts/set-plan.ts clear <organization>` resets the source and re-runs `syncSubscription`
-when a subscription exists (plan follows Dodo again) or drops the organization to FREE/DEFAULT
+when a subscription exists (plan follows Dodo again) or drops the organization to NONE/DEFAULT
 otherwise. `list` prints every organization with its plan, source and workspace count. Both changes are written to the
 audit log. Customers see the result on their Billing page as a "Custom plan".
 

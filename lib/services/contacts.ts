@@ -27,6 +27,7 @@ import {
 import { z } from "zod";
 
 import { isWithinWindow, MESSAGING_WINDOW_MS } from "@/lib/automation/send";
+import { contactRoom } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { listNotes, type ContactNoteSummary } from "@/lib/services/contact-notes";
@@ -1125,6 +1126,8 @@ export async function createManualContact(workspaceId: string, input: CreateManu
   const data = createManualContactSchema.parse(input);
   const channel = await prisma.channel.findFirst({ where: { id: data.channelId, workspaceId }, select: { id: true, platform: true } });
   if (!channel) throw new ApiError(404, "That account isn't connected to this workspace", "NOT_FOUND");
+  const { room, limit } = await contactRoom(workspaceId);
+  if (room === 0) throw new ApiError(403, `Your plan allows ${limit.toLocaleString("en-US")} contacts. Upgrade to add more.`, "PLAN_LIMIT");
 
   const username = normalizeUsername(data.username);
   const email = data.email ? emailForUpdate(data.email) : null;

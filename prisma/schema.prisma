@@ -19,8 +19,10 @@ enum WorkspaceRole {
   MEMBER
 }
 
+/// NONE: no paid plan. The organization can set things up, but nothing is sent
+/// until it subscribes. There is no free tier.
 enum PlanTier {
-  FREE
+  NONE
   STARTER
   PRO
   AGENCY
@@ -86,6 +88,10 @@ enum JobType {
   REFRESH_TOKEN
   RECONCILE_COMMENTS
   SYNC_MEDIA
+  /// One stored webhook event, processed off the request (lib/webhooks/processor.ts).
+  PROCESS_WEBHOOK
+  /// Pages through a broadcast's audience and queues its sends (lib/services/broadcasts.ts).
+  BROADCAST_FANOUT
 }
 
 enum JobStatus {
@@ -106,6 +112,8 @@ enum DeliveryStatus {
   SKIPPED_WINDOW
   SKIPPED_PLAN_LIMIT
   SKIPPED_OPTED_OUT
+  /// The organization was over its plan's contact limit when this person first wrote.
+  SKIPPED_CONTACT_LIMIT
 }
 
 enum DeliveryKind {
@@ -193,17 +201,19 @@ enum OAuthTokenKind {
 // ───────────────────────── Identity & tenancy ─────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
+  id              String    @id @default(cuid())
   /// External identity, namespaced by provider: "google:<sub>" (or "dev:<email>"
   /// for the local bypass). Still stored in the column Supabase auth used, so
   /// switching providers needed no migration and existing rows kept their data.
-  authId       String   @unique @map("supabaseId")
-  email        String   @unique
-  name         String?
-  avatarUrl    String?
-  isSuperAdmin Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  authId          String    @unique @map("supabaseId")
+  email           String    @unique
+  name            String?
+  avatarUrl       String?
+  isSuperAdmin    Boolean   @default(false)
+  /// When this person finished or dismissed the product tour; null starts it on their next visit.
+  tourCompletedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   memberships           OrganizationMember[]
   sentInvitations       Invitation[]         @relation("InvitedBy")
@@ -225,7 +235,7 @@ model Organization {
   id                String   @id @default(cuid())
   name              String
   slug              String   @unique
-  plan              PlanTier @default(FREE)
+  plan              PlanTier @default(NONE)
   /// DMs sent across all of the organization's workspaces in the current billing period (reset monthly by lib/billing/usage.ts).
   dmsSentThisPeriod Int      @default(0)
   usagePeriodStart  DateTime @default(now())
@@ -251,6 +261,25 @@ model Organization {
   payments    Payment[]
   oauthGrants OAuthGrant[]
   mcpTools    McpToolAccess[]
+  usageMonths UsageMonthTotal[]
+}
+
+/// DM totals of a finished month, written before its delivery logs can be
+/// pruned so the usage history keeps every month (lib/services/retention.ts).
+model UsageMonthTotal {
+  organizationId String
+  /// YYYY-MM (UTC).
+  month          String
+  dmsSent        Int
+  privateReplies Int
+  messages       Int
+  broadcasts     Int
+  publicReplies  Int
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([organizationId, month])
 }
 
 /// Roles are organization-wide: a member can open every workspace in the organization.
@@ -289,20 +318,20 @@ model Invitation {
 /// A brand or client inside an organization: its own connected accounts,
 /// automations, contacts and pipelines.
 model Workspace {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  slug           String    @unique
-  timezone       String    @default("Asia/Kathmandu")
+  id                    String    @id @default(cuid())
+  organizationId        String
+  name                  String
+  slug                  String    @unique
+  timezone              String    @default("Asia/Kathmandu")
   /// Set the moment the first channel is connected.
-  onboardedAt    DateTime?
+  onboardedAt           DateTime?
   /// Answers to the welcome questionnaire, keyed by question id. Single-choice
   /// answers are strings, multi-choice answers are arrays of strings.
-  onboardingAnswers Json?
+  onboardingAnswers     Json?
   /// Set when the questionnaire is finished or skipped, so it is only asked once.
   onboardingCompletedAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   segments        Segment[]
@@ -349,6 +378,14 @@ model Channel {
   followerCount     Int?
   lastSyncedAt      DateTime?
   lastError         String?
+  /// When the owners were last emailed that this account needs reconnecting; cleared on reconnect.
+  alertSentAt       DateTime?
+  /// Comment polling pauses until then when Meta reports the app's API usage near its limit.
+  pollBackoffUntil  DateTime?
+  /// Answers to the questions asked right after this account is connected, keyed by question id.
+  setupAnswers      Json?
+  /// Set when those questions were answered or skipped, so they are only asked once.
+  setupCompletedAt  DateTime?
   connectedById     String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -415,14 +452,29 @@ model Automation {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel      Channel               @relation(fields: [channelId], references: [id], onDelete: Cascade)
   deliveryLogs DeliveryLog[]
   flowSessions FlowSession[]
   trackedLinks TrackedLink[]
+  recipients   AutomationRecipient[]
 
   @@index([workspaceId])
   @@index([channelId, status])
+}
+
+/// Everyone an automation has ever reached. "Once per contact" reads this, not
+/// DeliveryLog, because delivery logs are deleted after the plan's history window.
+model AutomationRecipient {
+  automationId String
+  contactId    String
+  firstSentAt  DateTime @default(now())
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([automationId, contactId])
+  @@index([contactId])
 }
 
 /// Tracks where a contact is inside a flow. A flow pauses after every
@@ -445,6 +497,8 @@ model FlowSession {
 
   @@index([contactId, status])
   @@index([automationId])
+  @@index([workspaceId, createdAt])
+  @@index([status, updatedAt])
 }
 
 // ───────────────────────── Contacts & inbox ─────────────────────────
@@ -479,17 +533,19 @@ model Contact {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  channel         Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  owner           User?           @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace       Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel         Channel               @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  owner           User?                 @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   conversations   Conversation[]
   flowSessions    FlowSession[]
   deliveryLogs    DeliveryLog[]
   linkClicks      LinkClick[]
   notes           ContactNote[]
   pipelineEntries PipelineEntry[]
+  automationsSent AutomationRecipient[]
 
   @@unique([channelId, externalId])
+  @@index([workspaceId, createdAt])
   @@index([workspaceId, lastInteractionAt])
   @@index([workspaceId, ownerId])
   @@index([workspaceId, email])
@@ -618,24 +674,26 @@ model Message {
 // ───────────────────────── Broadcasts ─────────────────────────
 
 model Broadcast {
-  id           String          @id @default(cuid())
-  workspaceId  String
-  channelId    String
-  name         String
+  id                String          @id @default(cuid())
+  workspaceId       String
+  channelId         String
+  name              String
   /// OutboundMessage shape: see lib/meta/types.ts
-  message      Json
+  message           Json
   /// { tags: string[], excludeTags: string[], onlyFollowers?: boolean }
-  audience     Json            @default("{}")
-  status       BroadcastStatus @default(DRAFT)
-  scheduledAt  DateTime?
-  startedAt    DateTime?
-  completedAt  DateTime?
-  targetCount  Int             @default(0)
-  sentCount    Int             @default(0)
-  failedCount  Int             @default(0)
-  skippedCount Int             @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  audience          Json            @default("{}")
+  status            BroadcastStatus @default(DRAFT)
+  scheduledAt       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  targetCount       Int             @default(0)
+  /// Set when the fan-out job has queued every recipient; the broadcast completes only after it.
+  fanoutCompletedAt DateTime?
+  sentCount         Int             @default(0)
+  failedCount       Int             @default(0)
+  skippedCount      Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   channel      Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -730,6 +788,9 @@ model DeliveryLog {
   @@index([workspaceId, createdAt])
   @@index([automationId, createdAt])
   @@index([channelId, commentExternalId])
+  @@index([automationId, commentExternalId])
+  @@index([broadcastId, contactId])
+  @@index([contactId, status])
 }
 
 model TrackedLink {
@@ -763,6 +824,8 @@ model LinkClick {
   contact Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
   @@index([linkId, createdAt])
+  @@index([contactId])
+  @@index([linkId, ipHash, createdAt])
 }
 
 /// Raw webhook receipts for idempotency + debugging. `dedupeKey` is a stable
@@ -772,12 +835,28 @@ model WebhookEvent {
   platform  ChannelPlatform
   dedupeKey String          @unique
   field     String?
+  /// `{ event, raw }`: the normalized event (dates as ISO strings) and Meta's original entry.
   payload   Json
   processed Boolean         @default(false)
   error     String?
+  /// Lease held while one process handles the event, so the webhook job and
+  /// the reconcile poll never run it at the same time (lib/webhooks/events.ts).
+  claimedAt DateTime?
   createdAt DateTime        @default(now())
 
   @@index([createdAt])
+  @@index([processed, createdAt])
+}
+
+/// Fixed-window request counters shared by every server instance
+/// (lib/security/rate-limit-ip.ts). Rows older than a day are pruned.
+model RequestRateLimit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
 }
 
 /// Hourly counter for Meta's 750 private replies / hour / account cap.
@@ -832,6 +911,7 @@ model AuditLog {
   user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+  @@index([workspaceId, action, createdAt])
 }
 
 // ───────────────────────── AI (bring your own key) ─────────────────────────
@@ -876,30 +956,30 @@ model AiProvider {
 /// verbatim; `guardrails` is appended after it so a hard rule cannot be talked
 /// out of by the prompt above it.
 model AiAgent {
-  id           String  @id @default(cuid())
-  workspaceId  String
-  providerId   String?
+  id            String  @id @default(cuid())
+  workspaceId   String
+  providerId    String?
   /// Model id for this agent, as the provider spells it. Null uses the provider's default model.
-  model        String?
-  name         String
+  model         String?
+  name          String
   /// The whole persona, in the workspace's own words.
-  systemPrompt String
+  systemPrompt  String
   /// Facts pasted in verbatim: prices, hours, policies, links.
-  knowledge    String?
+  knowledge     String?
   /// Rules appended after the prompt, such as "never quote a price".
-  guardrails   String?
+  guardrails    String?
   /// Sent when the model call fails, so a contact is never left on silence.
   fallbackReply String?
   /// Link buttons the agent is allowed to attach, as [{ title, url }].
   ///
   /// The model names one by its title and we supply the URL, so it can make a
   /// reply interactive without ever inventing a link.
-  buttons      Json?
-  temperature  Float   @default(0.6)
-  maxTokens    Int     @default(400)
+  buttons       Json?
+  temperature   Float   @default(0.6)
+  maxTokens     Int     @default(400)
   /// How many of the conversation's most recent messages are sent as context.
-  historyLimit Int     @default(20)
-  isDefault    Boolean @default(false)
+  historyLimit  Int     @default(20)
+  isDefault     Boolean @default(false)
 
   /// Lifetime counters, so the workspace can see what their key is spending.
   repliesSent      Int @default(0)

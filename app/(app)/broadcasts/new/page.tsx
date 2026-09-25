@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "New broadcast" };
 export default async function NewBroadcastPage() {
   const ctx = await requireWorkspaceContext();
   // The list page explains the upgrade path; don't render an editor that can only 402.
-  if (!limitsFor(effectivePlan(ctx.organization)).broadcasts) redirect("/broadcasts");
+  if (limitsFor(effectivePlan(ctx.organization)).broadcastsPerMonth === 0) redirect("/broadcasts");
 
   const channels = await listBroadcastChannels(ctx.workspace.id);
   return <BroadcastEditor mode="create" channels={channels} timeZone={ctx.workspace.timezone} />;

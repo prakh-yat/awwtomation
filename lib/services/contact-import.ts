@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { ContactSource, Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import { contactRoom } from "@/lib/billing/usage";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import {
@@ -95,6 +96,8 @@ export type ImportResult = {
   created: number;
   duplicates: number;
   invalid: number;
+  /** Rows left out because the plan's contact limit was reached. */
+  overLimit: number;
   errors: ImportRowError[];
 };
 
@@ -354,6 +357,11 @@ export async function runImport(workspaceId: string, input: ImportRunInput, acto
     });
   }
 
+  // Cut to what the plan still allows; the file order decides who makes it in.
+  const { room } = await contactRoom(workspaceId);
+  const overLimit = Math.max(0, rows.length - room);
+  if (overLimit > 0) rows.length = room;
+
   let created = 0;
   const stagePositions = new Map((pipeline?.stages ?? []).map((st) => [st.id, st]));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
@@ -390,8 +398,8 @@ export async function runImport(workspaceId: string, input: ImportRunInput, acto
     action: "contact.import",
     targetType: "workspace",
     targetId: workspaceId,
-    metadata: { channelId: channel.id, pipelineId: pipeline?.id ?? null, rows: body.length, created, duplicates, invalid },
+    metadata: { channelId: channel.id, pipelineId: pipeline?.id ?? null, rows: body.length, created, duplicates, invalid, overLimit },
   });
-  logger.info("contact.imported", { workspaceId, channelId: channel.id, rows: body.length, created, duplicates, invalid });
-  return { created, duplicates, invalid, errors };
+  logger.info("contact.imported", { workspaceId, channelId: channel.id, rows: body.length, created, duplicates, invalid, overLimit });
+  return { created, duplicates, invalid, overLimit, errors };
 }

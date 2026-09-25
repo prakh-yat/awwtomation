@@ -313,6 +313,7 @@ export function ImportContactsDialog({
                   {[
                     step.result.duplicates > 0 ? `${plural(step.result.duplicates, "row")} matched someone already in your contacts.` : null,
                     step.result.invalid > 0 ? `${plural(step.result.invalid, "row")} couldn't be read.` : null,
+                    step.result.overLimit > 0 ? `${plural(step.result.overLimit, "row")} went over your plan's contact limit. Upgrade to add them.` : null,
                   ]
                     .filter(Boolean)
                     .join(" ") || "Every row was added."}

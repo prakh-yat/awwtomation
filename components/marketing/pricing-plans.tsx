@@ -24,9 +24,9 @@ const INTERVALS: Array<{ id: BillingIntervalId; label: string }> = [
 ];
 
 /**
- * Plan cards with a monthly/yearly switch. Free goes to sign-in; paid plans
- * go to /checkout with the chosen tier and interval (signed-out visitors are
- * sent through /login first by the middleware, then land back on checkout).
+ * Plan cards with a monthly/yearly switch. Every plan goes to /checkout with
+ * the chosen tier and interval (signed-out visitors are sent through /login
+ * first by the middleware, then land back on checkout).
  * The recommended plan is the yellow block.
  */
 function PricingPlans({ className }: { className?: string }) {
@@ -71,19 +71,14 @@ function PricingPlans({ className }: { className?: string }) {
         </p>
       </div>
 
-      <div className="mt-10 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {PLAN_ORDER.map((tier, index) => {
           const plan = PLANS[tier];
-          const paid = tier !== "FREE";
           const featured = tier === RECOMMENDED_PLAN;
-          const price = paid ? formatUsd(planPriceCents(tier, interval)) : "$0";
-          const suffix = paid && interval === "ANNUAL" ? "/year" : "/month";
-          const note = !paid
-            ? "No card needed"
-            : interval === "ANNUAL"
-              ? `${formatUsd(monthlyEquivalentCents(tier, interval))} a month, billed yearly`
-              : "";
-          const href = paid ? `/checkout?tier=${tier}&interval=${interval}` : "/login";
+          const price = formatUsd(planPriceCents(tier, interval));
+          const suffix = interval === "ANNUAL" ? "/year" : "/month";
+          const note = interval === "ANNUAL" ? `${formatUsd(monthlyEquivalentCents(tier, interval))} a month, billed yearly` : "";
+          const href = `/checkout?tier=${tier}&interval=${interval}`;
 
           return (
             <div
@@ -113,7 +108,7 @@ function PricingPlans({ className }: { className?: string }) {
                 variant={featured ? "default" : "outline"}
                 className={cn("mt-7 w-full", !featured && "border-ink/25 bg-transparent hover:border-ink hover:bg-ink hover:text-white")}
               >
-                <Link href={href}>{paid ? `Choose ${plan.label}` : "Start free"}</Link>
+                <Link href={href}>Choose {plan.label}</Link>
               </Button>
 
               <ul className="mt-7 space-y-3 border-t border-ink/10 pt-6 text-[14px] leading-5">

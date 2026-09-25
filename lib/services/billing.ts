@@ -255,7 +255,7 @@ async function applySubscriptionSnapshot(sub: NormalizedSubscription): Promise<S
   let plan: PlanTier = ws.plan;
   if (!override) {
     if (grants || keepsTier) plan = sub.tier as PlanTier;
-    else if (ended) plan = "FREE";
+    else if (ended) plan = "NONE";
     // NONE (pending) leaves the current plan alone.
   }
 

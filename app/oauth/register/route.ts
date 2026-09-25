@@ -17,7 +17,7 @@ const REGISTER_LIMIT_PER_MINUTE = 10;
  * pasting the MCP URL alone.
  */
 export async function POST(req: Request) {
-  const limit = checkRateLimit("oauth_register", clientIp(req), REGISTER_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+  const limit = await checkRateLimit("oauth_register", clientIp(req), REGISTER_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   if (!limit.allowed) {
     return oauthErrorJson("too_many_requests", "Too many registrations. Try again in a minute.", 429, { "Retry-After": String(limit.retryAfterSeconds) });
   }

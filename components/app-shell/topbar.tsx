@@ -11,6 +11,7 @@ import { TONES } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 
 import { Sidebar } from "./sidebar";
+import { startTour } from "./tour-events";
 import type { ShellProps } from "./types";
 import { workspaceTone } from "./workspace-switcher";
 
@@ -22,6 +23,9 @@ export function Topbar(props: ShellProps) {
   const [open, setOpen] = React.useState(false);
   const pathname = usePathname();
   const active = props.workspaces.find((w) => w.id === props.activeWorkspaceId);
+  // "Take the tour" from the drawer's account menu: the drawer closes first and
+  // the tour starts once it has gone, so it points at the page, not the drawer.
+  const tourAfterClose = React.useRef(false);
 
   // Close the drawer on any route change, back/forward included.
   React.useEffect(() => {
@@ -35,6 +39,7 @@ export function Topbar(props: ShellProps) {
           <button
             type="button"
             aria-label="Open menu"
+            data-tour="menu-button"
             className="flex h-9 w-9 items-center justify-center rounded-md outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Menu className="h-5 w-5" strokeWidth={1.75} />
@@ -43,6 +48,11 @@ export function Topbar(props: ShellProps) {
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
+            onCloseAutoFocus={() => {
+              if (!tourAfterClose.current) return;
+              tourAfterClose.current = false;
+              startTour();
+            }}
             className={cn(
               "fixed inset-y-0 left-0 z-50 flex h-full w-72 max-w-[85vw] flex-col bg-sidebar shadow-elevated outline-none",
               "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left data-[state=open]:duration-200 data-[state=closed]:duration-150",
@@ -56,7 +66,14 @@ export function Topbar(props: ShellProps) {
             >
               <X className="h-4 w-4" />
             </DialogPrimitive.Close>
-            <Sidebar {...props} onNavigate={() => setOpen(false)} />
+            <Sidebar
+              {...props}
+              onNavigate={() => setOpen(false)}
+              onStartTour={() => {
+                tourAfterClose.current = true;
+                setOpen(false);
+              }}
+            />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

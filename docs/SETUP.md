@@ -144,7 +144,7 @@ Sign in with Google → you land on onboarding → name your organization and fi
 
 ## 7. Billing (Dodo Payments)
 
-Plans are enforced server-side from day one; without Dodo credentials every organization stays on FREE and the Billing page shows the plans as "contact us". To charge money: create the six products (`node --env-file=.env scripts/create-dodo-products.mjs`), fill in `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET` and the `DODO_PRODUCT_*` ids, and register the webhook endpoint `https://yourdomain.com/api/billing/webhook`. Test mode and live mode use different keys and product ids. Everything else (checkout, portal, plan changes, cancellations, reconciliation, plan overrides) is in **[docs/BILLING.md](BILLING.md)**.
+Plans are enforced server-side from day one; without Dodo credentials nobody can subscribe, so every organization stays on NONE (it can set up but sends nothing) and the Billing page shows the plans as unavailable; for local testing give an organization a plan with `npx tsx scripts/set-plan.ts set <organization> PRO`. To charge money: create the six products (`node --env-file=.env scripts/create-dodo-products.mjs`), fill in `DODO_MODE`, `DODO_SECRET_KEY`, `DODO_WEBHOOK_SECRET` and the `DODO_PRODUCT_*` ids, and register the webhook endpoint `https://yourdomain.com/api/billing/webhook`. Test mode and live mode use different keys and product ids. Everything else (checkout, portal, plan changes, cancellations, reconciliation, plan overrides) is in **[docs/BILLING.md](BILLING.md)**.
 
 ## 8. Product notes worth knowing
 

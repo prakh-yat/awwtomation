@@ -18,6 +18,8 @@ import { WorkspaceCard, WorkspaceSwitcher } from "./workspace-switcher";
 export interface SidebarProps extends ShellProps {
   /** Called after navigating, so the drawer closes itself. */
   onNavigate?: () => void;
+  /** "Take the tour" in the account menu: the drawer closes first, then the tour starts. */
+  onStartTour?: () => void;
 }
 
 /**
@@ -27,7 +29,17 @@ export interface SidebarProps extends ShellProps {
  * it is the only navigation on a device with no pointer to sweep to the edge of
  * the window with.
  */
-export function Sidebar({ user, organization, organizationCount, workspaces, activeWorkspaceId, role, usage, onNavigate }: SidebarProps) {
+export function Sidebar({
+  user,
+  organization,
+  organizationCount,
+  workspaces,
+  activeWorkspaceId,
+  role,
+  usage,
+  onNavigate,
+  onStartTour,
+}: SidebarProps) {
   const pathname = usePathname() ?? "";
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
 
@@ -150,6 +162,7 @@ export function Sidebar({ user, organization, organizationCount, workspaces, act
           collapsed={false}
           side="top"
           onNavigate={onNavigate}
+          onStartTour={onStartTour}
         />
       </div>
 

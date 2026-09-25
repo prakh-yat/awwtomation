@@ -487,8 +487,10 @@ function BroadcastEditor({ mode, broadcast, channels, timeZone }: BroadcastEdito
     let id: string | null = null;
     try {
       id = await persist(null);
-      const result = await apiFetch<{ eligible: number; skippedWindow: number }>(`/api/broadcasts/${id}/send`, { method: "POST" });
-      toast.success(`Sending to ${formatCount(result.eligible)} ${result.eligible === 1 ? "person" : "people"}`);
+      await apiFetch(`/api/broadcasts/${id}/send`, { method: "POST" });
+      // The server counts the audience after it answers: the toast says what the send button said.
+      const reach = estimate?.eligible ?? 0;
+      toast.success(`Sending to ${formatCount(reach)} ${reach === 1 ? "person" : "people"}`);
       router.push(`/broadcasts/${id}`);
     } catch (err) {
       toast.error(errorMessage(err, "Couldn't send the broadcast"));

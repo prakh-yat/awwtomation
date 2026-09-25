@@ -49,8 +49,8 @@ export default async function BillingSettingsPage({ searchParams }: { searchPara
     listPayments(ctx.organization.id),
   ]);
   const plan = PLANS[overview.effectivePlan];
-  // The block wears the plan's colour (Pro purple, Agency indigo, Starter sky); Free, which has none, stays ink.
-  const blockTone: Tone = overview.effectivePlan === "FREE" ? "ink" : PLAN_TONE[overview.effectivePlan].tone;
+  // The block wears the plan's colour (Pro purple, Agency indigo, Starter sky); no plan has none, so it stays ink.
+  const blockTone: Tone = overview.effectivePlan === "NONE" ? "ink" : PLAN_TONE[overview.effectivePlan].tone;
   const dark = isDarkTone(blockTone);
   const soft = dark ? "text-white/60" : "text-ink/60";
   const line = dark ? "border-white/15" : "border-ink/10";

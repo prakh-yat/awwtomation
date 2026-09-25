@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Images, MoreHorizontal, RefreshCw, Trash2, Unplug } from "lucide-react";
+import { Images, MoreHorizontal, PenLine, RefreshCw, Trash2, Unplug } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ import { toast } from "@/components/ui/sonner";
 import type { ChannelView } from "@/lib/services/channels";
 import { cn, formatNumber, initials } from "@/lib/utils";
 
+import { AccountSetupDialog } from "./account-setup-dialog";
 import { apiFetch, errorMessage } from "./api";
 import { channelDisplayName, channelStatusView, connectHref, PLATFORM_LABEL, type StatusVariant } from "./channel-status";
 import { MediaDialog } from "./media-dialog";
@@ -39,7 +40,7 @@ const DETAIL_TONE: Record<StatusVariant, string> = {
 
 export interface AccountRowProps {
   channel: ChannelView;
-  /** ADMIN+; gates disconnect and reconnect. Refresh and viewing posts are open to every member. */
+  /** ADMIN+; gates disconnect, reconnect and editing its details. Refresh and viewing posts are open to every member. */
   canManage: boolean;
   /** OWNER only; gates the irreversible "Delete account and data" action. */
   canPurge?: boolean;
@@ -56,6 +57,7 @@ export function AccountRow({ channel, canManage, canPurge = false, canReconnect 
   const ref = React.useRef<HTMLLIElement>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [mediaOpen, setMediaOpen] = React.useState(false);
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [purgeOpen, setPurgeOpen] = React.useState(false);
 
@@ -162,6 +164,12 @@ export function AccountRow({ channel, canManage, canPurge = false, canReconnect 
               <RefreshCw className={cn(refreshing && "animate-spin")} />
               Refresh
             </DropdownMenuItem>
+            {canManage ? (
+              <DropdownMenuItem onSelect={() => setDetailsOpen(true)}>
+                <PenLine />
+                Edit details
+              </DropdownMenuItem>
+            ) : null}
             {(canManage && !disconnected) || canPurge ? <DropdownMenuSeparator /> : null}
             {canManage && !disconnected ? (
               <DropdownMenuItem destructive onSelect={() => setConfirmOpen(true)}>
@@ -180,6 +188,8 @@ export function AccountRow({ channel, canManage, canPurge = false, canReconnect 
       </div>
 
       <MediaDialog channel={channel} open={mediaOpen} onOpenChange={setMediaOpen} />
+
+      {canManage ? <AccountSetupDialog channel={channel} mode="edit" open={detailsOpen} onDone={() => setDetailsOpen(false)} /> : null}
 
       {canManage ? (
         <ConfirmDialog

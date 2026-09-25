@@ -51,6 +51,8 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
   const meta = statusMeta(row.status);
   const p = progressParts(row);
   const sending = row.status === "SENDING";
+  // While it sends, the audience is gone through a page at a time: until that is done the target is a running count.
+  const counting = sending && !stats.audienceComplete;
   const total = Math.max(stats.target, stats.sent + stats.skipped + stats.failed);
   const notSent = stats.skipped;
 
@@ -127,7 +129,11 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-blue" />
               </span>
               <span className="font-semibold">
-                Sending: {formatCount(p.processed)} of {formatCount(p.target)} done
+                {counting
+                  ? p.target === 0
+                    ? "Sending: starting"
+                    : `Sending: ${formatCount(p.processed)} done so far`
+                  : `Sending: ${formatCount(p.processed)} of ${formatCount(p.target)} done`}
               </span>
               <AutoRefresh intervalMs={5000} />
             </div>
@@ -135,9 +141,13 @@ function BroadcastReport({ row, stats, deliveries, deliveryTotal, timeZone, chan
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Sent" value={formatCount(stats.sent)} tone="orange" meta={`${share(stats.sent, stats.target)} of the audience`} />
-            <Stat label="Audience" value={formatCount(stats.target)} />
+            <Stat label="Audience" value={formatCount(stats.target)} meta={counting ? "Still counting" : undefined} />
             <Stat label="Not sent" value={formatCount(notSent)} />
-            <Stat label="Failed" value={formatCount(stats.failed)} meta={stats.pendingJobs > 0 ? `${formatCount(stats.pendingJobs)} still to go` : undefined} />
+            <Stat
+              label="Failed"
+              value={formatCount(stats.failed)}
+              meta={sending && !counting && stats.remaining > 0 ? `${formatCount(stats.remaining)} still to go` : undefined}
+            />
           </div>
 
           <Card>

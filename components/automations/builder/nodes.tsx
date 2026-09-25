@@ -315,9 +315,10 @@ function BranchFooter({
 
 /** Why an agent cannot reply, as the note on the node says it. */
 export const AGENT_PROBLEM: Record<NonNullable<AgentOption["problem"]>, string> = {
-  no_provider: "No AI provider is connected. Connect one under AI.",
+  no_provider: "Its AI connection was removed. Pick another under AI.",
   invalid_key: "The AI provider refused its key. Update it under AI.",
   error: "Its last reply failed. Check the provider under AI.",
+  builtin_unavailable: "The built-in AI is not set up on this server. Connect a provider under AI.",
 };
 
 /** What sends a conversation down each side of an AI step. Shown on the node and in the inspector. */

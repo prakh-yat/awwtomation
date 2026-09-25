@@ -144,12 +144,22 @@ async function inboxItem(workspaceId: string): Promise<AttentionItem | null> {
 function billingItem(organization: BillingFields, role: WorkspaceRole): AttentionItem | null {
   if (!canManageBilling(role)) return null;
   const state = serviceState(organization);
+  if (state === "none") {
+    return {
+      key: "billing-none",
+      tone: "warning",
+      title: "Choose a plan to start sending",
+      detail: "You can connect accounts and build automations now. Nothing is sent until the organization has a plan.",
+      href: "/settings/billing",
+      action: "See plans",
+    };
+  }
   if (state === "lapsed") {
     return {
       key: "billing-lapsed",
       tone: "critical",
       title: "Your payment didn't go through",
-      detail: "Free plan limits apply until you update your payment method.",
+      detail: "Nothing is sent until you update your payment method.",
       href: "/settings/billing",
       action: "Update",
     };
@@ -170,7 +180,7 @@ function billingItem(organization: BillingFields, role: WorkspaceRole): Attentio
       key: "billing-cancelling",
       tone: "neutral",
       title: `Your plan ends on ${shortDate(organization.currentPeriodEnd)}`,
-      detail: "After that the organization moves to the Free plan. You can resume before then.",
+      detail: "After that nothing is sent until you choose a plan again. You can resume before then.",
       href: "/settings/billing",
       action: "Review",
     };
@@ -180,6 +190,8 @@ function billingItem(organization: BillingFields, role: WorkspaceRole): Attentio
 
 function usageItem(usage: OrganizationUsage, role: WorkspaceRole, planLimited: number): AttentionItem | null {
   const { used, limit } = usage.dms;
+  // No plan means no DM allowance at all; the billing notice already says so.
+  if (limit === 0) return null;
   const href = canManageBilling(role) ? "/settings/billing" : "/usage";
   const action = canManageBilling(role) ? "Upgrade" : "View usage";
 

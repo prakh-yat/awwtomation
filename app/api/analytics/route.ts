@@ -21,8 +21,9 @@ const analyticsQuerySchema = z.object({
  * GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&channelId=&automationId=
  * Full Analytics report (daily series, funnel, per-channel / per-automation
  * tables, keywords, skip reasons, heatmap, inbox performance, stages) for
- * the active workspace. Ranges are clamped to 366 days and never reach into
- * the future; an unknown channel or automation is a 404.
+ * the active workspace. Ranges are clamped to 366 days, never start before
+ * the plan's history and never reach into the future; an unknown channel or
+ * automation is a 404.
  */
 export const GET = withWorkspace(async (req, ctx) => {
   const query = parseQuery(req, analyticsQuerySchema);

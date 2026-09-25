@@ -48,7 +48,7 @@ export const reportTools = [
     name: "get_analytics",
     title: "Analytics report",
     description:
-      "The full Analytics report for a date range (up to 366 days): daily series, the comment to DM to click funnel, per-account and per-automation tables, top keywords, skip reasons, best hours, inbox response times and pipeline stages.",
+      "The full Analytics report for a date range (up to 366 days, and never earlier than the plan's history: 90 days on Starter, 180 on Pro, 365 on Agency, 30 without a plan): daily series, the comment to DM to click funnel, per-account and per-automation tables, top keywords, skip reasons, best hours, inbox response times and pipeline stages.",
     annotations: READ,
     input: {
       from: day.optional().describe("YYYY-MM-DD. Defaults to 29 days before to."),

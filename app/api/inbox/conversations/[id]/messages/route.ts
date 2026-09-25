@@ -37,7 +37,7 @@ const sendSchema = z.object({
  * 409 WINDOW_CLOSED outside Meta's window, 429 RATE_LIMITED, 402 PLAN_LIMIT, 502 META_ERROR / SEND_FAILED.
  */
 export const POST = withWorkspace<Params>(async (req, ctx, { params }) => {
-  assertRateLimit("inbox_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
+  await assertRateLimit("inbox_send", ctx.user.id, SEND_LIMIT_PER_MINUTE, ONE_MINUTE_MS);
   const { id } = await params;
   const body = await parseBody(req, sendSchema);
   const message = await sendReply(ctx.workspace.id, id, ctx.user.id, body.message, { humanAgent: body.humanAgent });

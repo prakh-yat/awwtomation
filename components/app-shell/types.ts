@@ -2,6 +2,7 @@ import type { PlanTier, WorkspaceRole } from "@prisma/client";
 
 /** Minimal user shape the shell needs; derived from WorkspaceContext.user. */
 export type ShellUser = {
+  id: string;
   name: string | null;
   email: string;
   avatarUrl: string | null;
@@ -42,7 +43,7 @@ export type ShellProps = {
 };
 
 const PLAN_LABELS: Record<PlanTier, string> = {
-  FREE: "Free",
+  NONE: "No plan",
   STARTER: "Starter",
   PRO: "Pro",
   AGENCY: "Agency",

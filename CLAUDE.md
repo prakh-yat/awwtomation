@@ -58,16 +58,22 @@ persistent sidebar; pages get the full width.
 Connected Instagram and Facebook accounts are managed from the dashboard: the
 faces beside its title open the accounts dialog, and `Connect` starts Meta's
 sign-in. There is no Channels page; `/channels` and `?accounts=1` both open
-that dialog, and the OAuth callbacks land on `/dashboard`.
+that dialog, and the OAuth callbacks land on `/dashboard`, where a newly
+connected account is asked its three setup questions. Onboarding never asks
+anyone to connect an account.
 
 ## AI
 
-Replies are generated with the workspace's own provider key, not ours. There is
-no shared key, no proxy and no per-message charge: `lib/ai/providers.ts` speaks
-three request shapes (OpenAI-compatible, Anthropic, Google) and the workspace
-supplies the endpoint, the model and the key. Keys are encrypted with
-`APP_ENCRYPTION_KEY`, decrypted only in `lib/services/ai.ts`, and never leave
-the server: `toProviderView` returns a four character hint instead.
+An agent replies with one of two things. By default, the built-in model
+(`lib/ai/builtin.ts`): our key, one fixed model set by `DEFAULT_AI_BASE_URL`,
+`DEFAULT_AI_API_KEY` and `DEFAULT_AI_MODEL` (OpenRouter by default), a capped
+reply length and a rate-limited playground; `AiAgent.providerId` null means
+this. Or a connection the workspace made with its own key: `lib/ai/providers.ts`
+speaks three request shapes (OpenAI-compatible, Anthropic, Google) and the
+workspace supplies the endpoint, the model and the key. Workspace keys are
+encrypted with `APP_ENCRYPTION_KEY`, decrypted only in `lib/services/ai.ts`,
+and never leave the server: `toProviderView` returns a four character hint
+instead.
 
 A connection is a key for one of the presets in `lib/ai/presets.ts` (OpenAI,
 Anthropic, Google, OpenRouter, xAI, Mistral, DeepSeek, Groq and sixteen more,
@@ -75,10 +81,13 @@ or a custom endpoint), with a default model; the model list comes live from the
 provider. Every preset shows its own logo from `public/providers/`. Providers
 are picked, connected and managed from the dropdown in the agent editor on
 `/ai`; there is no separate providers page. An agent
-(`AiAgent`) is a model (its own, or the connection's default), a prompt, a
-knowledge block, guardrails, a fallback reply and a list of link buttons. The workspace's words go in first, verbatim;
-what we append is only what the model cannot know (that it is writing a DM, the
-length limit, the two markers). A reply may name one of the agent's own buttons
+(`AiAgent`) is a model (the built-in one, or a connection's), a prompt, a
+knowledge block, guardrails, a fallback reply and a list of link buttons. The
+workspace's words go in first, verbatim; then who the model is talking to; then
+our platform rules (`PLATFORM_RULES` in `lib/ai/agent.ts`), the same for the
+built-in model and every workspace key: English or Romanized Nepali only, short
+plain DMs, nothing invented, safety, and the markers. A reply in any other
+script is rewritten once and otherwise replaced by the fallback. A reply may name one of the agent's own buttons
 with `[[BUTTON:Label]]`, which we resolve to the configured URL, so an
 interactive reply can never carry a link nobody approved. `[[HANDOFF]]` takes
 the flow's handover branch and `[[DONE]]` ends the conversation.

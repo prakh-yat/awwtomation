@@ -44,7 +44,7 @@ Run `node scripts/check-env.mjs` (or `npm run check-env`) in the repo with your 
 | `CRON_SECRET` | always in prod | protects `/api/cron/*` |
 | `META_WEBHOOK_VERIFY_TOKEN` | before webhooks | any string, pasted into the Meta webhook config |
 | `INSTAGRAM_APP_ID/SECRET`, `META_APP_ID/SECRET` | to connect channels | see `docs/SETUP.md` §3: the app boots without them |
-| `DODO_*` | to charge money | see `docs/BILLING.md`: without them every organization stays on FREE |
+| `DODO_*` | to charge money | see `docs/BILLING.md`: without them nobody can subscribe, and an organization without a plan sends nothing |
 | `RESEND_API_KEY`, `EMAIL_FROM` | optional | invite emails; invites work as links regardless |
 
 **Build-time vs runtime.** Next.js inlines every `NEXT_PUBLIC_*` value into the JavaScript bundle when `next build` runs. Changing one later means rebuilding (Vercel/Railway/Render: redeploy; Docker: `docker compose build web`). Everything else is read at process start.
@@ -231,6 +231,8 @@ Authentication, either form:
 ### 5.4 Health endpoint
 
 `GET /api/health` is public, secret-free and cheap. It answers `200 {"ok":true}` when the database responds and `503 {"ok":false}` when it doesn't, and says nothing else, so it reveals nothing about the deployment. Docker's `HEALTHCHECK`, Railway and Render already poll it; add it to an uptime monitor (Better Uptime, UptimeRobot, cron-job.org) with a 1-minute interval.
+
+Add a second monitor on `GET /api/health/queue`. It answers 503 once a due job has waited longer than `QUEUE_ALERT_AFTER_SECONDS` (5 minutes by default): the worker has stopped, or the cron tick is not running. Keep it out of container liveness checks, since restarting the web app does not fix a stopped worker. Set `OPS_ALERT_EMAIL` to also get an email.
 
 For the detail, run `npx tsx scripts/ops-status.ts` against the production database: job queue depth and the oldest waiting job (a worker that is down shows up here first), stuck and failed jobs, webhook errors in the last 24 hours, and accounts that need reconnecting. It exits with code 1 when something needs attention, so it can run from a scheduled job and alert you.
 
