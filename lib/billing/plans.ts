@@ -7,7 +7,7 @@ export type PlanLimits = {
   workspaces: number;
   automations: number;
   dmsPerMonth: number;
-  /** Contacts across the organization. Past it, people who write in are still saved but no automation starts for them. */
+  /** Contacts across the organization. At it, new people who write in are not saved (no contact, no inbox thread) and no automation starts for them. */
   contacts: number;
   members: number;
   /** Broadcasts started per calendar month (UTC); 0 means the plan has no broadcasts. */

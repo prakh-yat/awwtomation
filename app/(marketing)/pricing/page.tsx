@@ -63,7 +63,7 @@ export default function PricingPage() {
     "You can sign up, connect an account and build automations before you pay. Nothing is sent until you choose a plan.",
     "DM counts reset on the 1st of every month. Automated replies, broadcasts and replies from the inbox all count; public replies under comments don’t.",
     "If you reach your limit, messages stop until the reset or until you upgrade. You are never charged for extra messages.",
-    "Past the contact limit, new people who write in are still saved to your inbox, but automations don’t reply to them until you upgrade.",
+    "At the contact limit, new people who comment or message you are not saved: no contact, no inbox thread and no automated reply until you upgrade.",
     "Conversations and delivery logs older than your plan’s history are deleted. Contacts, automations and broadcast totals are kept.",
     "Upgrades apply straight away, and you pay the difference for the rest of the billing period.",
     "You can cancel from Settings at any time. Your plan stays active until the end of the period you paid for.",

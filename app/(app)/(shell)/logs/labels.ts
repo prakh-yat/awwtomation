@@ -54,7 +54,7 @@ export const STATUS_HELP: Record<DeliveryStatus, string> = {
   SKIPPED_NOT_FOLLOWING: "They weren't following yet, so they got the follow prompt instead.",
   SKIPPED_WINDOW: "You can only message someone within 24 hours of their last message.",
   SKIPPED_PLAN_LIMIT: "You've used this month's DMs. Upgrade to keep sending.",
-  SKIPPED_CONTACT_LIMIT: "This person arrived after your plan's contact limit. They're saved, but automations wait until you upgrade.",
+  SKIPPED_CONTACT_LIMIT: "Your plan's contact limit was reached, so nothing was sent. New people aren't saved until you upgrade.",
   SKIPPED_OPTED_OUT: "They asked not to get messages.",
 };
 
