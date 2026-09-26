@@ -16,12 +16,18 @@ import { z } from "zod";
 
 import {
   agentButtonsSchema,
+  approvedLinkSources,
   buildMessages,
+  correctionFor,
   fallbackReplyFor,
   hasOtherScript,
   LANGUAGE_CORRECTION,
+  linkCorrection,
   parseReply,
   readAgentButtons,
+  removeLinks,
+  unapprovedLinks,
+  type ParsedReply,
   STARTER_GUARDRAILS,
   STARTER_PROMPT,
   toOutboundMessage,
@@ -29,6 +35,7 @@ import {
   type AgentContext,
 } from "@/lib/ai/agent";
 import { BUILT_IN_LABEL, BUILT_IN_MAX_TOKENS, builtInModel, builtInTarget } from "@/lib/ai/builtin";
+import { AGENT_TEXT_LIMITS, clampTo, CONTEXT_MESSAGES, REPLY_TOKENS } from "@/lib/ai/limits";
 import { presetFor, type ProviderPresetId } from "@/lib/ai/presets";
 import { chat, checkBaseUrl, listModels } from "@/lib/ai/providers";
 import type { ChatMessage, ChatResult } from "@/lib/ai/types";
@@ -68,20 +75,43 @@ export const providerUpdateSchema = providerCreateSchema.partial().extend({
 });
 export type ProviderUpdateInput = z.infer<typeof providerUpdateSchema>;
 
+/** "Instructions can be up to 4,000 characters." */
+function tooLong(field: string, max: number): string {
+  return `${field} can be up to ${max.toLocaleString("en-US")} characters.`;
+}
+
 export const agentCreateSchema = z.object({
-  name: z.string().trim().min(1, "Give it a name").max(60),
+  name: z.string().trim().min(1, "Give it a name").max(AGENT_TEXT_LIMITS.name, tooLong("The name", AGENT_TEXT_LIMITS.name)),
   /** Null is the built-in model; left out, a new agent uses the workspace's default connection, or the built-in model when there is none. */
   providerId: z.string().max(64).nullable().optional(),
   /** Null or empty uses the provider's default model. */
   model: z.string().trim().max(120).nullable().optional(),
-  systemPrompt: z.string().trim().min(1, "The prompt cannot be empty").max(20_000),
-  knowledge: z.string().max(40_000).nullable().optional(),
-  guardrails: z.string().max(10_000).nullable().optional(),
-  fallbackReply: z.string().max(1000).nullable().optional(),
+  systemPrompt: z
+    .string()
+    .trim()
+    .min(1, "Write the instructions.")
+    .max(AGENT_TEXT_LIMITS.systemPrompt, tooLong("Instructions", AGENT_TEXT_LIMITS.systemPrompt)),
+  knowledge: z.string().max(AGENT_TEXT_LIMITS.knowledge, tooLong("Knowledge", AGENT_TEXT_LIMITS.knowledge)).nullable().optional(),
+  guardrails: z.string().max(AGENT_TEXT_LIMITS.guardrails, tooLong("Rules", AGENT_TEXT_LIMITS.guardrails)).nullable().optional(),
+  fallbackReply: z
+    .string()
+    .max(AGENT_TEXT_LIMITS.fallbackReply, tooLong("The reply when the model fails", AGENT_TEXT_LIMITS.fallbackReply))
+    .nullable()
+    .optional(),
   buttons: agentButtonsSchema.optional(),
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().int().min(60).max(4000).optional(),
-  historyLimit: z.number().int().min(2).max(50).optional(),
+  maxTokens: z
+    .number()
+    .int()
+    .min(REPLY_TOKENS.min, `Reply length is at least ${REPLY_TOKENS.min}.`)
+    .max(REPLY_TOKENS.max, `Reply length can be up to ${REPLY_TOKENS.max}.`)
+    .optional(),
+  historyLimit: z
+    .number()
+    .int()
+    .min(CONTEXT_MESSAGES.min, `Context is at least ${CONTEXT_MESSAGES.min} messages.`)
+    .max(CONTEXT_MESSAGES.max, `Context can be up to ${CONTEXT_MESSAGES.max} messages.`)
+    .optional(),
   isDefault: z.boolean().optional(),
 });
 export type AgentCreateInput = z.infer<typeof agentCreateSchema>;
@@ -379,9 +409,9 @@ export async function createAgent(workspaceId: string, input: AgentCreateInput):
       guardrails: input.guardrails ?? null,
       fallbackReply: input.fallbackReply ?? null,
       buttons: input.buttons ?? [],
-      temperature: input.temperature ?? 0.6,
-      maxTokens: input.maxTokens ?? 400,
-      historyLimit: input.historyLimit ?? 20,
+      temperature: input.temperature ?? DEFAULT_TEMPERATURE,
+      maxTokens: input.maxTokens ?? REPLY_TOKENS.default,
+      historyLimit: input.historyLimit ?? CONTEXT_MESSAGES.default,
       isDefault: input.isDefault ?? slots.used === 0,
     },
   });
@@ -475,7 +505,8 @@ export async function listAgentOptions(workspaceId: string): Promise<AgentOption
         id: agent.id,
         name: agent.name,
         isDefault: agent.isDefault,
-        model: builtIn.model,
+        // Always by our name, never the model behind it.
+        model: builtIn.label,
         presetId: null,
         builtIn: true,
         problem: builtIn.available ? null : "builtin_unavailable",
@@ -498,11 +529,29 @@ export async function listAgentOptions(workspaceId: string): Promise<AgentOption
 // ───────────────────────── Running one ─────────────────────────
 
 export type AgentRun =
-  | { ok: true; text: string; message: OutboundMessage; buttons: AgentButton[]; handoff: boolean; done: boolean }
+  | {
+      ok: true;
+      /** What is sent; empty when the model only ended the conversation. */
+      text: string;
+      /** Null when there is nothing to send: they said thanks or bye and the model closed without a word. */
+      message: OutboundMessage | null;
+      buttons: AgentButton[];
+      handoff: boolean;
+      done: boolean;
+    }
   | { ok: false; reason: string; message: string; retryable: boolean; fallback: string };
 
 /** What a reply is written with: a workspace connection, or the built-in model (`providerId` null). */
-type ReplyTarget = { kind: AiProviderKind; apiKey: string; baseUrl: string | null; model: string; maxTokens: number; providerId: string | null };
+type ReplyTarget = {
+  kind: AiProviderKind;
+  apiKey: string;
+  baseUrl: string | null;
+  model: string;
+  /** The model a second attempt uses; the same one unless the built-in model has a fallback configured. */
+  retryModel: string;
+  maxTokens: number;
+  providerId: string | null;
+};
 
 type TargetFailure = Extract<AgentRun, { ok: false }>;
 
@@ -513,7 +562,15 @@ async function replyTarget(workspaceId: string, agent: AiAgent): Promise<ReplyTa
     if (!builtIn) {
       return { ok: false, reason: "no_provider", message: `${BUILT_IN_LABEL} is not set up on this server.`, retryable: false, fallback };
     }
-    return { ...builtIn, maxTokens: Math.min(agent.maxTokens, BUILT_IN_MAX_TOKENS), providerId: null };
+    return {
+      kind: builtIn.kind,
+      apiKey: builtIn.apiKey,
+      baseUrl: builtIn.baseUrl,
+      model: builtIn.model,
+      retryModel: builtIn.fallbackModel ?? builtIn.model,
+      maxTokens: Math.min(clampTo(REPLY_TOKENS, agent.maxTokens), BUILT_IN_MAX_TOKENS),
+      providerId: null,
+    };
   }
 
   const provider = await prisma.aiProvider.findFirst({ where: { id: agent.providerId, workspaceId } });
@@ -525,8 +582,12 @@ async function replyTarget(workspaceId: string, agent: AiAgent): Promise<ReplyTa
     await recordProviderResult(provider.id, { ok: false, reason: "invalid_key", message: UNREADABLE_KEY, retryable: false });
     return { ok: false, reason: "invalid_key", message: UNREADABLE_KEY, retryable: false, fallback };
   }
-  return { kind: provider.kind, apiKey, baseUrl: provider.baseUrl, model: agent.model?.trim() || provider.model, maxTokens: agent.maxTokens, providerId: provider.id };
+  const model = agent.model?.trim() || provider.model;
+  return { kind: provider.kind, apiKey, baseUrl: provider.baseUrl, model, retryModel: model, maxTokens: clampTo(REPLY_TOKENS, agent.maxTokens), providerId: provider.id };
 }
+
+/** Creativity a new agent starts with: low, because a business's DMs want its facts, not flourishes. */
+const DEFAULT_TEMPERATURE = 0.4;
 
 /** Test chats on the built-in model cost us, not the workspace: this many per workspace per hour. */
 const BUILT_IN_PLAYGROUND_PER_HOUR = 40;
@@ -541,16 +602,32 @@ export async function assertPlaygroundAllowed(workspaceId: string, agent: AiAgen
   await assertRateLimit("ai_playground_builtin", workspaceId, BUILT_IN_PLAYGROUND_PER_HOUR, 3_600_000);
 }
 
+/** Each model call gets this long; two attempts and a rewrite still fit inside the flow's busy window. */
+const REPLY_TIMEOUT_MS = 20_000;
+/** A pause before the second attempt, so a rate limit has a moment to clear. */
+const RETRY_DELAY_MS = 1_500;
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * One reply from an agent.
  *
- * Usage counters are written even on a failure that consumed tokens, because
- * the workspace is paying for those and should see them. A failure comes back
- * with the fallback text so the caller can always say something.
+ * A production DM cannot fail on a hiccup, so a rate limit, an outage, a
+ * timeout or an empty answer gets one more attempt (on the built-in model's
+ * fallback model when one is configured) before the contact gets the fallback
+ * reply and the flow hands over.
  *
- * A reply in a script the platform rules do not allow gets one rewrite; a
- * second miss is a failure (the fallback is sent and the flow hands over)
- * rather than a message the business never agreed to.
+ * The reply is then checked, not trusted: a reply in a script the platform
+ * rules do not allow, or carrying a link the workspace never wrote, is
+ * rewritten once with every problem named. A second miss on the script is a
+ * failure (the fallback is sent); a link that survives the rewrite is taken
+ * out. A reply that only ends the conversation sends nothing, and one that
+ * only hands over sends the fallback reply, which says the team will answer.
+ *
+ * Usage counters are written for every call that consumed tokens, because the
+ * workspace (or we, on the built-in model) paid for them.
  */
 export async function runAgent(input: {
   workspaceId: string;
@@ -562,69 +639,97 @@ export async function runAgent(input: {
   const target = await replyTarget(input.workspaceId, agent);
   if ("ok" in target) return target;
 
+  const fallback = fallbackReplyFor(agent);
+  const buttons = readAgentButtons(agent.buttons);
+  const approved = approvedLinkSources(agent);
   const messages = buildMessages(agent, input.context, input.history);
-  const call = (conversation: ChatMessage[]) =>
-    chat({
+  const usage = { promptTokens: 0, completionTokens: 0 };
+
+  const call = async (conversation: ChatMessage[], model = target.model): Promise<ChatResult> => {
+    const result = await chat({
       kind: target.kind,
       apiKey: target.apiKey,
       baseUrl: target.baseUrl,
-      model: target.model,
+      model,
       messages: conversation,
       temperature: agent.temperature,
       maxTokens: target.maxTokens,
+      timeoutMs: REPLY_TIMEOUT_MS,
+    });
+    if (target.providerId) await recordProviderResult(target.providerId, result);
+    if (result.ok) {
+      usage.promptTokens += result.usage.promptTokens;
+      usage.completionTokens += result.usage.completionTokens;
+    }
+    return result;
+  };
+
+  const record = (sent: boolean) =>
+    prisma.aiAgent.update({
+      where: { id: agent.id },
+      data: {
+        repliesSent: { increment: sent ? 1 : 0 },
+        promptTokens: { increment: usage.promptTokens },
+        completionTokens: { increment: usage.completionTokens },
+      },
     });
 
   let result = await call(messages);
-  if (target.providerId) await recordProviderResult(target.providerId, result);
-
+  if (!result.ok && result.retryable) {
+    await pause(RETRY_DELAY_MS);
+    result = await call(messages, target.retryModel);
+  }
   if (!result.ok) {
     logger.warn("ai.reply_failed", { workspaceId: input.workspaceId, agentId: agent.id, builtIn: !target.providerId, reason: result.reason });
-    return { ok: false, reason: result.reason, message: result.message, retryable: result.retryable, fallback: fallbackReplyFor(agent) };
+    if (usage.promptTokens || usage.completionTokens) await record(false);
+    return { ok: false, reason: result.reason, message: result.message, retryable: result.retryable, fallback };
   }
 
-  let usage = result.usage;
-  let wrongScript = hasOtherScript(result.text);
-  if (wrongScript) {
-    const rewrite = await call([...messages, { role: "assistant", content: result.text }, { role: "user", content: LANGUAGE_CORRECTION }]);
+  let reply: ParsedReply = parseReply(result.text, buttons, { truncated: result.truncated });
+  const problems = [
+    ...(hasOtherScript(reply.text) ? [LANGUAGE_CORRECTION] : []),
+    ...(() => {
+      const links = unapprovedLinks(reply.text, approved);
+      return links.length > 0 ? [linkCorrection(links)] : [];
+    })(),
+  ];
+  if (problems.length > 0) {
+    const rewrite = await call([...messages, { role: "assistant", content: result.text }, { role: "user", content: correctionFor(problems) }]);
     if (rewrite.ok) {
-      usage = { promptTokens: usage.promptTokens + rewrite.usage.promptTokens, completionTokens: usage.completionTokens + rewrite.usage.completionTokens };
-      wrongScript = hasOtherScript(rewrite.text);
-      if (!wrongScript) result = rewrite;
+      const again = parseReply(rewrite.text, buttons, { truncated: rewrite.truncated });
+      // A rewrite that drops the first reply's marker must not lose a handover.
+      if (again.text && !hasOtherScript(again.text)) reply = { ...again, handoff: again.handoff || reply.handoff, done: again.done && !reply.handoff };
     }
   }
 
-  await prisma.aiAgent.update({
-    where: { id: agent.id },
-    data: {
-      repliesSent: { increment: wrongScript ? 0 : 1 },
-      promptTokens: { increment: usage.promptTokens },
-      completionTokens: { increment: usage.completionTokens },
-    },
-  });
-
-  if (wrongScript) {
+  if (hasOtherScript(reply.text)) {
+    await record(false);
     logger.warn("ai.reply_wrong_script", { workspaceId: input.workspaceId, agentId: agent.id });
-    return {
-      ok: false,
-      reason: "language",
-      message: "The model kept replying in a script other than English or Romanized Nepali.",
-      retryable: false,
-      fallback: fallbackReplyFor(agent),
-    };
+    return { ok: false, reason: "language", message: "The model kept replying in a script other than English or Romanized Nepali.", retryable: false, fallback };
+  }
+  const stray = unapprovedLinks(reply.text, approved);
+  if (stray.length > 0) {
+    logger.warn("ai.reply_link_removed", { workspaceId: input.workspaceId, agentId: agent.id, count: stray.length });
+    reply = { ...reply, text: removeLinks(reply.text, stray) };
   }
 
-  const parsed = parseReply(result.text, readAgentButtons(agent.buttons));
-  if (!parsed.text) {
-    return { ok: false, reason: "empty", message: "The model replied with nothing to send.", retryable: true, fallback: fallbackReplyFor(agent) };
+  if (!reply.text) {
+    // Closed without a word ("thanks" needs no answer): nothing to send.
+    if (reply.done) {
+      await record(false);
+      return { ok: true, text: "", message: null, buttons: [], handoff: false, done: true };
+    }
+    // Handed over without a word: the fallback says the team will answer.
+    if (reply.handoff) {
+      await record(true);
+      return { ok: true, text: fallback, message: { text: fallback }, buttons: [], handoff: true, done: false };
+    }
+    await record(false);
+    return { ok: false, reason: "empty", message: "The model replied with nothing to send.", retryable: true, fallback };
   }
-  return {
-    ok: true,
-    text: parsed.text,
-    message: toOutboundMessage(parsed),
-    buttons: parsed.buttons,
-    handoff: parsed.handoff,
-    done: parsed.done,
-  };
+
+  await record(true);
+  return { ok: true, text: reply.text, message: toOutboundMessage(reply), buttons: reply.buttons, handoff: reply.handoff, done: reply.done };
 }
 
 /** The agent a workspace gets when it first turns AI on. */

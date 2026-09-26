@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { ContactsView } from "@/components/contacts/contacts-view";
 import { filtersFromSearchParams, filtersToServiceFilters, hasActiveFilters, parsePage, parsePageSize, segmentFiltersToState } from "@/components/contacts/filters";
 import { contactStats, listContactChannels, listContacts, listOwners, listTags } from "@/lib/services/contacts";
+import { contactRoom } from "@/lib/billing/usage";
 import { listPipelines } from "@/lib/services/pipelines";
 import { listSegments } from "@/lib/services/segments";
 import { requireWorkspaceContext } from "@/lib/workspace/context";
@@ -29,13 +30,14 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const ctx = await requireWorkspaceContext();
   const params = await searchParams;
 
-  const [segments, stats, tags, channels, owners, pipelines] = await Promise.all([
+  const [segments, stats, tags, channels, owners, pipelines, room] = await Promise.all([
     listSegments(ctx.workspace.id),
     contactStats(ctx.workspace.id),
     listTags(ctx.workspace.id),
     listContactChannels(ctx.workspace.id),
     listOwners(ctx.workspace.id),
     listPipelines(ctx.workspace.id),
+    contactRoom(ctx.workspace.id),
   ]);
   const requestedSegment = firstParam(params, "segment");
   const activeSegment = requestedSegment ? (segments.find((s) => s.id === requestedSegment) ?? null) : null;
@@ -70,6 +72,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       viewerId={ctx.user.id}
       canManagePipelines={canManageSettings(ctx.role)}
       timezone={ctx.workspace.timezone}
+      contactLimit={room.room === 0 ? room.limit : null}
     />
   );
 }

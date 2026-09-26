@@ -91,7 +91,11 @@ function AgentPicker({
           )}
           <span className="min-w-0 flex-1">
             <span className={cn("block truncate text-[13px] font-semibold", !value && "text-muted-foreground")}>{value?.name ?? "Pick an agent"}</span>
-            {value ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{value.model ?? "No provider yet"}</span> : null}
+            {value ? (
+              <span className={cn("block truncate text-[11px] text-muted-foreground", !value.builtIn && value.model && "font-mono")}>
+                {value.model ?? "No provider yet"}
+              </span>
+            ) : null}
           </span>
           <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
@@ -106,7 +110,9 @@ function AgentPicker({
                 <span className="truncate font-semibold text-ink">{agent.name}</span>
                 {agent.isDefault ? <Star className="!size-3 fill-ink !text-ink" aria-label="Default" /> : null}
               </span>
-              <span className="block truncate font-mono text-[11px] text-muted-foreground">{agent.model ?? "No provider yet"}</span>
+              <span className={cn("block truncate text-[11px] text-muted-foreground", !agent.builtIn && agent.model && "font-mono")}>
+                {agent.model ?? "No provider yet"}
+              </span>
             </span>
             {agent.id === value?.id ? <Check className="!text-purple" strokeWidth={2.5} /> : null}
           </DropdownMenuItem>

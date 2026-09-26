@@ -143,8 +143,9 @@ export function Dock(props: ShellProps) {
   const [pointerY, setPointerY] = React.useState<number | null>(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
-  // The product tour is pointing at something in here.
+  // The product tour is pointing at something in here, and which slot it shows off.
   const [tourOpen, setTourOpen] = React.useState(false);
+  const [tourFocus, setTourFocus] = React.useState<string | null>(null);
 
   const dockRef = React.useRef<HTMLDivElement>(null);
   const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,12 +213,13 @@ export function Dock(props: ShellProps) {
   }, [pinned, show, hide]);
 
   // The product tour opens the dock for the steps that point into it and lets
-  // go after them. It holds the dock at rest, without magnification, so every
-  // tile stays where the tour measured it.
+  // go after them. On a step about one tile it magnifies that tile, as the
+  // pointer would, and the tour's spotlight follows it as it grows.
   React.useEffect(() => {
     const onTourDock = (event: CustomEvent<TourDockDetail>) => {
       const hold = event.detail.open;
       setTourOpen(hold);
+      setTourFocus(hold ? (event.detail.focus ?? null) : null);
       if (hold) {
         setPointerY(null);
         show();
@@ -294,12 +296,14 @@ export function Dock(props: ShellProps) {
       kind: "item",
       key: "workspace",
       label: workspace?.name ?? "Workspace",
+      tour: "workspace",
       node: <WorkspaceCard organizationName={organization.name} workspace={workspace} collapsed onOpen={() => setSwitcherOpen(true)} />,
     });
     list.push({
       kind: "item",
       key: "usage",
       label: "DMs this month",
+      tour: "usage",
       node: <UsageMeter usage={usage} collapsed />,
     });
     list.push({
@@ -343,11 +347,15 @@ export function Dock(props: ShellProps) {
   const fit = windowHeight > 0 ? Math.min(1, Math.max(0.55, (windowHeight - EDGE * 2) / (rest.length + (reducedMotion ? 0 : rest.peak)))) : 1;
   const restTop = windowHeight > 0 ? (windowHeight - rest.length * fit) / 2 : 0;
 
+  // Where the magnification centres: the pointer, or the slot the tour is showing.
+  const focusIndex = tourFocus ? slots.findIndex((slot) => slot.kind === "item" && slot.tour === tourFocus) : -1;
+  const magnifyAt = focusIndex >= 0 ? restTop + (rest.starts[focusIndex] + restSize(slots[focusIndex]) / 2) * fit : pointerY;
+
   const frame = React.useMemo(() => {
     const scales = slots.map(() => 1);
     let focus = -1;
-    if (pointerY !== null && !reducedMotion) {
-      const p = (pointerY - restTop) / fit;
+    if (magnifyAt !== null && !reducedMotion) {
+      const p = (magnifyAt - restTop) / fit;
       let best = LABEL_SCALE;
       slots.forEach((slot, i) => {
         if (slot.kind !== "item" || slot.fixed) return;
@@ -361,7 +369,7 @@ export function Dock(props: ShellProps) {
     }
     const sizes = slots.map((slot, i) => restSize(slot) * scales[i]);
     const { starts, length } = layout(slots, sizes);
-    const shift = pointerY === null || reducedMotion ? 0 : anchorShift(slots, rest.starts, starts, sizes, (pointerY - restTop) / fit);
+    const shift = magnifyAt === null || reducedMotion ? 0 : anchorShift(slots, rest.starts, starts, sizes, (magnifyAt - restTop) / fit);
     const width = Math.max(...sizes) + PAD * 2;
 
     // Keep the grown dock inside the window; near the ends that wins over
@@ -370,7 +378,7 @@ export function Dock(props: ShellProps) {
     const top = Math.min(Math.max(restTop + shift * fit, EDGE), maxTop);
 
     return { sizes, starts, length, width, top, focus };
-  }, [slots, pointerY, reducedMotion, rest, restTop, fit, windowHeight]);
+  }, [slots, magnifyAt, reducedMotion, rest, restTop, fit, windowHeight]);
 
   const tracking = pointerY !== null;
 
@@ -454,7 +462,8 @@ export function Dock(props: ShellProps) {
               );
             }
             const size = frame.sizes[i];
-            const labelled = frame.focus === i;
+            // The tour's card names the slot it shows, so the bubble would only sit under it.
+            const labelled = frame.focus === i && tourFocus === null;
             return (
               <div
                 key={slot.key}

@@ -201,19 +201,29 @@ enum OAuthTokenKind {
 // ───────────────────────── Identity & tenancy ─────────────────────────
 
 model User {
-  id              String    @id @default(cuid())
+  id                 String    @id @default(cuid())
   /// External identity, namespaced by provider: "google:<sub>" (or "dev:<email>"
   /// for the local bypass). Still stored in the column Supabase auth used, so
   /// switching providers needed no migration and existing rows kept their data.
-  authId          String    @unique @map("supabaseId")
-  email           String    @unique
-  name            String?
-  avatarUrl       String?
-  isSuperAdmin    Boolean   @default(false)
+  authId             String    @unique @map("supabaseId")
+  email              String    @unique
+  name               String?
+  avatarUrl          String?
+  isSuperAdmin       Boolean   @default(false)
   /// When this person finished or dismissed the product tour; null starts it on their next visit.
-  tourCompletedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  tourCompletedAt    DateTime?
+  /// Which version of the product tour this person has been shown (TOUR_VERSION
+  /// in lib/services/tour.ts); below it, the tour opens by itself again.
+  tourVersion        Int       @default(0)
+  /// What the welcome flow asked about the person (their role, how they heard
+  /// about us), keyed by question id (lib/onboarding/questions.ts). Asked once,
+  /// whichever workspace they set up first.
+  profileAnswers     Json?
+  /// When those questions were answered or skipped; null sends the person to
+  /// /welcome from any page of the app.
+  profileCompletedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   memberships           OrganizationMember[]
   sentInvitations       Invitation[]         @relation("InvitedBy")
@@ -975,10 +985,11 @@ model AiAgent {
   /// The model names one by its title and we supply the URL, so it can make a
   /// reply interactive without ever inventing a link.
   buttons       Json?
-  temperature   Float   @default(0.6)
-  maxTokens     Int     @default(400)
-  /// How many of the conversation's most recent messages are sent as context.
-  historyLimit  Int     @default(20)
+  temperature   Float   @default(0.4)
+  /// Longest reply in tokens, within REPLY_TOKENS (lib/ai/limits.ts).
+  maxTokens     Int     @default(200)
+  /// How many of the conversation's most recent messages are sent as context, within CONTEXT_MESSAGES.
+  historyLimit  Int     @default(10)
   isDefault     Boolean @default(false)
 
   /// Lifetime counters, so the workspace can see what their key is spending.

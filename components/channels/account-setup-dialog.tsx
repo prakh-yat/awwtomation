@@ -12,7 +12,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { PlatformMark } from "@/components/ui/platform-badge";
 import { toast } from "@/components/ui/sonner";
 import { TONES, type Tone } from "@/components/ui/tone";
-import { ACCOUNT_QUESTIONS, GOALS, templateGoalFor, type AccountQuestion } from "@/lib/onboarding/account-questions";
+import { accountQuestionsFor, GOALS, templateGoalFor, type AccountQuestion } from "@/lib/onboarding/account-questions";
 import { isAnswered, toggleAnswer, type Answers, type QuestionOption } from "@/lib/onboarding/questions";
 import type { ChannelView } from "@/lib/services/channels";
 import { cn, initials } from "@/lib/utils";
@@ -116,8 +116,26 @@ function Progress({ index, total }: { index: number; total: number }) {
  * as the dialog shows it: the route keeps anything left out, so a cleared
  * answer has to be sent as null or an empty list.
  */
-function fullAnswers(answers: Answers): Record<string, string | string[] | null> {
-  return Object.fromEntries(ACCOUNT_QUESTIONS.map((q) => [q.id, answers[q.id] ?? (q.kind === "multi" ? [] : null)]));
+function fullAnswers(questions: readonly AccountQuestion[], answers: Answers): Record<string, string | string[] | null> {
+  return Object.fromEntries(questions.map((q) => [q.id, answers[q.id] ?? (q.kind === "multi" ? [] : null)]));
+}
+
+/**
+ * The saved answers, minus any choice the account is no longer offered (a goal
+ * its platform has no templates for), so nothing is picked that cannot be seen.
+ */
+function offeredAnswers(questions: readonly AccountQuestion[], answers: Answers): Answers {
+  const next: Answers = {};
+  for (const question of questions) {
+    const value = answers[question.id];
+    const allowed = new Set(question.options.map((o) => o.value));
+    if (typeof value === "string" && allowed.has(value)) next[question.id] = value;
+    else if (Array.isArray(value)) {
+      const kept = value.filter((v) => allowed.has(v));
+      if (kept.length > 0) next[question.id] = kept;
+    }
+  }
+  return next;
 }
 
 /** The goal picked first: what the next step opens the template gallery on. */
@@ -142,16 +160,19 @@ export interface AccountSetupDialogProps {
 
 /**
  * A few questions about one account: what it is, how it makes money and what it
- * should do first. One question at a time; after connecting, the answers lead
- * to the template gallery on the account's first goal.
+ * should do first. One question at a time, in the platform's colour: Instagram
+ * magenta, a Facebook Page Messenger blue, and the goals narrowed to the ones
+ * its platform has templates for. After connecting, the answers lead to the
+ * template gallery on the account's first goal.
  */
 export function AccountSetupDialog({ channel, mode, open, onDone }: AccountSetupDialogProps) {
   const router = useRouter();
   const name = channelDisplayName(channel);
   const platformTone: Tone = channel.platform === "INSTAGRAM" ? "magenta" : "blue";
-  const total = ACCOUNT_QUESTIONS.length;
+  const questions = React.useMemo(() => accountQuestionsFor(channel.setup.goalOptions), [channel.setup.goalOptions]);
+  const total = questions.length;
 
-  const [answers, setAnswers] = React.useState<Answers>(channel.setup.answers);
+  const [answers, setAnswers] = React.useState<Answers>(() => offeredAnswers(questions, channel.setup.answers));
   const [index, setIndex] = React.useState(0);
   const [direction, setDirection] = React.useState<"forward" | "back">("forward");
   // After the last question: the template suggestion, when a goal was picked.
@@ -163,14 +184,14 @@ export function AccountSetupDialog({ channel, mode, open, onDone }: AccountSetup
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setAnswers(channel.setup.answers);
+      setAnswers(offeredAnswers(questions, channel.setup.answers));
       setIndex(0);
       setDirection("forward");
       setView("questions");
     }
   }
 
-  const question: AccountQuestion = ACCOUNT_QUESTIONS[index];
+  const question: AccountQuestion = questions[index];
   const multi = question.kind === "multi";
   const isLast = index === total - 1;
   const value = answers[question.id];
@@ -190,7 +211,7 @@ export function AccountSetupDialog({ channel, mode, open, onDone }: AccountSetup
   function save() {
     return apiFetch<{ channel: ChannelView }>(`/api/channels/${channel.id}/setup`, {
       method: "PATCH",
-      body: JSON.stringify({ answers: fullAnswers(answers), complete: true }),
+      body: JSON.stringify({ answers: fullAnswers(questions, answers), complete: true }),
     });
   }
 
@@ -264,7 +285,8 @@ export function AccountSetupDialog({ channel, mode, open, onDone }: AccountSetup
           headingRef.current?.focus({ preventScroll: true });
         }}
       >
-        <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b px-5 py-4 sm:px-6">
+        {/* Just connected: the header wears the platform's colour and says so. */}
+        <DialogHeader className={cn("flex-row items-center gap-3 space-y-0 border-b px-5 py-4 sm:px-6", mode === "connect" && TONES[platformTone].soft)}>
           <div className="relative shrink-0">
             <Avatar className="h-10 w-10 border">
               {channel.avatarUrl ? <AvatarImage src={channel.avatarUrl} alt="" referrerPolicy="no-referrer" /> : null}
@@ -273,8 +295,15 @@ export function AccountSetupDialog({ channel, mode, open, onDone }: AccountSetup
             <PlatformMark aria-hidden platform={channel.platform} size={16} className="absolute -bottom-1 -right-1 ring-2 ring-background" />
           </div>
           <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate pr-0 font-sans text-[15px] font-semibold leading-tight tracking-normal">{name}</DialogTitle>
-            <DialogDescription className="mt-0.5 text-[12px]">{PLATFORM_LABEL[channel.platform]}</DialogDescription>
+            <DialogTitle className="truncate pr-0 font-sans text-[15px] font-semibold leading-tight tracking-normal text-ink">{name}</DialogTitle>
+            {mode === "connect" ? (
+              <DialogDescription className={cn("mt-0.5 flex items-center gap-1 text-[12px] font-medium", TONES[platformTone].text)}>
+                <Check className="h-3 w-3 shrink-0" strokeWidth={3} aria-hidden />
+                {PLATFORM_LABEL[channel.platform]} connected
+              </DialogDescription>
+            ) : (
+              <DialogDescription className="mt-0.5 text-[12px]">{PLATFORM_LABEL[channel.platform]}</DialogDescription>
+            )}
           </div>
           {mode === "connect" && view === "questions" ? (
             <Button variant="ghost" size="sm" onClick={skip} disabled={saving} className="-mr-2 shrink-0 text-muted-foreground hover:text-ink">

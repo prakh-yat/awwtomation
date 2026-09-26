@@ -13,6 +13,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Segmented, type SegmentedOption } from "@/components/ui/segmented";
 import { toast } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ContactChannelSummary, ContactListItem, ContactListResult, ContactStats, ContactTagCount } from "@/lib/services/contacts";
 import type { ContactPipelineRef, PipelineStageSummary, PipelineSummary } from "@/lib/services/pipelines";
 import type { SegmentSummary } from "@/lib/services/segments";
@@ -68,6 +69,8 @@ export interface ContactsViewProps {
   viewerId: string;
   canManagePipelines: boolean;
   timezone: string;
+  /** The plan's contact limit once the organization has reached it; null while there is room. Nothing can be added past it. */
+  contactLimit: number | null;
 }
 
 const VIEW_OPTIONS: SegmentedOption<ContactsViewMode>[] = [
@@ -133,6 +136,7 @@ function ContactsView({
   viewerId,
   canManagePipelines,
   timezone,
+  contactLimit,
 }: ContactsViewProps) {
   const router = useRouter();
   const [view, setView] = React.useState<ContactsViewMode>(initialView);
@@ -524,12 +528,30 @@ function ContactsView({
   }, [owners, viewerId]);
   const showBulkBar = !workspaceEmpty && view === "list" && selected.size > 0;
 
+  const full = contactLimit !== null;
+  // A disabled button takes no pointer events, so the reason hangs off a wrapper around it.
+  const limited = (button: React.ReactNode) =>
+    full ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {button}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Your plan allows {contactLimit.toLocaleString("en-US")} contacts. Upgrade to add more.</TooltipContent>
+      </Tooltip>
+    ) : (
+      button
+    );
+
   const headerActions = (
     <>
-      <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} disabled={channels.length === 0}>
-        <Upload />
-        Import
-      </Button>
+      {limited(
+        <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} disabled={channels.length === 0 || full}>
+          <Upload />
+          Import
+        </Button>,
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="icon-sm" aria-label="More contact actions">
@@ -557,10 +579,12 @@ function ContactsView({
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button size="sm" onClick={() => setAddOpen(true)} disabled={channels.length === 0}>
-        <Plus />
-        Add contact
-      </Button>
+      {limited(
+        <Button size="sm" onClick={() => setAddOpen(true)} disabled={channels.length === 0 || full}>
+          <Plus />
+          Add contact
+        </Button>,
+      )}
     </>
   );
 

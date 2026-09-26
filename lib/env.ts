@@ -71,6 +71,8 @@ const serverSchema = z.object({
   DEFAULT_AI_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
   DEFAULT_AI_API_KEY: emptyAsUndefined(z.string().min(8)),
   DEFAULT_AI_MODEL: z.string().min(1).default("nvidia/nemotron-3-ultra-550b-a55b:free"),
+  /** Tried once when the main model is rate limited, down or silent. Unset: the main model is tried again. */
+  DEFAULT_AI_FALLBACK_MODEL: emptyAsUndefined(z.string().min(1)),
 
   /** debug | info | warn | error. Info in production keeps one line per event that matters. */
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),

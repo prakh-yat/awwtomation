@@ -30,6 +30,7 @@ export const POST = withWorkspace(async (req, ctx) => {
       platform: channel?.platform === "FACEBOOK" ? "FACEBOOK" : "INSTAGRAM",
       contactName: "Sita",
       trigger: null,
+      timezone: ctx.workspace.timezone,
     },
     history: messages,
   });

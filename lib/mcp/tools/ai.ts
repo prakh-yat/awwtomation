@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { withStepInstruction } from "@/lib/ai/agent";
 import { builtInModel } from "@/lib/ai/builtin";
+import { AGENT_TEXT_LIMITS, CONTEXT_MESSAGES, REPLY_TOKENS } from "@/lib/ai/limits";
 import { PROVIDER_PRESETS, presetById, type ProviderPresetId } from "@/lib/ai/presets";
 import {
   assertPlaygroundAllowed,
@@ -56,25 +57,57 @@ function fromPreset(presetId: ProviderPresetId | undefined, given: { kind?: stri
   return { kind: given.kind ?? preset.kind, baseUrl: given.baseUrl ?? preset.baseUrl ?? undefined, label: preset.name, model: preset.models[0] };
 }
 
+/** 4000 as "4,000". */
+function chars(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 const agentFields = {
-  name: z.string().optional().describe("Up to 60 characters."),
+  name: z.string().optional().describe(`Up to ${AGENT_TEXT_LIMITS.name} characters.`),
   providerId: z
     .string()
     .nullable()
     .optional()
     .describe("Which connection it replies with. Null uses the built-in model, which needs no key. Left out when creating, the workspace's default connection is used, or the built-in model when there is none."),
   model: z.string().nullable().optional().describe("A model id from list_ai_models. Null uses the connection's default model."),
-  systemPrompt: z.string().optional().describe("Who the agent is and how it talks, in the workspace's own words. Used verbatim."),
-  knowledge: z.string().nullable().optional().describe("Facts it may use: prices, hours, policies, links."),
-  guardrails: z.string().nullable().optional().describe("Hard rules added after the prompt, such as never quoting a price."),
-  fallbackReply: z.string().nullable().optional().describe("Sent when the model call fails, so a contact is never left without a reply."),
+  systemPrompt: z
+    .string()
+    .optional()
+    .describe(`Who the agent is and how it talks, in the workspace's own words. Used verbatim. Up to ${chars(AGENT_TEXT_LIMITS.systemPrompt)} characters.`),
+  knowledge: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(`Facts it may use: prices, hours, policies, links. Up to ${chars(AGENT_TEXT_LIMITS.knowledge)} characters.`),
+  guardrails: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(`Hard rules added after the prompt, such as never quoting a price. Up to ${chars(AGENT_TEXT_LIMITS.guardrails)} characters.`),
+  fallbackReply: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(`Sent when the model call fails, so a contact is never left without a reply. Up to ${chars(AGENT_TEXT_LIMITS.fallbackReply)} characters.`),
   buttons: z
     .array(z.object({ title: z.string().describe("Up to 20 characters."), url: z.string().describe("https:// link.") }))
     .optional()
     .describe("Link buttons the agent may attach by naming their title. Up to 3."),
   temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().int().min(60).max(4000).optional().describe("Longest reply, in tokens."),
-  historyLimit: z.number().int().min(2).max(50).optional().describe("How many recent messages it reads."),
+  maxTokens: z
+    .number()
+    .int()
+    .min(REPLY_TOKENS.min)
+    .max(REPLY_TOKENS.max)
+    .optional()
+    .describe(`Longest reply, in tokens, ${REPLY_TOKENS.min} to ${REPLY_TOKENS.max}. A new agent starts at ${REPLY_TOKENS.default}.`),
+  historyLimit: z
+    .number()
+    .int()
+    .min(CONTEXT_MESSAGES.min)
+    .max(CONTEXT_MESSAGES.max)
+    .optional()
+    .describe(`How many recent messages it reads, ${CONTEXT_MESSAGES.min} to ${CONTEXT_MESSAGES.max}. A new agent starts at ${CONTEXT_MESSAGES.default}.`),
   isDefault: z.boolean().optional().describe("Use this agent when a flow step names none."),
 };
 
@@ -271,6 +304,7 @@ export const aiTools = [
           platform: channel?.platform === "FACEBOOK" ? "FACEBOOK" : "INSTAGRAM",
           contactName: "Sita",
           trigger: null,
+          timezone: ctx.workspace.timezone,
         },
         history: messages,
       });

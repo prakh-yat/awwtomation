@@ -22,7 +22,7 @@ import {
   planPriceCents,
   type BillingIntervalId,
 } from "@/lib/billing/plans";
-import { isAnswered, toggleAnswer, WORKSPACE_QUESTIONS, type Answers, type Question } from "@/lib/onboarding/questions";
+import { isAnswered, PROFILE_QUESTIONS, toggleAnswer, WORKSPACE_QUESTIONS, type Answers, type Question } from "@/lib/onboarding/questions";
 import { cn } from "@/lib/utils";
 
 import { finishOnboarding, saveAnswers } from "./actions";
@@ -32,24 +32,27 @@ type Step = { kind: "question"; question: Question } | { kind: "plan" };
 
 const PLAN_STEP: Step = { kind: "plan" };
 
-function buildSteps(withPlan: boolean): Step[] {
-  return [...WORKSPACE_QUESTIONS.map((question) => ({ kind: "question" as const, question })), ...(withPlan ? [PLAN_STEP] : [])];
+function buildSteps(withProfile: boolean, withWorkspace: boolean, withPlan: boolean): Step[] {
+  const questions = [...(withProfile ? PROFILE_QUESTIONS : []), ...(withWorkspace ? WORKSPACE_QUESTIONS : [])];
+  return [...questions.map((question) => ({ kind: "question" as const, question })), ...(withPlan ? [PLAN_STEP] : [])];
 }
 
 /**
- * The two parts of the flow. Each has a colour and a mark: the left panel fills
+ * The parts of the flow. Each has a colour and a mark: the left panel fills
  * with the colour and a chosen option is tinted with it, so the part you are in
  * is always clear.
  */
-type StageId = "workspace" | "plan";
+type StageId = "you" | "workspace" | "plan";
 
 const STAGES: Record<StageId, { label: string; tone: Tone; art: ArtName }> = {
+  you: { label: "About you", tone: "sky", art: "you" },
   workspace: { label: "Your workspace", tone: "yellow", art: "start" },
   plan: { label: "Your plan", tone: "lavender", art: "finish" },
 };
 
 function stageOf(step: Step): StageId {
-  return step.kind === "plan" ? "plan" : "workspace";
+  if (step.kind === "plan") return "plan";
+  return PROFILE_QUESTIONS.includes(step.question) ? "you" : "workspace";
 }
 
 /** A chosen card: an ink edge (drawn inside, so nothing shifts) on the stage's soft tint. */
@@ -321,11 +324,11 @@ function StagePanel({ stage }: { stage: StageId }) {
         <Wordmark height={13} className="text-current" />
       </span>
 
-      <div key={art} className="flex animate-pop justify-center motion-reduce:animate-none">
+      <div key={`art:${art}`} className="flex animate-pop justify-center motion-reduce:animate-none">
         <WelcomeArt name={art} />
       </div>
 
-      <p key={stage} className="animate-fade-in font-display text-[clamp(3rem,5vw,4.5rem)] leading-[0.9] motion-reduce:animate-none">
+      <p key={`label:${stage}`} className="animate-fade-in font-display text-[clamp(3rem,5vw,4.5rem)] leading-[0.9] motion-reduce:animate-none">
         {label}
       </p>
     </aside>
@@ -333,7 +336,14 @@ function StagePanel({ stage }: { stage: StageId }) {
 }
 
 export interface WelcomeFlowProps {
+  /** The person's and the workspace's answers so far, keyed by question id. */
   initialAnswers: Answers;
+  /** Whether to open with the questions about the person: they are asked once, not per workspace. */
+  askProfile: boolean;
+  /** Whether to ask about the workspace: once per workspace, so not for one already set up. */
+  askWorkspace: boolean;
+  /** Where to go when it is finished or skipped, unless the plan step sends them to checkout. */
+  returnTo: string;
   /**
    * Whether to end on the plan step. Only an owner whose organization has no
    * plan and no subscription chooses one here; everyone else has nothing to decide.
@@ -344,13 +354,14 @@ export interface WelcomeFlowProps {
 }
 
 /**
- * The welcome flow: who the workspace is for, then, for an owner who has not
+ * The welcome flow: the person's role and how they heard about us (the first
+ * time only), who the workspace is for, then, for an owner who has not
  * subscribed, the plan. Connecting an account is not part of it: that happens
  * on the dashboard, which asks about each account as it is connected.
  */
-export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }: WelcomeFlowProps) {
+export function WelcomeFlow({ initialAnswers, askProfile, askWorkspace, showPlanStep, billingConfigured, returnTo }: WelcomeFlowProps) {
   const router = useRouter();
-  const steps = React.useMemo(() => buildSteps(showPlanStep), [showPlanStep]);
+  const steps = React.useMemo(() => buildSteps(askProfile, askWorkspace, showPlanStep), [askProfile, askWorkspace, showPlanStep]);
 
   const [answers, setAnswers] = React.useState<Answers>(initialAnswers);
   const [plan, setPlan] = React.useState<PlanTier>(PLAN_ORDER[0]);
@@ -408,7 +419,7 @@ export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }:
 
   function goNext() {
     if (isLast) {
-      finish(offerCheckout ? `/checkout?tier=${plan.toLowerCase()}&interval=${interval.toLowerCase()}` : "/dashboard", "next");
+      finish(offerCheckout ? `/checkout?tier=${plan.toLowerCase()}&interval=${interval.toLowerCase()}` : returnTo, "next");
       return;
     }
     setDirection("forward");
@@ -422,7 +433,7 @@ export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }:
     setIndex((i) => Math.max(i - 1, 0));
   }
 
-  const nextLabel = !isLast ? "Continue" : offerCheckout ? "Continue to checkout" : "Go to dashboard";
+  const nextLabel = !isLast ? "Continue" : offerCheckout ? "Continue to checkout" : returnTo === "/dashboard" ? "Go to dashboard" : "Done";
 
   return (
     <main className="min-h-dvh bg-background lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -444,7 +455,7 @@ export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }:
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => finish("/dashboard", "skip")}
+              onClick={() => finish(returnTo, "skip")}
               disabled={pending}
               loading={leaving === "skip"}
               className="-mr-2 ml-auto text-muted-foreground hover:text-ink"
@@ -494,7 +505,7 @@ export function WelcomeFlow({ initialAnswers, showPlanStep, billingConfigured }:
               </Button>
             ) : null}
             {offerCheckout ? (
-              <Button variant="outline" size="lg" onClick={() => finish("/dashboard", "later")} disabled={pending} loading={leaving === "later"} className="ml-auto">
+              <Button variant="outline" size="lg" onClick={() => finish(returnTo, "later")} disabled={pending} loading={leaving === "later"} className="ml-auto">
                 Decide later
               </Button>
             ) : null}

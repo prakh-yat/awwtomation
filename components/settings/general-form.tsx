@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 
-import { updateWorkspaceAction } from "@/app/(app)/settings/actions";
+import { updateWorkspaceAction } from "@/app/(app)/(shell)/settings/actions";
 import { SettingsCardBody, SettingsCardFooter, SettingsCardHeader } from "./settings-card";
 import { TIMEZONE_GROUPS, timezoneCity, timezoneOffset, withCurrentZone } from "./timezones";
 

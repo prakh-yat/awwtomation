@@ -148,18 +148,33 @@ the selected edge animates. Everything respects `prefers-reduced-motion`.
 
 The tour (`components/app-shell/product-tour.tsx`) is the one place where the
 product explains itself; everywhere else the "no how it works boxes" rule
-above holds. It opens by itself once for every new person and replays from
-"Take the tour" in the account menu.
+above holds. It runs on the dashboard: it opens by itself the first time a
+person gets there and replays from "Take the tour" in the account menu, which
+goes to the dashboard first. The Connect button comes first, then the dock and
+every tile in it, one by one, in the dock's order.
+
+It is built from the product's own pieces, not a generic coach mark:
+
+- Each card leads with a flat band, with the site's grid, in the colour of
+  what it points at: the section's tile colour, the workspace's own colour,
+  Instagram and Messenger marks for Connect. The mono label in the band says
+  where you are ("Section 3 of 9").
+- The progress bar is the steps' own colours, so it reads as the dock.
+- On a tile's step the dock magnifies that tile as the pointer would, and the
+  spotlight grows with it. A slow magenta pulse marks the target.
+- A step with somewhere to go offers it as a link ("Connect now", "Open
+  Inbox", "Browse templates"); following it ends the tour there.
 
 - A step is a short title and one or two plain sentences: what the thing is
   and what you do there. No promotional words, no exclamation marks, no lists
   of features.
 - Steps point at stable parts of the shell through `data-tour` attributes:
-  the dock, its section tiles and account slot, the menu button on a phone,
-  the accounts bar on the dashboard. Never at page content that depends on
+  the Connect button and the accounts bar on the dashboard, the dock, its
+  section tiles and its workspace, usage and account slots, the menu button
+  on a phone. A new section in the dock needs its line in `SECTION_STEPS`. Never at page content that depends on
   data or moves around. A step whose anchor is not on the page is skipped.
 - It uses the app's own pieces: the dimmer is the dialog overlay's ink, the
   ring round the target is the magenta focus ring, the card is a white card
-  with a dialog's corners and `shadow-pop`, the brand mark leads the first and
-  last steps, and everything moves with `ease-soft` and respects
+  with a dialog's corners and `shadow-pop`, the brand mark leads the closing
+  card, and everything moves with `ease-soft` and respects
   `prefers-reduced-motion`.

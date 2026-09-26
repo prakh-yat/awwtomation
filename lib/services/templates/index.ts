@@ -22,8 +22,10 @@ import { INSTAGRAM_TEMPLATES } from "./instagram";
 import {
   ACCOUNT_PLACEHOLDER,
   AGENT_PLACEHOLDER,
+  TEMPLATE_GOALS,
   triggerLabel,
   type AutomationTemplate,
+  type TemplateGoal,
   type TemplatePlatform,
   type TemplateStep,
   type TemplateSummary,
@@ -69,6 +71,20 @@ export function getTemplate(id: string): AutomationTemplate | null {
 /** Which platform a connected channel draws its templates from. */
 export function platformForChannel(platform: "INSTAGRAM" | "FACEBOOK"): TemplatePlatform {
   return platform === "INSTAGRAM" ? "INSTAGRAM" : "MESSENGER";
+}
+
+const GOALS_BY_PLATFORM: Record<TemplatePlatform, TemplateGoal[]> = {
+  INSTAGRAM: TEMPLATE_GOALS.filter((goal) => AUTOMATION_TEMPLATES.some((t) => t.platform === "INSTAGRAM" && t.goal === goal)),
+  MESSENGER: TEMPLATE_GOALS.filter((goal) => AUTOMATION_TEMPLATES.some((t) => t.platform === "MESSENGER" && t.goal === goal)),
+};
+
+/**
+ * The gallery's goals that have templates for a channel's platform, in the
+ * gallery's order. Messenger has no follow check, so a Facebook Page has no
+ * "Grow your followers" templates.
+ */
+export function templateGoalsFor(platform: "INSTAGRAM" | "FACEBOOK"): readonly TemplateGoal[] {
+  return GOALS_BY_PLATFORM[platformForChannel(platform)];
 }
 
 function formatDelay(seconds: number): string {

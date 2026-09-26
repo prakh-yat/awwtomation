@@ -44,9 +44,10 @@ import {
 } from "@/lib/meta/instagram";
 import { getChannelToken, markChannelTokenExpired } from "@/lib/meta/tokens";
 import { MetaApiError, MetaTokenError, type FacebookPageInfo } from "@/lib/meta/types";
-import { ACCOUNT_TYPE, accountTypeFromInstagram, GOALS, MONETIZATION, sanitizeAccountAnswers } from "@/lib/onboarding/account-questions";
+import { ACCOUNT_TYPE, accountTypeFromInstagram, GOALS, goalIdsFor, MONETIZATION, sanitizeAccountAnswers } from "@/lib/onboarding/account-questions";
 import type { Answers, QuestionShape } from "@/lib/onboarding/questions";
 import { enqueue } from "@/lib/queue";
+import { templateGoalsFor } from "@/lib/services/templates";
 import { recordAudit } from "@/lib/services/workspaces";
 import { ApiError } from "@/lib/workspace/api";
 
@@ -158,7 +159,10 @@ export type ChannelView = {
   lastSyncedAt: string | null;
   counts: ChannelCounts;
   health: { state: ChannelHealthState; daysLeft: number | null; problem: string | null };
-  setup: ChannelSetup;
+  setup: ChannelSetup & {
+    /** The goal answers this account is offered: the goals its platform has templates for. */
+    goalOptions: string[];
+  };
 };
 
 export function toChannelView(summary: ChannelSummary): ChannelView {
@@ -184,7 +188,7 @@ export function toChannelView(summary: ChannelSummary): ChannelView {
       daysLeft: state === "expiring" ? days : null,
       problem: summary.lastError && state !== "ok" && state !== "disconnected" ? categorise(summary.lastError).description : null,
     },
-    setup: summary.setup,
+    setup: { ...summary.setup, goalOptions: goalIdsFor(templateGoalsFor(summary.platform)) },
   };
 }
 

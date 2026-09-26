@@ -55,7 +55,7 @@ export function ProviderPicker({ id, providers, builtIn, value, onChange, canMan
   const listId = React.useId();
 
   const q = query.trim().toLowerCase();
-  const showBuiltIn = matches(q, builtIn.label, "built-in", "included", builtIn.model);
+  const showBuiltIn = matches(q, builtIn.label, "built-in", "included");
   const connected = providers.filter((p) => matches(q, p.label, presetFor(p).name, p.model));
   const available = canManage ? PROVIDER_PRESETS.filter((p) => matches(q, p.name, p.id)) : [];
 
@@ -167,8 +167,8 @@ export function ProviderPicker({ id, providers, builtIn, value, onChange, canMan
                 <BuiltInLogo size={30} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{builtIn.label}</span>
-                  <span className={cn("block truncate text-[11px]", builtIn.available ? "font-mono text-muted-foreground" : "font-medium text-destructive")}>
-                    {builtIn.available ? builtIn.model : "Not set up on this server"}
+                  <span className={cn("block truncate text-[11px]", builtIn.available ? "text-muted-foreground" : "font-medium text-destructive")}>
+                    {builtIn.available ? "No key needed" : "Not set up on this server"}
                   </span>
                 </span>
                 {value === null ? <Check className="h-4 w-4 shrink-0 text-purple" strokeWidth={2.5} /> : null}

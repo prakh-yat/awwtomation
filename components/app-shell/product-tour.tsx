@@ -1,69 +1,176 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { WorkspaceRole } from "@prisma/client";
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, Gauge, Layers, UserRound, X, type LucideIcon } from "lucide-react";
 
-import { markTourSeenAction } from "@/app/(app)/tour-actions";
+import { markTourSeenAction } from "@/app/(app)/(shell)/tour-actions";
+import { GridLines, isDarkTone } from "@/components/layout/grid-block";
 import { Button } from "@/components/ui/button";
 import { LogoMark } from "@/components/ui/logo";
-import { brand } from "@/lib/brand";
+import { PlatformMark } from "@/components/ui/platform-badge";
+import { TONES, type Tone } from "@/components/ui/tone";
 import { cn } from "@/lib/utils";
 import { canManageChannels } from "@/lib/workspace/permissions";
 
-import { holdDockForTour, START_TOUR_EVENT } from "./tour-events";
+import { navTourId, PRIMARY_NAV } from "./nav-config";
+import { holdDockForTour, openConnectMenu, START_TOUR_EVENT } from "./tour-events";
+import { workspaceTone } from "./workspace-switcher";
 
 /**
  * The product tour: coach marks over the shell.
  *
  * No tour library. Steps anchor to elements tagged `data-tour="<id>"`: the
- * dock, its section tiles and its account slot, the menu button that replaces
- * the dock on a phone, and the accounts bar on the dashboard. A step whose
- * anchor is not on the page is skipped, and one whose anchor disappears
- * mid-tour falls back to a centred card, so the tour never points at nothing
- * and never traps anyone.
+ * Connect button and the accounts bar on the dashboard, the dock, each of its
+ * section tiles in order, its workspace, usage and account slots, and the
+ * menu button that replaces the dock on a phone. A step whose anchor is not
+ * on the page is skipped, and one whose anchor disappears mid-tour falls back
+ * to a centred card, so the tour never points at nothing and never traps
+ * anyone.
  *
- * It opens by itself once per person, on whichever page they land, and replays
- * from "Take the tour" in the account menu. "Seen" is `User.tourCompletedAt`,
- * written the moment the tour opens: a browser flag would open it again on
- * every new device.
+ * It is built from the product's own pieces rather than a generic coach
+ * mark. Each card leads with a band in the colour of what it points at (the
+ * section's tile, Instagram and Messenger for Connect), the progress is the
+ * dock's colours one by one, and on each tile's step the dock magnifies that
+ * tile as the pointer would. Every step that has somewhere to go offers it
+ * ("Connect now", "Open Inbox"), which ends the tour there.
+ *
+ * It runs on the dashboard, where the Connect button is: it opens by itself
+ * the first time a person reaches the dashboard, and "Take the tour" in the
+ * account menu brings them there and replays it. "Seen" is `User.tourVersion`
+ * against `TOUR_VERSION` (lib/services/tour.ts), written the moment the tour
+ * opens: a browser flag would open it again on every new device, and a new
+ * version of the tour reaches everyone who saw the old one.
  */
 
 type Placement = "top" | "bottom" | "left" | "right" | "center";
 
+/** What leads a step's colour band: the section's own icon, or a mark that says more than one could. */
+type StepArt = { kind: "icon"; icon: LucideIcon } | { kind: "platforms" } | { kind: "dock" } | { kind: "brand" };
+
+/** Something to do about a step right away. It ends the tour. */
+type StepAction = { label: string; href: string } | { label: string; connect: true };
+
 type TourStep = {
   id: string;
-  /** The `data-tour` value to point at; none for the two centred steps. */
+  /** The `data-tour` value to point at; none for the closing card. */
   target?: string;
+  /** Left out when this `data-tour` anchor is on the page, because a step pointing at it covers the same ground. */
+  unless?: string;
+  /** Where in the tour this is, in the band: "Start here", "Section 3 of 9". */
+  chapter: string;
   title: string;
   body: string;
+  /** The band's colour: the section's own, so the card matches the tile it points at. */
+  tone: Tone;
+  art: StepArt;
+  action?: StepAction;
   placement: Placement;
   /**
    * The target is in the dock, which rests off screen. The tour opens the dock
    * and holds it open for as long as the step is up.
    */
   dock?: boolean;
+  /** The dock magnifies the target, as the pointer would, while the step is up. */
+  magnify?: boolean;
   /** Shown only to people who can connect accounts. */
   forChannelManagers?: boolean;
-  /** The spotlight's corner radius, so it runs parallel to the target's own corners. */
-  radius?: number | "pill";
+  /**
+   * The spotlight's corner radius, so it runs parallel to the target's own
+   * corners: a number, a pill, or a dock tile's (28% of its width), which
+   * grows with the tile.
+   */
+  radius?: number | "pill" | "tile";
 };
 
+/** Where the tour runs: the Connect button and the accounts are only here. */
+const TOUR_PATH = "/dashboard";
+
+/**
+ * What the tour says about each section, keyed by its path. Every tile in the
+ * dock gets a step, in the dock's order, in its own colour; a section left out
+ * of this map is left out of the tour.
+ */
+const SECTION_STEPS: Record<string, { title: string; body: string }> = {
+  "/dashboard": {
+    title: "Dashboard",
+    body: "How your automations are doing, what needs your attention and your latest conversations. Your accounts are managed here too.",
+  },
+  "/analytics": {
+    title: "Analytics",
+    body: "DMs sent, automation runs, link clicks and new contacts over time, for each account and each automation.",
+  },
+  "/automations": {
+    title: "Automations",
+    body: "Pick what starts one (a comment, a DM or a story reply) and what it sends back: messages, buttons, a follow check or an AI reply.",
+  },
+  "/ai": {
+    title: "AI replies",
+    body: "Write the instructions once and the AI answers DMs in your words, with the built-in model or one you connect.",
+  },
+  "/inbox": {
+    title: "Inbox",
+    body: "Every Instagram and Messenger conversation in one place. Reply yourself whenever a person should take over.",
+  },
+  "/contacts": {
+    title: "Contacts",
+    body: "Everyone who has commented or messaged you, with tags, notes and pipeline stages.",
+  },
+  "/broadcasts": {
+    title: "Broadcasts",
+    body: "Send one message to everyone who wrote to you in the last 24 hours.",
+  },
+  "/links": {
+    title: "Links",
+    body: "Short links for your DMs that count every click, so you can see which messages send people on.",
+  },
+  "/logs": {
+    title: "Logs",
+    body: "Every message that went out or was held back, with the reason. Look here first when something did not send.",
+  },
+};
+
+const SECTIONS = PRIMARY_NAV.filter((item) => SECTION_STEPS[item.href]);
+
 const STEPS: readonly TourStep[] = [
+  // First, what everything else depends on: an account to automate.
   {
-    id: "welcome",
-    title: `Welcome to ${brand.name}`,
-    body: "Here is where everything is. It takes a minute, and you can skip it at any time.",
-    placement: "center",
+    id: "connect",
+    target: "connect",
+    forChannelManagers: true,
+    radius: "pill",
+    chapter: "Start here",
+    title: "Connect an account",
+    body: "Connect an Instagram professional account or a Facebook Page. Comments, DMs and story replies on it can then start automations.",
+    tone: "yellow",
+    art: { kind: "platforms" },
+    action: { label: "Connect now", connect: true },
+    placement: "bottom",
+  },
+  // With both accounts connected there is no Connect button: the faces take its place.
+  {
+    id: "accounts",
+    target: "accounts",
+    unless: "connect",
+    radius: "pill",
+    chapter: "Start here",
+    title: "Your accounts",
+    body: "The Instagram account and Facebook Page this workspace automates. Click one to see its posts or reconnect it.",
+    tone: "yellow",
+    art: { kind: "platforms" },
+    placement: "bottom",
   },
   {
     id: "sections",
     target: "dock",
     dock: true,
     radius: 28,
-    title: "Your sections",
-    body: "Move your pointer to the left edge of the screen and the dock opens. Each section has its own colour.",
+    chapter: "The dock",
+    title: "Everything is one move away",
+    body: "Move your pointer to the left edge of the screen and this dock opens. Each section keeps its colour. Here they are, one by one.",
+    tone: "ink",
+    art: { kind: "dock" },
     placement: "right",
   },
   // Below md there is no dock, so the menu button takes its place.
@@ -71,86 +178,80 @@ const STEPS: readonly TourStep[] = [
     id: "sections-menu",
     target: "menu-button",
     radius: 18,
-    title: "Your sections",
-    body: "Open the menu to move between sections.",
+    chapter: "Your sections",
+    title: "Everything is in the menu",
+    body: "Open the menu to move between sections. Each one keeps its colour.",
+    tone: "ink",
+    art: { kind: "dock" },
     placement: "bottom",
   },
+  ...SECTIONS.map((item, i): TourStep => {
+    const copy = SECTION_STEPS[item.href];
+    const id = navTourId(item);
+    return {
+      id,
+      target: id,
+      dock: true,
+      magnify: true,
+      radius: "tile",
+      chapter: `Section ${i + 1} of ${SECTIONS.length}`,
+      title: copy.title,
+      body: copy.body,
+      tone: item.tone,
+      art: { kind: "icon", icon: item.icon },
+      // The tour runs on the dashboard, so it has nowhere to open.
+      action: item.href === TOUR_PATH ? undefined : { label: `Open ${item.label}`, href: item.href },
+      placement: "right",
+    };
+  }),
   {
-    id: "accounts",
-    target: "accounts",
-    forChannelManagers: true,
-    radius: "pill",
-    title: "Connect an account",
-    body: "Connect an Instagram professional account or a Facebook Page. Comments, DMs and story replies on it can then start automations.",
-    placement: "bottom",
-  },
-  {
-    id: "automations",
-    target: "nav-automations",
+    id: "workspace",
+    target: "workspace",
     dock: true,
-    radius: 20,
-    title: "Automations",
-    body: "Pick what starts one (a comment, a DM or a story reply) and what it sends back: messages, buttons, a follow check or an AI reply.",
+    magnify: true,
+    radius: "tile",
+    chapter: "Your workspace",
+    title: "Workspaces",
+    body: "The workspace you are in. Each one has its own accounts, automations and contacts. Click it to switch to another.",
+    tone: "indigo",
+    art: { kind: "icon", icon: Layers },
     placement: "right",
   },
   {
-    id: "inbox",
-    target: "nav-inbox",
+    id: "usage",
+    target: "usage",
     dock: true,
-    radius: 20,
-    title: "Inbox",
-    body: "Every Instagram and Messenger conversation in one place. Reply yourself whenever a person should take over.",
-    placement: "right",
-  },
-  {
-    id: "contacts",
-    target: "nav-contacts",
-    dock: true,
-    radius: 20,
-    title: "Contacts",
-    body: "Everyone who has commented or messaged you, with tags, notes and pipeline stages.",
-    placement: "right",
-  },
-  {
-    id: "ai",
-    target: "nav-ai",
-    dock: true,
-    radius: 20,
-    title: "AI replies",
-    body: "Write the instructions once and the AI answers DMs in your words. It works without an API key, and you can connect your own model later.",
-    placement: "right",
-  },
-  {
-    id: "broadcasts",
-    target: "nav-broadcasts",
-    dock: true,
-    radius: 20,
-    title: "Broadcasts",
-    body: "Send one message to everyone who wrote to you in the last 24 hours.",
-    placement: "right",
-  },
-  {
-    id: "logs",
-    target: "nav-logs",
-    dock: true,
-    radius: 20,
-    title: "Logs",
-    body: "Every message that went out or was held back, with the reason. Look here first when something did not send.",
+    magnify: true,
+    radius: "tile",
+    chapter: "Your plan",
+    title: "DMs this month",
+    body: "How much of this month's DMs your plan has used. Click it for the full breakdown and your plan's limits.",
+    tone: "purple",
+    art: { kind: "icon", icon: Gauge },
+    action: { label: "See usage", href: "/usage" },
     placement: "right",
   },
   {
     id: "account",
     target: "account",
     dock: true,
-    radius: 20,
+    magnify: true,
+    radius: "tile",
+    chapter: "You",
     title: "Your account",
     body: "Settings, billing, your team and this tour are in your account menu.",
+    tone: "fog",
+    art: { kind: "icon", icon: UserRound },
     placement: "right",
   },
   {
     id: "done",
-    title: "That's the tour",
-    body: "Connect an account, then start from a template on the Automations page. You can take this tour again from your account menu.",
+    chapter: "All set",
+    title: "Now build your first automation",
+    body: "Start from a template: pick a goal, and it is ready to switch on. You can take this tour again from your account menu.",
+    tone: "yellow",
+    art: { kind: "brand" },
+    action: { label: "Browse templates", href: "/automations?templates=1" },
     placement: "center",
   },
 ];
@@ -170,19 +271,17 @@ const SCRIM = "0 0 0 9999px hsl(var(--brand-ink) / 0.45)";
 const SPOT_RING = "0 0 0 2px hsl(var(--ring))";
 
 const AUTO_OPEN_DELAY_MS = 700;
+/**
+ * The accounts bar renders on the client after the dashboard arrives. The tour
+ * waits this long for it, so it does not start without its first step.
+ */
+const ANCHOR_WAIT_MS = 4000;
+const ANCHOR_POLL_MS = 100;
 /** The dock slides in over 300ms; the spotlight waits for it to land. */
 const DOCK_SETTLE_MS = 340;
 /** The card's exit, which the tour stays mounted to play. */
 const EXIT_MS = 180;
 
-/**
- * Below this many steps an automatic opening is not worth spending the
- * person's one first-run tour on: only the two centred steps are left, which
- * means the shell has not painted its anchors yet. It waits for the next page
- * without marking anything. A replay from the menu runs with whatever is
- * there. Three is the phone tour at its shortest: welcome, menu, finish.
- */
-const MIN_AUTO_OPEN_STEPS = 3;
 
 /**
  * Query flags the accounts dialog and the connect follow-ups use. A page that
@@ -265,8 +364,24 @@ function usableSteps(role: WorkspaceRole): TourStep[] {
   const canConnect = canManageChannels(role);
   return STEPS.filter((step) => {
     if (step.forChannelManagers && !canConnect) return false;
+    if (step.unless && findTarget(step.unless) !== null) return false;
     return !step.target || findTarget(step.target) !== null;
   });
+}
+
+/**
+ * Calls `onReady` once the dashboard's accounts bar is in the document, or
+ * after `ANCHOR_WAIT_MS` whatever is there. Returns a cancel.
+ */
+function whenAnchorsReady(onReady: () => void): () => void {
+  const startedAt = Date.now();
+  let timer = 0;
+  const check = () => {
+    if (document.querySelector('[data-tour="accounts"]') || Date.now() - startedAt >= ANCHOR_WAIT_MS) onReady();
+    else timer = window.setTimeout(check, ANCHOR_POLL_MS);
+  };
+  check();
+  return () => window.clearTimeout(timer);
 }
 
 function toBox(r: DOMRect): Box {
@@ -409,14 +524,17 @@ function computePosition(rect: Box, placement: Placement, panel: Size, vw: numbe
 
 export interface ProductTourProps {
   userId: string;
-  /** `User.tourCompletedAt` is set. Per person, not per browser. */
+  /** The current tour has been shown (`User.tourVersion`). Per person, not per browser. */
   hasSeenTour: boolean;
   /** The Connect step is only for people who can connect accounts. */
   role: WorkspaceRole;
+  /** The active workspace, so the workspace step wears its tile's colour. */
+  workspaceId: string;
 }
 
-export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
+export function ProductTour({ userId, hasSeenTour, role, workspaceId }: ProductTourProps) {
   const pathname = usePathname() ?? "";
+  const router = useRouter();
   const viewport = useViewport();
   const titleId = React.useId();
   const bodyId = React.useId();
@@ -483,6 +601,18 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
     setIndex((i) => Math.max(0, i - 1));
   }, [closing]);
 
+  // A step's own action ends the tour and does the thing: opens the section, or the Connect menu.
+  const act = React.useCallback(
+    (action: StepAction) => {
+      close();
+      if ("href" in action) router.push(action.href);
+      else window.setTimeout(openConnectMenu, prefersReducedMotion() ? 0 : EXIT_MS);
+    },
+    [close, router],
+  );
+
+  const toneOf = React.useCallback((step: TourStep): Tone => (step.id === "workspace" ? workspaceTone(workspaceId) : step.tone), [workspaceId]);
+
   // The exit plays, then the tour unmounts.
   React.useEffect(() => {
     if (!closing) return;
@@ -490,29 +620,48 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
     return () => window.clearTimeout(timer);
   }, [closing, finish]);
 
-  // "Take the tour" in the account menu. A replay runs with whatever is on the page.
+  // "Take the tour" in the account menu. The tour lives on the dashboard, so
+  // from any other page it goes there first and starts once it has arrived.
+  const [replayRequested, setReplayRequested] = React.useState(false);
   React.useEffect(() => {
-    const onStart = () => start(usableSteps(role));
+    const onStart = () => {
+      setReplayRequested(true);
+      if (window.location.pathname !== TOUR_PATH) router.push(TOUR_PATH);
+    };
     window.addEventListener(START_TOUR_EVENT, onStart);
     return () => window.removeEventListener(START_TOUR_EVENT, onStart);
-  }, [role, start]);
+  }, [router]);
 
-  // Opens by itself once per person, on whichever page they land: an invited
-  // member rarely starts on the dashboard, and the shell's steps are on every
-  // page. A busy page (arrived from a connect, or a dialog is up) is passed
-  // over without marking anything, and the next page tries again.
   React.useEffect(() => {
-    if (hasSeenTour || markedThisSession.has(userId)) return;
+    if (!replayRequested || pathname !== TOUR_PATH) return;
+    return whenAnchorsReady(() => {
+      setReplayRequested(false);
+      start(usableSteps(role));
+    });
+  }, [replayRequested, pathname, role, start]);
+
+  // Opens by itself once per person, the first time they reach the dashboard.
+  // A busy visit (arrived from a connect, or a dialog is up) is passed over
+  // without marking anything, and the next visit tries again.
+  React.useEffect(() => {
+    if (hasSeenTour || markedThisSession.has(userId) || pathname !== TOUR_PATH) return;
     if (busyOnLoad !== null && busyOnLoad !== pathname) busyOnLoad = null;
     if (busyOnLoad !== null || hasBusyParams(window.location.search)) return;
+    let cancelWait: (() => void) | null = null;
     // A short wait, so the shell has painted and its anchors can be measured.
     const timer = window.setTimeout(() => {
-      if (markedThisSession.has(userId) || document.querySelector(OPEN_LAYER)) return;
-      const list = usableSteps(role);
-      if (list.length < MIN_AUTO_OPEN_STEPS) return;
-      start(list);
+      cancelWait = whenAnchorsReady(() => {
+        if (markedThisSession.has(userId) || document.querySelector(OPEN_LAYER)) return;
+        const list = usableSteps(role);
+        // Only the closing card left means the page has not painted: wait for the next visit.
+        if (!list.some((step) => step.target)) return;
+        start(list);
+      });
     }, AUTO_OPEN_DELAY_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      cancelWait?.();
+    };
   }, [pathname, hasSeenTour, userId, role, start]);
 
   // Focus moves into the card as the tour opens, onto its main button so Enter
@@ -560,6 +709,14 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
     holdDockForTour(true);
     return () => holdDockForTour(false);
   }, [holdsDock]);
+
+  // On a step about one tile, the dock magnifies it as the pointer would; the
+  // measurement below follows the tile as it grows.
+  const magnified = holdsDock && current?.magnify ? (current.target ?? null) : null;
+  React.useLayoutEffect(() => {
+    if (!holdsDock) return;
+    holdDockForTour(true, magnified);
+  }, [holdsDock, magnified]);
 
   // Measure the current target and keep the spotlight on it through scrolling,
   // resizing and anything else that moves it. A layout effect, so a step change
@@ -673,12 +830,14 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
   const spot = rect
     ? { top: rect.top - SPOT_PAD, left: rect.left - SPOT_PAD, width: rect.width + SPOT_PAD * 2, height: rect.height + SPOT_PAD * 2 }
     : { top: viewport.h / 2, left: viewport.w / 2, width: 0, height: 0 };
-  const radius = !rect ? 0 : shownStep?.radius === "pill" ? spot.height / 2 : (shownStep?.radius ?? 16);
+  const shape = shownStep?.radius;
+  // A dock tile's corners are 28% of its width, so the spotlight's grow with it.
+  const radius = !rect ? 0 : shape === "pill" ? spot.height / 2 : shape === "tile" ? rect.width * 0.28 + SPOT_PAD : (shape ?? 16);
 
   const isLast = index === steps.length - 1;
-  const isWelcome = current.id === "welcome";
-  // The welcome and the finish point at nothing: centred, led by the brand mark.
-  const branded = !current.target;
+  const tone = toneOf(current);
+  const dark = isDarkTone(tone);
+  const action = current.action;
 
   return (
     <div
@@ -715,6 +874,19 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
           boxShadow: rect ? `${SPOT_RING}, ${SCRIM}` : SCRIM,
         }}
       />
+      {/* A slow pulse round the target, so the eye finds it; a separate
+          element, since only its own small shadow animates. Restarts on each step. */}
+      {rect ? (
+        <div
+          key={shownStep?.id}
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute animate-ring-pulse motion-reduce:hidden",
+            glide && "transition-[top,left,width,height,border-radius] duration-300 ease-soft motion-reduce:transition-none",
+          )}
+          style={{ top: spot.top, left: spot.left, width: spot.width, height: spot.height, borderRadius: radius }}
+        />
+      ) : null}
 
       {/* The card. Placed with a transform rather than top and left, so moving
           between steps is one composited transition. */}
@@ -727,8 +899,7 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
         data-state={closing ? "closed" : "open"}
         tabIndex={-1}
         className={cn(
-          "absolute left-0 top-0 max-w-[calc(100vw-24px)] outline-none will-change-transform",
-          branded ? "w-[380px]" : "w-[360px]",
+          "absolute left-0 top-0 w-[360px] max-w-[calc(100vw-24px)] outline-none will-change-transform",
           glide && "transition-transform duration-300 ease-soft motion-reduce:transition-none",
           !position && "pointer-events-none opacity-0",
         )}
@@ -736,8 +907,7 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
       >
         <div
           className={cn(
-            "relative rounded-3xl border bg-card text-card-foreground shadow-pop ease-soft [animation-duration:180ms] motion-reduce:animate-none",
-            branded ? "p-6" : "p-5",
+            "relative overflow-hidden rounded-3xl border bg-card text-card-foreground shadow-pop ease-soft [animation-duration:180ms] motion-reduce:animate-none",
             closing ? "animate-out zoom-out-[0.96] fill-mode-forwards" : "animate-in zoom-in-[0.96]",
           )}
         >
@@ -745,88 +915,141 @@ export function ProductTour({ userId, hasSeenTour, role }: ProductTourProps) {
             Step {index + 1} of {steps.length}: {current.title}. {current.body}
           </p>
 
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close tour"
-            className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-fog hover:text-ink focus-visible:ring-2 focus-visible:ring-ring"
+          {/* The band: the colour of the tile or section it points at, as a
+              flat block with the site's grid, like every other coloured block. */}
+          <div
+            className={cn(
+              "relative isolate flex items-center gap-3 px-4 py-3 transition-colors duration-300 ease-soft motion-reduce:transition-none",
+              TONES[tone].solid,
+            )}
           >
-            <X className="h-4 w-4" />
-          </button>
+            <GridLines tone={tone} size="18px" />
+            <StepMark key={current.id} art={current.art} />
+            <span className="brand-label min-w-0 flex-1 truncate">{current.chapter}</span>
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Close tour"
+              className={cn(
+                "-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                dark ? "hover:bg-white/15" : "hover:bg-ink/10",
+              )}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
 
-          {branded ? (
-            <div className="flex flex-col items-center pt-2 text-center">
-              <LogoMark size={44} />
-              <h2 id={titleId} className="font-display mt-4 text-balance text-[24px] leading-[1.05]">
-                {current.title}
-              </h2>
-              <p id={bodyId} className="mt-2.5 text-pretty text-[14px] leading-relaxed text-muted-foreground">
-                {current.body}
-              </p>
-            </div>
-          ) : (
-            <>
-              <h2 id={titleId} className="font-display pr-9 text-[20px] leading-[1.1]">
-                {current.title}
-              </h2>
-              <p id={bodyId} className="mt-2 text-pretty text-[14px] leading-relaxed text-muted-foreground">
-                {current.body}
-              </p>
-            </>
-          )}
+          <div className="px-5 pb-4 pt-4">
+            <h2 id={titleId} className="font-display text-balance text-[21px] leading-[1.08]">
+              {current.title}
+            </h2>
+            <p id={bodyId} className="mt-2 text-pretty text-[14px] leading-relaxed text-muted-foreground">
+              {current.body}
+            </p>
 
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
-            {/* Dots for the shape of it, the count for precision. */}
-            <div className="flex items-center gap-2">
-              <div aria-hidden className="flex items-center gap-[3px]">
-                {steps.map((step, i) => (
-                  <span
-                    key={step.id}
-                    className={cn(
-                      "h-1.5 rounded-full transition-[width,background-color] duration-200 ease-soft motion-reduce:transition-none",
-                      i === index ? "w-3 bg-ink" : i < index ? "w-1.5 bg-ink/40" : "w-1.5 bg-ink/15",
-                    )}
-                  />
-                ))}
+            {/* Progress in the colours of the steps themselves: the dock's colours, one by one. */}
+            <div className="mt-4 flex items-center gap-2">
+              <div aria-hidden className="flex min-w-0 flex-1 items-center gap-[3px]">
+                {steps.map((step, i) => {
+                  const stepTone = toneOf(step);
+                  return (
+                    <span
+                      key={step.id}
+                      className={cn(
+                        "h-1.5 shrink-0 rounded-full transition-[width,opacity] duration-300 ease-soft motion-reduce:transition-none",
+                        i === index ? "w-5" : "w-1.5",
+                        i > index ? "bg-ink/15" : TONES[stepTone].dot,
+                        i <= index && (stepTone === "yellow" || stepTone === "fog") && "ring-1 ring-inset ring-ink/15",
+                      )}
+                    />
+                  );
+                })}
               </div>
-              <span className="brand-label tabular-nums text-muted-foreground">
+              <span className="brand-label shrink-0 tabular-nums text-muted-foreground">
                 {index + 1}/{steps.length}
               </span>
             </div>
 
-            <div className="ml-auto flex items-center gap-1.5">
-              {index > 0 ? (
-                <Button size="sm" variant="ghost" onClick={back}>
-                  Back
-                </Button>
+            <div className="mt-4 flex items-center gap-1.5 border-t pt-3.5">
+              {action ? (
+                <button
+                  type="button"
+                  onClick={() => act(action)}
+                  className="-ml-1 inline-flex min-w-0 items-center gap-1 rounded-full px-1.5 py-1 text-[13px] font-semibold text-ink underline-offset-4 outline-none transition-colors hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="truncate">{action.label}</span>
+                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+                </button>
               ) : null}
-              <Button ref={primaryRef} size="sm" onClick={next}>
-                {isLast ? (
-                  <>
-                    <Check />
-                    Done
-                  </>
-                ) : (
-                  <>
-                    {isWelcome ? "Start tour" : "Next"}
-                    <ArrowRight />
-                  </>
-                )}
-              </Button>
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                {index > 0 ? (
+                  <Button size="sm" variant="ghost" onClick={back}>
+                    Back
+                  </Button>
+                ) : null}
+                <Button ref={primaryRef} size="sm" onClick={next}>
+                  {isLast ? (
+                    <>
+                      <Check />
+                      Done
+                    </>
+                  ) : (
+                    <>
+                      {index === 0 ? "Show me around" : "Next"}
+                      <ArrowRight />
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
 
-          {isLast ? null : (
-            <button
-              type="button"
-              onClick={close}
-              className="mx-auto mt-3 block rounded-full px-2 py-0.5 text-[12px] font-medium text-muted-foreground underline-offset-4 outline-none transition-colors hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Skip tour
-            </button>
-          )}
+            {index === 0 ? (
+              <button
+                type="button"
+                onClick={close}
+                className="mx-auto mt-2 block rounded-full px-2 py-0.5 text-[12px] font-medium text-muted-foreground underline-offset-4 outline-none transition-colors hover:text-ink hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Skip tour
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/** The mark at the start of a step's band. */
+function StepMark({ art }: { art: StepArt }) {
+  const tile = "flex h-9 shrink-0 items-center justify-center rounded-xl bg-background text-ink shadow-[0_1px_2px_rgb(15_15_15/0.12)] animate-pop motion-reduce:animate-none";
+  if (art.kind === "platforms") {
+    return (
+      <span aria-hidden className="flex shrink-0 animate-pop items-center motion-reduce:animate-none">
+        <PlatformMark platform="INSTAGRAM" size={30} className="rounded-[10px] ring-2 ring-background" />
+        <PlatformMark platform="FACEBOOK" size={30} className="-ml-2 rounded-[10px] ring-2 ring-background" />
+      </span>
+    );
+  }
+  if (art.kind === "dock") {
+    return (
+      <span aria-hidden className={cn(tile, "gap-[3px] px-2.5")}>
+        {PRIMARY_NAV.map((item) => (
+          <span key={item.href} className={cn("h-4 w-1.5 rounded-full", TONES[item.tone].dot, item.tone === "yellow" && "ring-1 ring-inset ring-ink/15")} />
+        ))}
+      </span>
+    );
+  }
+  if (art.kind === "brand") {
+    return (
+      <span aria-hidden className={cn(tile, "w-9 bg-ink text-white")}>
+        <LogoMark size={18} className="text-white" />
+      </span>
+    );
+  }
+  const Icon = art.icon;
+  return (
+    <span aria-hidden className={cn(tile, "w-9")}>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+    </span>
   );
 }

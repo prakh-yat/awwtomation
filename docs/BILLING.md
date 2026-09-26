@@ -13,7 +13,7 @@ Code map:
 | Entitlements (effective plan, grace, service state) | `lib/billing/entitlements.ts`, consumed by `lib/billing/usage.ts` |
 | Service (checkout, sync, webhooks, cancel/resume/change, portal, overview) | `lib/services/billing.ts` |
 | API | `app/api/billing/{checkout,webhook,status,reconcile,portal,cancel,resume,change-plan,payments}` |
-| UI | `app/checkout/*`, `app/(app)/settings/billing/page.tsx`, `components/billing/*` |
+| UI | `app/checkout/*`, `app/(app)/(shell)/settings/billing/page.tsx`, `components/billing/*` |
 | Plan overrides | `scripts/set-plan.ts` (command line only; there is no admin page) |
 | Ops | `scripts/create-dodo-products.mjs` |
 

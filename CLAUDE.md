@@ -87,8 +87,11 @@ workspace's words go in first, verbatim; then who the model is talking to; then
 our platform rules (`PLATFORM_RULES` in `lib/ai/agent.ts`), the same for the
 built-in model and every workspace key: English or Romanized Nepali only, short
 plain DMs, nothing invented, safety, and the markers. A reply in any other
-script is rewritten once and otherwise replaced by the fallback. A reply may name one of the agent's own buttons
-with `[[BUTTON:Label]]`, which we resolve to the configured URL, so an
+script, or with a link the workspace never wrote, is rewritten once; after
+that a wrong script sends the fallback reply and a stray link is removed. The
+knowledge block is small enough (`lib/ai/limits.ts`) to go whole into every
+prompt, and the rules make it the only source of facts. A reply may name one
+of the agent's own buttons with `[[BUTTON:Label]]`, which we resolve to the configured URL, so an
 interactive reply can never carry a link nobody approved. `[[HANDOFF]]` takes
 the flow's handover branch and `[[DONE]]` ends the conversation.
 

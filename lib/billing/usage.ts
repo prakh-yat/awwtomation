@@ -284,7 +284,8 @@ export async function checkBroadcastQuota(workspaceId: string, opts: { scheduled
 
 /**
  * How many more contacts the organization's plan allows (0 when it is at or
- * over the limit). Imports and manual adds are cut to this.
+ * over the limit). Imports, manual adds and new people who comment or message
+ * are all held to this: nothing creates a contact past it.
  */
 export async function contactRoom(workspaceId: string): Promise<QuotaResult & { room: number }> {
   const result = await checkLimit(workspaceId, "contacts");

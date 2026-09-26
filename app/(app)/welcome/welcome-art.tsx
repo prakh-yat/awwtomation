@@ -1,11 +1,11 @@
 import * as React from "react";
 
 /**
- * Two flat marks for the welcome panel, one per step of the flow, each drawn
- * to sit on its step's colour block (yellow, then lavender). Inline SVG so they
- * stay crisp; the few moving parts hold still for reduced motion.
+ * Flat marks for the welcome panel, one per part of the flow, each drawn to
+ * sit on its part's colour block (sky, yellow, then lavender). Inline SVG so
+ * they stay crisp; the few moving parts hold still for reduced motion.
  */
-export type ArtName = "start" | "finish";
+export type ArtName = "you" | "start" | "finish";
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
@@ -23,6 +23,29 @@ function at(i: number): React.CSSProperties {
 const typingDot = "fill-white motion-safe:animate-pulse";
 
 export function WelcomeArt({ name }: { name: ArtName }) {
+  if (name === "you") {
+    // A name badge: the person, and a line or two about them.
+    return (
+      <Frame>
+        <rect x="36" y="34" width="168" height="112" rx="24" className="fill-ink" />
+        <circle cx="88" cy="78" r="19" className="fill-white" />
+        <path d="M60 128a28 28 0 0 1 56 0z" className="fill-white" />
+        <rect x="130" y="66" width="52" height="10" rx="5" className="fill-white" />
+        <g className="rise" style={at(3)}>
+          <rect x="130" y="86" width="36" height="10" rx="5" className="fill-yellow" />
+        </g>
+        <g className="rise" style={at(5)}>
+          <rect x="130" y="106" width="44" height="10" rx="5" className="fill-magenta" />
+        </g>
+        <circle cx="212" cy="30" r="9" className="rise fill-magenta" style={at(7)} />
+        <g className="rise" style={at(9)}>
+          <rect x="22" y="146" width="16" height="16" rx="4" transform="rotate(-16 30 154)" className="fill-yellow" />
+        </g>
+        <path d="M206 138l4 12 12 4-12 4-4 12-4-12-12-4 12-4z" className="fill-white" />
+      </Frame>
+    );
+  }
+
   if (name === "finish") {
     return (
       <Frame>

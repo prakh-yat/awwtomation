@@ -322,8 +322,10 @@ function appOrigin(): string {
   return (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
-function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; promptTokens: number; completionTokens: number } {
-  if (!isRecord(body)) return { text: "", promptTokens: 0, completionTokens: 0 };
+type Reply = { text: string; promptTokens: number; completionTokens: number; truncated: boolean };
+
+function readReply(kind: ChatRequest["kind"], body: unknown): Reply {
+  if (!isRecord(body)) return { text: "", promptTokens: 0, completionTokens: 0, truncated: false };
 
   if (kind === "ANTHROPIC") {
     const parts = Array.isArray(body.content) ? body.content : [];
@@ -336,6 +338,7 @@ function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; pr
       text,
       promptTokens: Number(usage.input_tokens ?? 0) || 0,
       completionTokens: Number(usage.output_tokens ?? 0) || 0,
+      truncated: body.stop_reason === "max_tokens",
     };
   }
 
@@ -353,6 +356,7 @@ function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; pr
       text,
       promptTokens: Number(usage.promptTokenCount ?? 0) || 0,
       completionTokens: Number(usage.candidatesTokenCount ?? 0) || 0,
+      truncated: first.finishReason === "MAX_TOKENS",
     };
   }
 
@@ -365,6 +369,7 @@ function readReply(kind: ChatRequest["kind"], body: unknown): { text: string; pr
     text,
     promptTokens: Number(usage.prompt_tokens ?? 0) || 0,
     completionTokens: Number(usage.completion_tokens ?? 0) || 0,
+    truncated: first.finish_reason === "length",
   };
 }
 
@@ -453,6 +458,7 @@ export async function chat(request: ChatRequest): Promise<ChatResult> {
       ok: true,
       text: reply.text,
       usage: { promptTokens: reply.promptTokens, completionTokens: reply.completionTokens },
+      truncated: reply.truncated,
     };
   }
   return fail("rejected", "The provider kept refusing the request's parameters.");

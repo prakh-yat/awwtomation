@@ -10,7 +10,7 @@ import type { ShellProps } from "./types";
 
 export interface AppFrameProps extends ShellProps {
   children: React.ReactNode;
-  /** This person has been shown the product tour (`User.tourCompletedAt`); until then it opens by itself. */
+  /** This person has been shown the current product tour (`User.tourVersion`); until then it opens by itself. */
   hasSeenTour: boolean;
 }
 
@@ -32,7 +32,7 @@ export function AppFrame({ children, hasSeenTour, ...shell }: AppFrameProps) {
           {/* Beside the dock, not inside the page: the page frame animates a
               transform, and a transformed ancestor would pin the tour's fixed
               overlay to the page instead of the window. */}
-          <ProductTour userId={shell.user.id} hasSeenTour={hasSeenTour} role={shell.role} />
+          <ProductTour userId={shell.user.id} hasSeenTour={hasSeenTour} role={shell.role} workspaceId={shell.activeWorkspaceId} />
           <main id="main" className="min-w-0 flex-1">
             {children}
           </main>

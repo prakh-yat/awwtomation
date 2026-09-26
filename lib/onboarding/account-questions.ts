@@ -92,6 +92,22 @@ export const GOALS: AccountQuestion = {
 /** In the order they are asked. */
 export const ACCOUNT_QUESTIONS: readonly AccountQuestion[] = [ACCOUNT_TYPE, MONETIZATION, GOALS];
 
+/** The goal answers that stand for `goals`, in the gallery's order. */
+export function goalIdsFor(goals: readonly TemplateGoal[]): string[] {
+  return TEMPLATE_GOALS.filter((goal) => goals.includes(goal)).map((goal) => GOAL_IDS[goal]);
+}
+
+/**
+ * The questions as one account is asked them: its goals narrowed to `goalIds`,
+ * the goals its platform has templates for, so no answer leads to an empty
+ * gallery.
+ */
+export function accountQuestionsFor(goalIds: readonly string[]): AccountQuestion[] {
+  return ACCOUNT_QUESTIONS.map((question) =>
+    question.id === GOALS.id ? { ...question, options: question.options.filter((option) => goalIds.includes(option.value)) } : question,
+  );
+}
+
 /** An account's answers, cleaned (see `sanitizeWith`). */
 export function sanitizeAccountAnswers(input: unknown): Answers {
   return sanitizeWith(ACCOUNT_QUESTIONS, input);

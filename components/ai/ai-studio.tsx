@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { STARTER_GUARDRAILS, STARTER_PROMPT, type AgentButton } from "@/lib/ai/agent";
 import type { BuiltInModel } from "@/lib/ai/builtin";
+import { AGENT_TEXT_LIMITS, CONTEXT_MESSAGES, REPLY_TOKENS, type NumberLimit } from "@/lib/ai/limits";
 import { presetFor, type ProviderPresetId } from "@/lib/ai/presets";
 import { MAX_BUTTONS, MAX_BUTTON_TITLE_CHARS } from "@/lib/meta/messages";
 import type { AgentView, ProviderView } from "@/lib/services/ai";
@@ -72,6 +73,40 @@ function sameDraft(a: Draft, b: Draft): boolean {
   return (Object.keys(a) as Array<keyof Draft>).every((key) => (key === "buttons" ? JSON.stringify(a.buttons) === JSON.stringify(b.buttons) : a[key] === b[key]));
 }
 
+/** 4000 as "4,000". */
+function count(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+/** Characters used against the most allowed; red once it is over. */
+function CharCount({ value, max }: { value: string; max: number }) {
+  const over = value.length > max;
+  return (
+    <span className={cn("text-[11px] tabular-nums", over ? "font-semibold text-destructive" : "text-muted-foreground")}>
+      {count(value.length)}/{count(max)}
+    </span>
+  );
+}
+
+function withinNumber(limit: NumberLimit, value: number): boolean {
+  return Number.isInteger(value) && value >= limit.min && value <= limit.max;
+}
+
+/**
+ * What stops the draft from being saved, in the order the fields appear; null
+ * when it can be saved. The API refuses the same things.
+ */
+function draftProblem(draft: Draft): string | null {
+  if (!withinNumber(REPLY_TOKENS, draft.maxTokens)) return `Reply length is ${REPLY_TOKENS.min} to ${REPLY_TOKENS.max}`;
+  if (!withinNumber(CONTEXT_MESSAGES, draft.historyLimit)) return `Context is ${CONTEXT_MESSAGES.min} to ${CONTEXT_MESSAGES.max}`;
+  if (draft.fallbackReply.length > AGENT_TEXT_LIMITS.fallbackReply) return `The failure reply is over ${count(AGENT_TEXT_LIMITS.fallbackReply)} characters`;
+  if (!draft.systemPrompt.trim()) return "Write the instructions";
+  if (draft.systemPrompt.length > AGENT_TEXT_LIMITS.systemPrompt) return `Instructions are over ${count(AGENT_TEXT_LIMITS.systemPrompt)} characters`;
+  if (draft.knowledge.length > AGENT_TEXT_LIMITS.knowledge) return `Knowledge is over ${count(AGENT_TEXT_LIMITS.knowledge)} characters`;
+  if (draft.guardrails.length > AGENT_TEXT_LIMITS.guardrails) return `Rules are over ${count(AGENT_TEXT_LIMITS.guardrails)} characters`;
+  return null;
+}
+
 /** The connection an agent replies with; null when it uses the built-in model. */
 function connectionOf(providerId: string | null, providers: ProviderView[]): ProviderView | null {
   return providerId ? (providers.find((p) => p.id === providerId) ?? null) : null;
@@ -98,6 +133,7 @@ function PromptArea({
   onChange,
   placeholder,
   disabled,
+  max,
   grow,
 }: {
   id: string;
@@ -106,23 +142,76 @@ function PromptArea({
   onChange: (value: string) => void;
   placeholder: string;
   disabled: boolean;
+  /** Most characters it may hold. Typing and pasting stop there. */
+  max: number;
   /** Share of the column's height, as a flex-grow class. */
   grow: string;
 }) {
   return (
     <div className={cn("flex min-h-[11rem] flex-col border-t transition-colors first:border-t-0 focus-within:bg-fog/40 lg:min-h-0", grow)}>
-      <label htmlFor={id} className="brand-label px-5 pt-4 text-muted-foreground">
-        {label}
-      </label>
+      <div className="flex items-center justify-between gap-3 px-5 pt-4">
+        <label htmlFor={id} className="brand-label text-muted-foreground">
+          {label}
+        </label>
+        <CharCount value={value} max={max} />
+      </div>
       <textarea
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
+        maxLength={max}
+        aria-invalid={value.length > max || undefined}
         spellCheck
         className="scrollbar-thin min-h-0 w-full flex-1 resize-none bg-transparent px-5 pb-4 pt-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
       />
+    </div>
+  );
+}
+
+/**
+ * A whole number within `limit`. Anything can be typed, so a value can be
+ * corrected freely, but outside the range it turns red and the agent cannot be
+ * saved; the range is written under it.
+ */
+function LimitedNumber({
+  id,
+  label,
+  limit,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  limit: NumberLimit;
+  value: number;
+  onChange: (value: number) => void;
+  disabled: boolean;
+}) {
+  const hintId = `${id}-hint`;
+  const invalid = !withinNumber(limit, value);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={limit.min}
+        max={limit.max}
+        step={1}
+        // Empty while retyping; an empty field reads as 0, which is out of range.
+        value={Number.isNaN(value) ? "" : value}
+        onChange={(e) => onChange(e.target.value === "" ? NaN : Number(e.target.value))}
+        aria-invalid={invalid || undefined}
+        aria-describedby={hintId}
+        disabled={disabled}
+      />
+      <p id={hintId} className={cn("text-[11px] tabular-nums", invalid ? "font-semibold text-destructive" : "text-muted-foreground")}>
+        {limit.min} to {limit.max}
+      </p>
     </div>
   );
 }
@@ -155,6 +244,7 @@ function ButtonsEditor({ buttons, onChange, disabled }: { buttons: AgentButton[]
             onChange={(e) => set(index, { url: e.target.value })}
             placeholder="https://yourshop.com/collection"
             inputMode="url"
+            maxLength={2048}
             aria-label={`Button ${index + 1} link`}
             disabled={disabled}
             className="h-9 text-[13px]"
@@ -208,6 +298,7 @@ function AgentEditor({
   React.useEffect(() => setDraft(saved), [saved]);
 
   const dirty = !sameDraft(draft, saved);
+  const problem = draftProblem(draft);
   React.useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const provider = connectionOf(draft.providerId, providers);
@@ -220,6 +311,7 @@ function AgentEditor({
   }
 
   const save = React.useCallback(async () => {
+    if (draftProblem(draft)) return;
     setSaving(true);
     try {
       await apiFetch(`/api/ai/agents/${agent.id}`, {
@@ -292,7 +384,7 @@ function AgentEditor({
             <input
               value={draft.name}
               onChange={(e) => set("name", e.target.value)}
-              maxLength={60}
+              maxLength={AGENT_TEXT_LIMITS.name}
               disabled={readOnly}
               aria-label="Agent name"
               className="font-display min-w-0 flex-1 rounded-lg bg-transparent px-1.5 py-1 text-[22px] leading-none outline-none transition-colors hover:bg-fog focus-visible:bg-fog focus-visible:ring-2 focus-visible:ring-ring/30 disabled:hover:bg-transparent"
@@ -372,12 +464,14 @@ function AgentEditor({
           <ButtonsEditor buttons={draft.buttons} onChange={(buttons) => set("buttons", buttons)} disabled={readOnly} />
         </Field>
 
-        <Field label="If the model fails">
+        <Field label="If the model fails" aside={<CharCount value={draft.fallbackReply} max={AGENT_TEXT_LIMITS.fallbackReply} />}>
           <Textarea
             aria-label="Reply when the model fails"
             rows={3}
             value={draft.fallbackReply}
             onChange={(e) => set("fallbackReply", e.target.value)}
+            maxLength={AGENT_TEXT_LIMITS.fallbackReply}
+            aria-invalid={draft.fallbackReply.length > AGENT_TEXT_LIMITS.fallbackReply || undefined}
             disabled={readOnly}
             placeholder="Thanks for your message. Someone from the team will get back to you shortly."
             className="min-h-0 resize-none text-[13px]"
@@ -413,14 +507,22 @@ function AgentEditor({
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="agent-tokens">Reply length</Label>
-                  <Input id="agent-tokens" type="number" min={60} max={4000} value={draft.maxTokens} onChange={(e) => set("maxTokens", Number(e.target.value) || 400)} disabled={readOnly} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="agent-history">Context</Label>
-                  <Input id="agent-history" type="number" min={2} max={50} value={draft.historyLimit} onChange={(e) => set("historyLimit", Number(e.target.value) || 20)} disabled={readOnly} />
-                </div>
+                <LimitedNumber
+                  id="agent-tokens"
+                  label="Reply length"
+                  limit={REPLY_TOKENS}
+                  value={draft.maxTokens}
+                  onChange={(n) => set("maxTokens", n)}
+                  disabled={readOnly}
+                />
+                <LimitedNumber
+                  id="agent-history"
+                  label="Context"
+                  limit={CONTEXT_MESSAGES}
+                  value={draft.historyLimit}
+                  onChange={(n) => set("historyLimit", n)}
+                  disabled={readOnly}
+                />
               </div>
             </div>
           ) : null}
@@ -435,6 +537,7 @@ function AgentEditor({
           onChange={(v) => set("systemPrompt", v)}
           placeholder="Who it is, how it sounds, what it should do."
           disabled={readOnly}
+          max={AGENT_TEXT_LIMITS.systemPrompt}
           grow="lg:flex-[5]"
         />
         <PromptArea
@@ -444,6 +547,7 @@ function AgentEditor({
           onChange={(v) => set("knowledge", v)}
           placeholder={"Delivery inside the valley is free over Rs 3,000.\nWe ship nationwide in 3 to 5 days.\nReturns within 7 days, unworn."}
           disabled={readOnly}
+          max={AGENT_TEXT_LIMITS.knowledge}
           grow="lg:flex-[4]"
         />
         <PromptArea
@@ -453,17 +557,21 @@ function AgentEditor({
           onChange={(v) => set("guardrails", v)}
           placeholder="Never quote a price that is not listed above."
           disabled={readOnly}
+          max={AGENT_TEXT_LIMITS.guardrails}
           grow="lg:flex-[2]"
         />
 
         {canManage && dirty ? (
           <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4 lg:absolute lg:bottom-0 lg:z-10 lg:p-4">
             <div className="pointer-events-auto flex animate-fade-in items-center gap-2 rounded-full bg-ink py-1.5 pl-4 pr-1.5 text-white shadow-pop">
-              <span className="pr-1 text-[13px] font-medium">Unsaved changes</span>
+              {/* Says why Save is off, rather than leaving a dead button. */}
+              <span role={problem ? "alert" : undefined} className={cn("pr-1 text-[13px] font-medium", problem && "text-yellow")}>
+                {problem ?? "Unsaved changes"}
+              </span>
               <Button size="sm" variant="ghost" className="text-white hover:bg-white/10 hover:text-white" onClick={() => setDraft(saved)} disabled={saving}>
                 Discard
               </Button>
-              <Button size="sm" variant="highlight" onClick={() => void save()} loading={saving}>
+              <Button size="sm" variant="highlight" onClick={() => void save()} loading={saving} disabled={problem !== null}>
                 Save
               </Button>
             </div>
@@ -543,7 +651,11 @@ function AgentSwitcher({
                   <span className="truncate font-semibold">{agent.name}</span>
                   {agent.isDefault ? <Star className="h-3 w-3 shrink-0 fill-ink text-ink" aria-label="Default" /> : null}
                 </span>
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">{provider ? (agent.model ?? provider.model) : builtIn.model}</span>
+                {provider ? (
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">{agent.model ?? provider.model}</span>
+                ) : (
+                  <span className="block truncate text-[11px] text-muted-foreground">{builtIn.label}</span>
+                )}
               </span>
               {active ? <Check className="mt-0.5 h-4 w-4 shrink-0 text-purple" strokeWidth={2.5} /> : null}
             </DropdownMenuItem>

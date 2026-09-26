@@ -129,14 +129,17 @@ export function Playground({ agentId, dirty, onClose, instruction, maxReplies, t
         {turns.map((turn, i) => (
           <div key={i} className={cn("flex animate-fade-in", turn.role === "user" ? "justify-end" : "justify-start")}>
             <div className="max-w-[85%]">
-              <div
-                className={cn(
-                  "whitespace-pre-wrap rounded-[20px] px-3.5 py-2 text-[13px] leading-relaxed",
-                  turn.role === "user" ? "rounded-br-md bg-ink text-white" : "rounded-bl-md bg-background text-ink shadow-[0_1px_2px_rgb(15_15_15/0.06)]",
-                )}
-              >
-                {turn.content}
-              </div>
+              {/* An agent that closes the conversation without a word sends nothing: only its note shows. */}
+              {turn.content ? (
+                <div
+                  className={cn(
+                    "whitespace-pre-wrap rounded-[20px] px-3.5 py-2 text-[13px] leading-relaxed",
+                    turn.role === "user" ? "rounded-br-md bg-ink text-white" : "rounded-bl-md bg-background text-ink shadow-[0_1px_2px_rgb(15_15_15/0.06)]",
+                  )}
+                >
+                  {turn.content}
+                </div>
+              ) : null}
               {turn.buttons && turn.buttons.length > 0 ? (
                 <div className="mt-1 space-y-1">
                   {turn.buttons.map((button, b) => (

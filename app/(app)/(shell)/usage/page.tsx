@@ -55,7 +55,12 @@ export default async function UsagePage() {
       label: "Contacts",
       used: usage.contacts.used,
       limit: usage.contacts.limit,
-      hint: usage.contacts.used > usage.contacts.limit ? "Automations skip the newest contacts past the limit" : undefined,
+      hint:
+        usage.contacts.used > usage.contacts.limit
+          ? "New people are not saved, and automations skip the newest contacts past the limit"
+          : usage.contacts.used === usage.contacts.limit
+            ? "New people are not saved until you upgrade"
+            : undefined,
       tone: "green",
     },
     ...(usage.broadcasts.limit > 0

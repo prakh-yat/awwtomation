@@ -36,6 +36,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { withStepInstruction, type ChatTurn } from "@/lib/ai/agent";
+import { clampTo, CONTEXT_MESSAGES } from "@/lib/ai/limits";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { getInstagramUserProfile } from "@/lib/meta/instagram";
@@ -66,7 +67,7 @@ import {
 } from "./flow-types";
 import { resolveAgent, runAgent } from "@/lib/services/ai";
 
-import { automationAllowedFor } from "@/lib/billing/usage";
+import { automationAllowedFor, contactRoom } from "@/lib/billing/usage";
 import { findMatchingAutomations } from "./matcher";
 import { attachPostbackPayloads, contactTemplateVars, RATE_LIMIT_MAX_DEFER_MS, recordDeliveryLog, sendToContact, type SendToContactResult } from "./send";
 
@@ -175,15 +176,30 @@ export type UpsertContactInput = { externalId: string; username?: string; name?:
  * app-scoped user id, not a PSID: it can only be reached through a private
  * reply; when that person answers in Messenger their PSID creates a separate
  * Contact. We accept that split rather than guess at identity.
+ *
+ * Someone already saved is always updated. Someone new is saved only while
+ * the plan has room for another contact: at the limit this returns null, and
+ * the caller drops the event (no contact, no inbox thread, no automation).
  */
-export async function upsertContact(channel: Channel, input: UpsertContactInput): Promise<Contact> {
+export async function upsertContact(channel: Channel, input: UpsertContactInput): Promise<Contact | null> {
   const update: Prisma.ContactUpdateInput = {};
   if (input.username) update.username = input.username;
   if (input.name) update.name = input.name;
   if (input.avatarUrl) update.avatarUrl = input.avatarUrl;
   if (input.interactedAt) update.lastInteractionAt = input.interactedAt;
+  const where = { channelId_externalId: { channelId: channel.id, externalId: input.externalId } };
+
+  const existing = await prisma.contact.findUnique({ where, select: { id: true } });
+  if (existing) return prisma.contact.update({ where, data: update });
+  const { room } = await contactRoom(channel.workspaceId);
+  if (room === 0) {
+    logger.info("contact.not_saved_limit", { workspaceId: channel.workspaceId, channelId: channel.id });
+    return null;
+  }
+
+  // An upsert, not a create: a second event for the same new person can arrive at the same moment.
   return prisma.contact.upsert({
-    where: { channelId_externalId: { channelId: channel.id, externalId: input.externalId } },
+    where,
     create: {
       workspaceId: channel.workspaceId,
       channelId: channel.id,
@@ -297,7 +313,8 @@ export async function startFlowForContact(input: StartFlowInput): Promise<StartF
   const existingJob = await prisma.job.findUnique({ where: { dedupeKey }, select: { id: true } });
   if (existingJob) return { started: false, reason: "duplicate" };
 
-  // Past the plan's contact limit the person is still saved (and shows in the inbox), but nothing replies until an upgrade.
+  // New people past the plan's contact limit are never saved (see upsertContact). Contacts from before a
+  // downgrade can still be past it: they stay, but nothing replies to them until an upgrade.
   // With no paid plan nothing is sent, so nothing starts.
   const allowed = await automationAllowedFor(contact);
   if (allowed !== "ok") return { started: false, reason: allowed };
@@ -353,6 +370,25 @@ function isLoggedReason(reason: StartFlowResult["reason"]): reason is NotStarted
   return reason === "once_per_contact" || reason === "contact_limit" || reason === "no_plan";
 }
 
+/** Logs, once per automation, that the plan had no room to save the person a trigger matched. */
+async function logContactNotSaved(
+  channel: Channel,
+  automations: ReadonlyArray<{ id: string; workspaceId: string }>,
+  entry: { kind: DeliveryKind; commentExternalId?: string; recipientExternalId: string; recipientUsername?: string },
+): Promise<void> {
+  for (const automation of automations) {
+    if (automation.workspaceId !== channel.workspaceId) continue;
+    await recordDeliveryLog({
+      workspaceId: channel.workspaceId,
+      channelId: channel.id,
+      automationId: automation.id,
+      status: DeliveryStatus.SKIPPED_CONTACT_LIMIT,
+      errorMessage: "Contact limit reached: this person was not saved",
+      ...entry,
+    });
+  }
+}
+
 function notStartedLog(reason: NotStartedReason): { status: DeliveryStatus; errorMessage: string } {
   if (reason === "contact_limit") {
     return { status: DeliveryStatus.SKIPPED_CONTACT_LIMIT, errorMessage: "Contact limit reached: this person joined after the plan's limit" };
@@ -371,6 +407,20 @@ async function handleCommentEvent(channel: Channel, event: NormalizedCommentEven
   // Facebook may omit `from` for users who never authorized the app; a synthetic id still lets private replies work.
   const externalId = event.from.id || `anon:${event.commentId}`;
   const contact = await upsertContact(channel, { externalId, username: event.from.username, interactedAt: event.timestamp });
+  if (!contact) {
+    const unseen = [];
+    for (const automation of automations) {
+      const seen = await prisma.deliveryLog.findFirst({ where: { automationId: automation.id, commentExternalId: event.commentId }, select: { id: true } });
+      if (!seen) unseen.push(automation);
+    }
+    await logContactNotSaved(channel, unseen, {
+      kind: DeliveryKind.PRIVATE_REPLY,
+      commentExternalId: event.commentId,
+      recipientExternalId: externalId,
+      recipientUsername: event.from.username,
+    });
+    return;
+  }
 
   for (const automation of automations) {
     if (automation.workspaceId !== channel.workspaceId) continue;
@@ -648,6 +698,7 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
     // Sent by the account (our API call or a human in the IG/FB app). Our own sends already stored the mid.
     if (event.recipientId === channel.externalId) return;
     const contact = await upsertContact(channel, { externalId: event.recipientId });
+    if (!contact) return;
     const conversation = await touchConversation(channel, contact, { lastMessageAt: event.timestamp, preview: inboundPreview(event) });
     await recordMessage(conversation.id, {
       direction: MessageDirection.OUTBOUND,
@@ -660,6 +711,12 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
   }
 
   const contact = await upsertContact(channel, { externalId: event.senderId, interactedAt: event.timestamp });
+  if (!contact) {
+    // Nobody saved means nothing to resume: only a keyword trigger could have matched.
+    const automations = await findMatchingAutomations(channel.id, event.storyReply ? TriggerType.STORY_REPLY : TriggerType.DM, event.text ?? "");
+    await logContactNotSaved(channel, automations, { kind: DeliveryKind.MESSAGE, recipientExternalId: event.senderId });
+    return;
+  }
   const conversation = await touchConversation(channel, contact, {
     inboundAt: event.timestamp,
     lastMessageAt: event.timestamp,
@@ -762,6 +819,8 @@ async function handleMessageEvent(channel: Channel, event: NormalizedMessageEven
 
 async function handlePostbackEvent(channel: Channel, event: NormalizedPostbackEvent): Promise<void> {
   const contact = await upsertContact(channel, { externalId: event.senderId, interactedAt: event.timestamp });
+  // A button only reaches someone who was messaged, so they were saved; past the limit a stranger's tap is dropped.
+  if (!contact) return;
   // A button tap is a standard interaction: it (re)opens the 24h window.
   const conversation = await touchConversation(channel, contact, {
     inboundAt: event.timestamp,
@@ -1221,7 +1280,7 @@ export async function executeFlowStep(job: Job): Promise<void> {
           continue;
         }
 
-        const { history, newestInboundAt } = await conversationForAi(run, agent.historyLimit);
+        const { history, newestInboundAt } = await conversationForAi(run, clampTo(CONTEXT_MESSAGES, agent.historyLimit));
         if (pending) {
           const sentAt = pending.at ? Date.parse(pending.at) : NaN;
           // They wrote again since: that message's turn answers both, a moment later.
@@ -1238,6 +1297,7 @@ export async function executeFlowStep(job: Job): Promise<void> {
           context: { ...run.context, aiBusy: { at: new Date().toISOString(), messageId: pending?.messageId ?? null } },
         });
 
+        const workspace = await prisma.workspace.findUnique({ where: { id: channel.workspaceId }, select: { timezone: true } });
         const outcome = await runAgent({
           workspaceId: channel.workspaceId,
           agent: withStepInstruction(agent, data.instruction),
@@ -1249,13 +1309,22 @@ export async function executeFlowStep(job: Job): Promise<void> {
             contactFacts: contactFacts(run.contact),
             trigger: run.context.triggerText ?? null,
             triggerKind: automation.triggerType,
+            timezone: workspace?.timezone ?? null,
           },
           history,
         });
 
+        // They closed the conversation ("thanks", "ok") and the agent had nothing to add: send nothing and move on.
+        if (outcome.ok && !outcome.message) {
+          run.context = { ...run.context, aiBusy: undefined, awaiting: undefined };
+          if (newestInboundAt) run.context = { ...run.context, aiAnsweredAt: newestInboundAt.toISOString() };
+          nodeId = nextNodeId(flow, node.id, "next");
+          continue;
+        }
+
         // A reply with buttons is an ordinary interactive message; a plain one
         // is just text. The agent decides which by naming a button or not.
-        const reply: OutboundMessage = outcome.ok ? outcome.message : { text: outcome.fallback };
+        const reply: OutboundMessage = outcome.ok && outcome.message ? outcome.message : { text: outcome.ok ? outcome.text : outcome.fallback };
         const result = await sendToContact({
           channel,
           contact: run.contact,

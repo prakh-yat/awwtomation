@@ -19,7 +19,13 @@ export type ChatRequest = {
 
 export type ChatUsage = { promptTokens: number; completionTokens: number };
 
-export type ChatSuccess = { ok: true; text: string; usage: ChatUsage };
+export type ChatSuccess = {
+  ok: true;
+  text: string;
+  usage: ChatUsage;
+  /** The provider stopped at the token limit, so the last sentence may be unfinished. */
+  truncated: boolean;
+};
 
 export type ChatFailureReason =
   /** The key was refused. The workspace has to fix it; retrying will not help. */

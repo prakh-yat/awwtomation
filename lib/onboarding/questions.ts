@@ -1,13 +1,36 @@
 /**
  * The questions asked while setting up, and the rules every answer follows.
  *
- * There are two sets. The welcome flow asks one question about the workspace
- * (below), stored on `Workspace.onboardingAnswers`. Each account is asked about
+ * There are three sets. The welcome flow asks about the person (their role,
+ * how they heard about us), stored on `User.profileAnswers` and asked once
+ * whichever workspace they set up next, and about the workspace (who it is
+ * for), stored on `Workspace.onboardingAnswers`. Each account is asked about
  * itself right after it is connected (account-questions.ts), stored on
- * `Channel.setupAnswers`. Both are plain JSON keyed by question id, and both
+ * `Channel.setupAnswers`. All are plain JSON keyed by question id, and all
  * pass through `sanitizeWith` before they are saved or read back.
  */
-import { Briefcase, Handshake, User, type LucideIcon } from "lucide-react";
+import {
+  Briefcase,
+  Building2,
+  Code,
+  Facebook,
+  GraduationCap,
+  Handshake,
+  Headset,
+  Instagram,
+  Megaphone,
+  Music2,
+  Search,
+  Shapes,
+  Sparkles,
+  Star,
+  User,
+  Users,
+  Youtube,
+  type LucideIcon,
+} from "lucide-react";
+
+import { brand } from "@/lib/brand";
 
 export type QuestionKind = "single" | "multi";
 
@@ -43,8 +66,43 @@ const accountFor: Question = {
   ],
 };
 
-/** The welcome flow's questions, in order. */
+/** The welcome flow's question about the workspace. */
 export const WORKSPACE_QUESTIONS: readonly Question[] = [accountFor];
+
+const role: Question = {
+  id: "role",
+  kind: "single",
+  title: "What best describes your role?",
+  options: [
+    { value: "founder", label: "Business owner or founder", icon: Building2 },
+    { value: "marketing", label: "Marketing or social media", icon: Megaphone },
+    { value: "creator", label: "Creator or influencer", icon: Star },
+    { value: "agency", label: "Agency or freelancer", icon: Briefcase },
+    { value: "sales_support", label: "Sales or customer support", icon: Headset },
+    { value: "coach", label: "Coach, consultant or educator", icon: GraduationCap },
+    { value: "developer", label: "Developer", icon: Code },
+    { value: "other", label: "Something else", icon: Shapes },
+  ],
+};
+
+const heardFrom: Question = {
+  id: "heard_from",
+  kind: "single",
+  title: `How did you hear about ${brand.name}?`,
+  options: [
+    { value: "instagram", label: "Instagram", icon: Instagram },
+    { value: "facebook", label: "Facebook", icon: Facebook },
+    { value: "tiktok", label: "TikTok", icon: Music2 },
+    { value: "youtube", label: "YouTube", icon: Youtube },
+    { value: "search", label: "Google or another search engine", icon: Search },
+    { value: "ai", label: "ChatGPT or another AI assistant", icon: Sparkles },
+    { value: "referral", label: "A friend or colleague", icon: Users },
+    { value: "other", label: "Somewhere else", icon: Shapes },
+  ],
+};
+
+/** The welcome flow's questions about the person, asked before the workspace one. */
+export const PROFILE_QUESTIONS: readonly Question[] = [role, heardFrom];
 
 /** True when the question has an answer that lets the flow move on. */
 export function isAnswered(question: QuestionShape, answers: Answers): boolean {
@@ -90,7 +148,12 @@ export function sanitizeWith(questions: readonly QuestionShape[], input: unknown
   return answers;
 }
 
-/** The welcome answers, cleaned (see `sanitizeWith`). */
+/** The workspace's welcome answers, cleaned (see `sanitizeWith`). */
 export function sanitizeAnswers(input: unknown): Answers {
   return sanitizeWith(WORKSPACE_QUESTIONS, input);
+}
+
+/** A person's welcome answers, cleaned (see `sanitizeWith`). */
+export function sanitizeProfileAnswers(input: unknown): Answers {
+  return sanitizeWith(PROFILE_QUESTIONS, input);
 }

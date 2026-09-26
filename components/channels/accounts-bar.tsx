@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import type { ChannelPlatform } from "@prisma/client";
 import { ArrowUpRight, Plus } from "lucide-react";
 
+import { OPEN_CONNECT_EVENT } from "@/components/app-shell/tour-events";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -88,10 +89,18 @@ function ConnectMenu({
   full: boolean;
   canUpgrade: boolean;
 }) {
+  const [open, setOpen] = React.useState(false);
+  // "Connect now" in the product tour opens this menu.
+  React.useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_CONNECT_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CONNECT_EVENT, onOpen);
+  }, []);
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="shrink-0">
+        <Button variant="outline" className="shrink-0" data-tour="connect">
           <Plus /> Connect
         </Button>
       </DropdownMenuTrigger>

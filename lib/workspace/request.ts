@@ -13,11 +13,6 @@ export const ONBOARDING_PATH = "/onboarding";
 /** The welcome questionnaire, which takes the whole window and has no dock. */
 export const WELCOME_PATH = "/welcome";
 
-/** Routes under `(app)` that render on their own, without the app shell. */
-export function isBareShellPath(pathname: string | null | undefined): boolean {
-  return pathname === ONBOARDING_PATH || pathname === WELCOME_PATH;
-}
-
 /**
  * The automation builder: `/automations/<id>` exactly, not its report. It takes
  * the whole viewport.

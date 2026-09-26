@@ -88,8 +88,9 @@ export const getWorkspaceContext = cache(async (): Promise<WorkspaceContext | nu
 /**
  * Pathname of the request being rendered, forwarded by `middleware.ts` as a
  * request header. Null outside the middleware matcher (e.g. static assets).
- * Layouts use it to special-case `/onboarding`, which lives under `app/(app)/`
- * but must render for users who have no workspace yet.
+ * Only right on a full page load: a layout is not rendered again on a
+ * client-side navigation, so never pick a layout's shape from it (route
+ * groups do that; see `app/(app)/(shell)/layout.tsx`).
  */
 export async function getRequestPathname(): Promise<string | null> {
   const h = await headers();
@@ -100,9 +101,9 @@ export async function getRequestPathname(): Promise<string | null> {
  * Page/layout guard. Redirects instead of throwing so it can sit at the top
  * of any server component under `app/(app)/`.
  *
- * NOTE for layouts wrapping `/onboarding`: call `getWorkspaceContext()` and
- * render children bare when it is null and `getRequestPathname()` is
- * `ONBOARDING_PATH`: calling this guard there would redirect to itself.
+ * Never call it on `/onboarding` (`ONBOARDING_PATH`), or in a layout that
+ * wraps it: that page is for people with no workspace, and this guard would
+ * redirect it to itself.
  */
 export async function requireWorkspaceContext(): Promise<WorkspaceContext> {
   const user = await getCurrentUser();
